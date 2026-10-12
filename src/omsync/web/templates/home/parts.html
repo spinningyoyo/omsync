@@ -1,0 +1,285 @@
+{# The home page's parts: the header with the period picker, the first-run state, and the sections.
+   Each section is a card that drags to reorder and collapses. The charts are Stimulus controllers
+   that read their data from a JSON attribute, so the server formats every amount. The attention,
+   upcoming, budget, and goals sections follow today, not the period, and their headers say so.
+   Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/pages/dashboard.html.erb,
+   pages/dashboard/_cashflow_sankey.html.erb, _spending_trend.html.erb and _outflows_donut.html.erb. #}
+{% from "components/icon.html" import icon with context %}
+{% from "components/button.html" import link_button with context %}
+{% from "components/segmented_control.html" import segmented_control with context %}
+{% from "components/brand.html" import mascot with context %}
+{% from "components/pill.html" import pill with context %}
+{% from "layouts/shell_parts.html" import empty_state %}
+{% from "plan/parts.html" import budget_card_body, goals_card_body with context %}
+
+{# The header: the page's name, the greeting with the period in words, the joint note when it is on,
+   and the period picker. The picker is plain links and a custom-range form, as on the reports page. #}
+{% macro home_header(view) -%}
+<header class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+  <div class="flex flex-col gap-1">
+    <h1 class="text-2xl font-medium text-primary">Home</h1>
+    <p class="text-sm text-secondary">{{ view.greeting }}. Showing {{ view.period_label }}.</p>
+    {%- if view.joint_note %}
+    <p id="joint-note" class="text-sm text-secondary">{{ view.joint_note }}.</p>
+    {%- endif %}
+  </div>
+  {%- if view.has_transactions %}
+  {{ period_picker(view) }}
+  {%- endif %}
+</header>
+{%- endmacro %}
+
+{% macro period_picker(view) -%}
+<div id="period-picker" class="flex flex-col gap-3">
+  <div class="max-w-full overflow-x-auto">
+    {{ segmented_control(view.presets, label="Home period") }}
+  </div>
+  {%- if view.selection.key == "custom" %}
+  <form id="custom-range" class="flex flex-wrap items-end gap-3 rounded-lg bg-surface-inset p-3" method="get" action="/">
+    <input type="hidden" name="period" value="custom">
+    <label class="form-field w-40">
+      <span class="form-field__label">From</span>
+      <input type="date" name="start" value="{{ view.selection.start }}" required class="form-field__input">
+    </label>
+    <label class="form-field w-40">
+      <span class="form-field__label">To</span>
+      <input type="date" name="end" value="{{ view.selection.end }}" required class="form-field__input">
+    </label>
+    <button type="submit" class="inline-flex items-center rounded-md border border-secondary bg-transparent px-3 py-2 text-sm font-medium text-primary hover:bg-surface-hover focus-ring">Show</button>
+  </form>
+  {%- endif %}
+  {%- if view.selection.error %}
+  <p class="text-sm text-destructive" role="alert">{{ view.selection.error }}</p>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# With no transactions yet there is nothing to chart, so the page points to where accounts are added. #}
+{% macro first_run() -%}
+<section class="flex max-w-xl flex-col gap-3 rounded-xl bg-container p-8 shadow-border-xs" aria-labelledby="first-run-title">
+  <div class="mb-1 text-primary">{{ mascot(96) }}</div>
+  <h2 id="first-run-title" class="text-lg font-medium text-primary">Welcome to omsync</h2>
+  <p class="text-sm text-secondary">Add a provider for an institution, then import its statements. Cash flow, spending, and outflows appear here once there are transactions.</p>
+  <div>
+    {{ link_button("Go to Settings, Bank sync", href="/settings/providers", variant="outline", size="sm") }}
+  </div>
+</section>
+{%- endmacro %}
+
+{# The sections in the saved order. The controller on the wrapper handles the drag and the keyboard,
+   and saves the layout to /home/layout. The status line is read aloud after a keyboard move.
+   The wrapper is a size container: two columns apply only while it is wide enough for them, so the
+   open accounts panel or a narrow window falls back to one column, and the width controls hide. #}
+{% macro sections(view) -%}
+<div class="@container" data-controller="dashboard-sortable" data-action="dragover->dashboard-sortable#dragOver drop->dashboard-sortable#drop dashboard-layout-changed->dashboard-sortable#save">
+  <p class="sr-only" aria-live="polite" data-dashboard-sortable-target="status"></p>
+  <div class="mb-3 hidden justify-end @4xl:flex">
+    <button type="button" aria-pressed="{{ 'true' if view.columns == 2 else 'false' }}"
+      class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-secondary hover:bg-container-inset-hover hover:text-primary aria-pressed:text-primary focus-ring"
+      data-dashboard-sortable-target="columnsButton"
+      data-action="dashboard-sortable#toggleColumns">
+      {{ icon("columns-2", 16) }}Two columns
+    </button>
+  </div>
+  <div id="home-sections" class="group grid grid-cols-1 gap-6 data-[columns=2]:@4xl:grid-cols-2" role="list" aria-label="Home sections"
+    data-columns="{{ view.columns }}" data-dashboard-sortable-target="list">
+    {%- for section in view.sections %}
+    {{ section_card(section, view) }}
+    {%- endfor %}
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro section_card(section, view) -%}
+<section role="listitem" class="flex min-w-0 flex-col rounded-xl bg-container shadow-border-xs group-data-[columns=2]:@4xl:data-[width=full]:col-span-2"
+  data-dashboard-sortable-target="section"
+  data-section-key="{{ section.key }}"
+  data-width="{{ 'half' if section.half else 'full' }}"
+  data-controller="dashboard-section"
+  data-dashboard-section-collapsed-value="{{ 'true' if section.collapsed else 'false' }}"
+  data-collapsed="{{ 'true' if section.collapsed else 'false' }}">
+  <header role="group" tabindex="0" draggable="true"
+    aria-label="{{ section.title }}. Press Enter or Space to grab, then arrow keys to move, and Enter or Space to drop."
+    class="flex cursor-grab items-center justify-between gap-2 rounded-t-xl px-4 py-3 focus-ring active:cursor-grabbing"
+    data-action="dragstart->dashboard-sortable#dragStart dragend->dashboard-sortable#dragEnd keydown->dashboard-sortable#handleKeyDown">
+    <div class="flex items-center gap-2">
+      <button type="button"
+        class="inline-flex size-6 items-center justify-center rounded-md text-secondary hover:bg-container-inset-hover hover:text-primary focus-ring"
+        aria-label="Toggle {{ section.title }}"
+        aria-controls="{{ section.key }}-body"
+        aria-expanded="{{ 'false' if section.collapsed else 'true' }}"
+        data-dashboard-section-target="button"
+        data-action="dashboard-section#toggle">
+        <span class="inline-flex transition-transform{% if section.collapsed %} -rotate-90{% endif %}" data-dashboard-section-target="chevron">{{ icon("chevron-down", 16) }}</span>
+      </button>
+      <h2 class="text-base font-medium text-primary">{{ section.title }}</h2>
+      {%- if section.scope %}
+      {{ pill(section.scope, tone="neutral") }}<span class="sr-only">Relative to today, not the selected period</span>
+      {%- endif %}
+    </div>
+    <div class="flex items-center gap-1 text-secondary">
+      <button type="button"
+        class="hidden size-6 items-center justify-center rounded-md hover:bg-container-inset-hover hover:text-primary aria-pressed:text-primary focus-ring group-data-[columns=2]:@4xl:inline-flex"
+        aria-label="Half width: {{ section.title }}"
+        aria-pressed="{{ 'true' if section.half else 'false' }}"
+        data-dashboard-sortable-target="widthButton"
+        data-action="dashboard-sortable#toggleWidth">
+        {{ icon("columns-2", 16) }}
+      </button>
+      <span aria-hidden="true">{{ icon("grip-vertical", 16) }}</span>
+    </div>
+  </header>
+  <div id="{{ section.key }}-body" class="px-4 pb-4" data-dashboard-section-target="content"{% if section.collapsed %} hidden{% endif %}>
+    {%- if section.key == "cash_flow" %}
+    {{ cash_flow_body(view.flows) }}
+    {%- elif section.key == "spending_trend" %}
+    {{ trend_body(view.trend) }}
+    {%- elif section.key == "outflows" %}
+    {{ outflows_body(view.outflows) }}
+    {%- elif section.key == "attention" %}
+    {{ attention_body(view.attention) }}
+    {%- elif section.key == "upcoming" %}
+    {{ upcoming_body(view.upcoming) }}
+    {%- elif section.key == "budget" %}
+    <div class="flex flex-col gap-4">{{ budget_card_body(view.budget) }}</div>
+    {%- elif section.key == "goals" %}
+    <div class="flex flex-col gap-4">
+      {{ goals_card_body(view.goals) }}
+      {{ link_button("All goals", href="/plan/goals", variant="secondary", size="sm", icon="chevron-right", icon_position="right", full_width=true) }}
+    </div>
+    {%- endif %}
+  </div>
+</section>
+{%- endmacro %}
+
+{# What needs a look, each row a link to the page that lists exactly what it counts. A row with a
+   count is a kind of item; a row with a badge is one account or provider. #}
+{% macro attention_body(attention) -%}
+{%- if attention.rows %}
+<ul class="flex flex-col" aria-label="Items that need attention">
+  {%- for row in attention.rows %}
+  <li class="border-t border-subdued first:border-t-0">
+    <a href="{{ row.href }}" class="flex items-center gap-3 rounded-sm py-3 hover:bg-container-hover focus-ring">
+      <span class="flex min-w-0 grow flex-col">
+        <span class="truncate text-sm font-medium text-primary">{{ row.label }}</span>
+        <span class="truncate text-xs text-secondary">{{ row.detail }}</span>
+      </span>
+      {%- if row.count is not none %}
+      {{ pill(row.count, tone="warning") }}
+      {%- else %}
+      {{ pill(row.badge, tone=row.tone) }}
+      {%- endif %}
+      <span class="shrink-0 text-secondary" aria-hidden="true">{{ icon("chevron-right", 16) }}</span>
+    </a>
+  </li>
+  {%- endfor %}
+</ul>
+{%- else %}
+<p class="flex items-center gap-2 text-sm text-secondary"><span class="text-success">{{ icon("circle-check", 20) }}</span>Nothing needs attention.</p>
+{%- endif %}
+{%- endmacro %}
+
+{# Confirmed recurring payments still to come in the next two weeks. They are expected, not posted,
+   so they are labelled so and kept apart from the period's figures. #}
+{% macro upcoming_body(upcoming) -%}
+<div class="flex flex-col gap-4">
+  <dl class="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+    <div class="flex items-baseline gap-2"><dt class="text-secondary">Expected in</dt><dd class="font-medium tabular-nums text-success">{{ upcoming.inflow|sensitive }}</dd></div>
+    <div class="flex items-baseline gap-2"><dt class="text-secondary">Expected out</dt><dd class="font-medium tabular-nums text-primary">{{ upcoming.outflow|sensitive }}</dd></div>
+  </dl>
+  {%- if upcoming.rows %}
+  <ul class="flex flex-col" aria-label="Expected recurring payments, {{ upcoming.range }}">
+    {%- for row in upcoming.rows %}
+    <li class="flex items-center gap-3 border-t border-subdued py-2 text-sm first:border-t-0">
+      <span class="min-w-0 grow truncate font-medium text-primary">{{ row.name }}</span>
+      <span class="shrink-0 text-xs text-secondary">{{ row.due }}</span>
+      <span class="w-24 shrink-0 text-right tabular-nums {{ 'text-success' if row.inflow else 'text-primary' }}"><span class="sr-only">{{ 'Expected in' if row.inflow else 'Expected out' }} </span>{{ ('+' if row.inflow else '-') ~ row.amount|sensitive }}</span>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="text-sm text-secondary">No confirmed recurring payments are due in the next two weeks.</p>
+  {%- endif %}
+  <p class="text-xs text-secondary">Expected from confirmed recurring series, not posted to the ledger yet.</p>
+  {{ link_button("Open recurring", href="/recurring", variant="secondary", size="sm", icon="chevron-right", icon_position="right", full_width=true) }}
+</div>
+{%- endmacro %}
+
+{# Income, expenses and net, then the sankey. The sankey's SVG is drawn by the controller. #}
+{% macro cash_flow_body(flows) -%}
+<div class="flex flex-col gap-4">
+  <dl class="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+    <div class="flex items-baseline gap-2"><dt class="text-secondary">Income</dt><dd class="font-medium tabular-nums text-primary">{{ flows.income|sensitive }}</dd></div>
+    <div class="flex items-baseline gap-2"><dt class="text-secondary">Expenses</dt><dd class="font-medium tabular-nums text-primary">{{ flows.expenses|sensitive }}</dd></div>
+    <div class="flex items-baseline gap-2"><dt class="text-secondary">Net</dt><dd class="font-medium tabular-nums {{ flows.net_tone }}">{{ flows.net|sensitive }}</dd></div>
+  </dl>
+  {%- if flows.has_flows %}
+  <div class="relative h-96 w-full" role="img" aria-label="{{ flows.label }}" data-controller="sankey-chart" data-sankey-chart-data-value='{{ flows.data|tojson }}'></div>
+  {%- else %}
+  <p class="text-sm text-secondary">No income or spending in this period.</p>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# This period's running total against the period before it of the same length, day by day. #}
+{% macro trend_body(trend) -%}
+<div class="flex flex-col gap-4">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="flex min-w-0 items-center gap-3">
+      <span class="h-10 w-1 shrink-0 rounded-full bg-success" aria-hidden="true"></span>
+      <div class="min-w-0">
+        <p class="text-sm text-primary">This period <span class="text-xs text-secondary">{{ trend.current_range }}</span></p>
+        <p class="flex flex-wrap items-baseline gap-x-2">
+          <span class="text-lg font-medium tabular-nums text-primary">{{ trend.current_total|sensitive }}</span>
+          <span class="text-sm tabular-nums {{ trend.change_tone }}">{{ trend.change|sensitive }}</span>
+        </p>
+      </div>
+    </div>
+    <div class="flex min-w-0 items-center gap-3">
+      <span class="h-10 w-1 shrink-0 rounded-full bg-gray-400" aria-hidden="true"></span>
+      <div class="min-w-0">
+        <p class="text-sm text-secondary">Previous period <span class="text-xs">{{ trend.previous_range }}</span></p>
+        <p class="text-lg font-medium tabular-nums text-secondary">{{ trend.previous_total|sensitive }}</p>
+      </div>
+    </div>
+  </div>
+  {%- if trend.has_spending %}
+  <div class="relative h-56 w-full" role="img" aria-label="Cumulative spending by day. This period: {{ trend.current_total }}. Previous period: {{ trend.previous_total }}." data-controller="spending-chart" data-spending-chart-data-value='{{ trend.data|tojson }}'></div>
+  {%- else %}
+  <p class="text-sm text-secondary">No spending in these two periods.</p>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# The donut and the legend. Hovering a legend row highlights its segment, and the reverse. Each
+   category links to the register, filtered to it and the period. Other is not a link. #}
+{% macro outflows_body(outflows) -%}
+{%- if outflows.has_spending %}
+<div class="flex flex-col gap-6 md:flex-row md:items-center" data-controller="donut-chart" data-donut-chart-data-value='{{ outflows.data|tojson }}'>
+  <div class="relative mx-auto h-64 w-64 shrink-0" role="img" aria-label="Outflows, total {{ outflows.total }}">
+    <div data-donut-chart-target="chart" class="absolute inset-0" aria-hidden="true"></div>
+    <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+      <p class="text-sm text-secondary" data-donut-chart-target="label">Total outflows</p>
+      <p class="max-w-full truncate text-2xl font-medium tabular-nums text-primary" data-donut-chart-target="amount">{{ outflows.total|sensitive }}</p>
+    </div>
+  </div>
+  <ul class="flex min-w-0 grow flex-col" aria-label="Outflows by category">
+    {%- for row in outflows.rows %}
+    <li class="flex items-center gap-3 border-t border-subdued py-2 first:border-t-0"
+      data-segment="{{ row.segment }}"
+      data-action="mouseenter->donut-chart#highlight focusin->donut-chart#highlight mouseleave->donut-chart#reset focusout->donut-chart#reset">
+      <span class="inline-block size-2.5 shrink-0 rounded-full" style="background-color: {{ row.color }}" aria-hidden="true"></span>
+      <span class="min-w-0 grow truncate text-sm">
+        {%- if row.href %}<a href="{{ row.href }}" class="font-medium text-primary underline-offset-2 hover:underline focus-ring rounded-sm">{{ row.name }}</a>{% else %}<span class="font-medium text-primary">{{ row.name }}</span>{% endif -%}
+        {%- if row.detail %} <span class="text-xs text-subdued">{{ row.detail }}</span>{% endif %}
+      </span>
+      <span class="shrink-0 text-sm tabular-nums text-primary">{{ row.amount|sensitive }}</span>
+      <span class="w-16 shrink-0 text-right text-sm tabular-nums text-secondary">{{ row.share }}</span>
+    </li>
+    {%- endfor %}
+  </ul>
+</div>
+{%- else %}
+<p class="text-sm text-secondary">No spending in this period.</p>
+{%- endif %}
+{%- endmacro %}

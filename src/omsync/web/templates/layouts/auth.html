@@ -1,0 +1,12 @@
+{# Layout for the sign-in page: one centred column on the page surface, so it reads correctly in
+   both themes. Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/layouts/auth.html.erb.
+   The sign-up tabs and footer are left out. Extends layouts/app.html for its head. #}
+{% extends "layouts/app.html" %}
+
+{% block content %}
+<div class="flex min-h-dvh flex-col items-center justify-center bg-surface px-6 py-12">
+  <div class="flex w-full max-w-sm flex-col gap-6">
+    {% block auth %}{% endblock %}
+  </div>
+</div>
+{% endblock %}

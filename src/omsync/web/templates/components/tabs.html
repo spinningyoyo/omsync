@@ -1,0 +1,25 @@
+{# Adapted from Sure (we-promise/sure), AGPL-3.0: app/components/DS/tabs.rb, tabs.html.erb,
+   tabs/nav.rb, tabs/panel.rb and tabs_controller.js. Tabs with panels, styled as Sure's default
+   variant. The Stimulus "tabs" controller switches them.
+
+   items: list of {id, label, body}. body is HTML (use a {% set %} block for markup).
+   active: the id of the tab shown first. id: a prefix that keeps DOM ids unique on the page.
+   fill: set on a page in fill mode (see layouts/shell.html). The wrapper and the panels join its
+   chain, and a panel whose item sets scroll is itself the scrolling region. #}
+
+{% macro tabs(id, items, active, label, fill=false) -%}
+{%- set active_class = "tab-item-active text-primary shadow-sm" -%}
+{%- set inactive_class = "text-secondary hover:bg-surface-inset-hover" -%}
+<div{% if fill %} class="fill-chain"{% endif %} data-controller="tabs" data-tabs-active-value="{{ active }}" data-tabs-active-class="{{ active_class }}" data-tabs-inactive-class="{{ inactive_class }}">
+  <div role="tablist" aria-label="{{ label }}" class="flex bg-surface-inset p-1 rounded-lg mb-4">
+    {%- for item in items %}
+    <button type="button" role="tab" id="{{ id }}-tab-{{ item.id }}" aria-controls="{{ id }}-panel-{{ item.id }}" data-id="{{ item.id }}" data-tabs-target="tab" data-action="click->tabs#select keydown->tabs#keydown" class="w-full inline-flex justify-center items-center text-sm font-medium px-2 py-1 rounded-md motion-safe:transition-colors motion-safe:duration-200 focus-ring {{ active_class if item.id == active else inactive_class }}">{{ item.label }}</button>
+    {%- endfor %}
+  </div>
+  {%- for item in items %}
+  <div role="tabpanel" id="{{ id }}-panel-{{ item.id }}" aria-labelledby="{{ id }}-tab-{{ item.id }}" tabindex="0" data-id="{{ item.id }}" data-tabs-target="panel" class="focus-ring{% if fill %} {{ 'fill-region -m-1 p-1' if item.scroll else 'fill-chain' }}{% endif %}{% if item.id != active %} hidden{% endif %}">
+    {{ item.body }}
+  </div>
+  {%- endfor %}
+</div>
+{%- endmacro %}

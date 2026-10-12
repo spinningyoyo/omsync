@@ -1,0 +1,26 @@
+{# Brand marks. The wordmark rotates through omsync, ออมสิน (om sĭn) and om sĭn with CSS only
+   (styles/brand.css). Only the first word is announced: the container has aria-label="omsync", and
+   the cycling words are hidden from screen readers. Under reduced motion only "omsync" shows.
+   The mascot is the pixel elephant (static/img/mascot.svg, inlined by web/brand.py). It blinks
+   as each new word slides in; both animations read the same timing tokens in brand.css, so
+   wherever the two sit together they stay in step. It is decorative and hidden from screen
+   readers. Usage:
+     {% from "components/brand.html" import wordmark, mascot with context %}
+     {{ wordmark("lg") }}   {{ mascot(120) }} #}
+
+{# size is "lg" (sign-in) or "sm" (the rail and the phone header). #}
+{% macro wordmark(size="lg", class_="") -%}
+<span class="brand-wordmark brand-wordmark--{{ size }}{% if class_ %} {{ class_ }}{% endif %}" role="img" aria-label="omsync">
+  <span class="brand-wordmark__roll" aria-hidden="true">
+    <span class="brand-wordmark__word">omsync</span>
+    <span class="brand-wordmark__word">ออมสิน</span>
+    <span class="brand-wordmark__word">om sĭn</span>
+    <span class="brand-wordmark__word">omsync</span>
+  </span>
+</span>
+{%- endmacro %}
+
+{# width is in pixels; the height follows from the 32 x 22 grid. #}
+{% macro mascot(width=96, class_="") -%}
+{{ mascot_svg(width, class_) }}
+{%- endmacro %}

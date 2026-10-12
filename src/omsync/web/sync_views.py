@@ -1,0 +1,104 @@
+"""View data for the Bank sync status region: its headline, one line per provider, and the question
+waiting for an answer. Nothing here reads the database or the vault."""
+
+from dataclasses import dataclass
+
+from omsync.web.sync_runner import (
+    ALL,
+    JobPhase,
+    JobView,
+    ProviderPhase,
+    ProviderProgress,
+    Question,
+)
+
+LABELS: dict[ProviderPhase, str] = {
+    ProviderPhase.queued: "Queued",
+    ProviderPhase.running: "Running",
+    ProviderPhase.waiting: "Waiting for your answer",
+    ProviderPhase.succeeded: "Succeeded",
+    ProviderPhase.failed: "Failed",
+    ProviderPhase.needs_action: "Needs you",
+}
+TONES: dict[ProviderPhase, str] = {
+    ProviderPhase.queued: "text-secondary",
+    ProviderPhase.running: "text-primary",
+    ProviderPhase.waiting: "text-primary",
+    ProviderPhase.succeeded: "text-success",
+    ProviderPhase.failed: "text-destructive",
+    ProviderPhase.needs_action: "text-destructive",
+}
+
+
+@dataclass(frozen=True)
+class ProviderLineView:
+    key: str
+    label: str
+    detail: str
+    tone: str
+    link: bool  # statement accounts are unlinked, so the person can link them now
+
+
+@dataclass(frozen=True)
+class SyncStatusView:
+    running: bool
+    headline: str
+    lines: list[ProviderLineView]
+    question: Question | None
+    question_number: int  # 0 when no question waits; a poll reports the one it shows
+
+
+def sync_status_view(view: JobView) -> SyncStatusView:
+    return SyncStatusView(
+        running=view.phase is JobPhase.running,
+        headline=_headline(view),
+        lines=[_line(progress) for progress in view.providers],
+        question=view.question,
+        question_number=view.question.number if view.question is not None else 0,
+    )
+
+
+def _headline(view: JobView) -> str:
+    if view.phase is JobPhase.idle:
+        return "No sync has run from this page yet."
+    if view.phase is JobPhase.running:
+        target = "every enabled provider" if view.scope == ALL else view.scope
+        return f"Syncing {target}."
+    if view.scope != ALL:
+        return "Finished."
+    succeeded = sum(1 for item in view.providers if item.phase is ProviderPhase.succeeded)
+    return f"Finished. {succeeded} of {len(view.providers)} succeeded."
+
+
+def _line(progress: ProviderProgress) -> ProviderLineView:
+    return ProviderLineView(
+        key=progress.key,
+        label=LABELS[progress.phase],
+        detail=_detail(progress),
+        tone=TONES[progress.phase],
+        link=bool(progress.unlinked),
+    )
+
+
+def _detail(progress: ProviderProgress) -> str:
+    if progress.phase is ProviderPhase.succeeded:
+        files = "1 file" if progress.files_fetched == 1 else f"{progress.files_fetched} files"
+        detail = (
+            f"{files} fetched. Imported: created {progress.created}, "
+            f"joined {progress.joined}, review {progress.review}."
+        )
+        if progress.auto_linked:
+            pairs = "1 pair" if progress.auto_linked == 1 else f"{progress.auto_linked} pairs"
+            detail += f" Linked {pairs} automatically."
+        if progress.linked:
+            digits = ", ".join(f"••{last4}" for last4 in progress.linked)
+            detail += f" Linked {digits} to the accounts that end the same."
+        return detail
+    if progress.phase in (ProviderPhase.failed, ProviderPhase.needs_action):
+        message = progress.message or ""
+        if progress.created or progress.joined:
+            message += f" Imported the rest: created {progress.created}, joined {progress.joined}."
+        return message
+    if progress.phase is ProviderPhase.waiting:
+        return "Answer the question below."
+    return ""

@@ -1,0 +1,607 @@
+{# The Reconcile page's parts: the range picker, the results region, the link dialog's body, and
+   the undo toast. Each macro imports what it uses, because a fragment block renders without this
+   file's top level. Actions are htmx posts from inside #reconcile-results, which swaps itself
+   outerHTML; each button carries its own idempotency key from routes/reconcile.py. #}
+{% from "components/alert.html" import alert with context %}
+{% from "components/button.html" import button, link_button %}
+{% from "components/pill.html" import pill with context %}
+{% from "layouts/shell_parts.html" import empty_state %}
+
+{% macro range_picker(start, end, presets, active) -%}
+<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="reconcile-range-title">
+  <h2 id="reconcile-range-title" class="sr-only">Range</h2>
+  <div class="flex flex-wrap gap-2" role="group" aria-label="Presets">
+    {%- for preset in presets %}
+    {{ link_button(preset.label, href="/reconcile?start=" ~ preset.start ~ "&end=" ~ preset.end, variant="primary" if preset.key == active else "outline", size="sm", attrs={"aria-current": "true"} if preset.key == active else none) }}
+    {%- endfor %}
+  </div>
+  <form method="get" action="/reconcile" class="flex flex-wrap items-end gap-3">
+    <label class="form-field w-auto">
+      <span class="form-field__label">From</span>
+      <input type="date" name="start" value="{{ start }}" class="form-field__input" required>
+    </label>
+    <label class="form-field w-auto">
+      <span class="form-field__label">To</span>
+      <input type="date" name="end" value="{{ end }}" class="form-field__input" required>
+    </label>
+    {{ button("Run", variant="primary", type="submit") }}
+  </form>
+</section>
+{%- endmacro %}
+
+{# The results region. Its buttons inherit the target and swap, so each action replaces it. #}
+{% macro results_region(results, notice, start, end, oob=false) -%}
+{% from "components/pill.html" import pill with context %}
+<section id="reconcile-results" class="flex flex-col gap-6" hx-target="#reconcile-results" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {%- if notice %}
+  {{ alert(notice, variant="warning", live="status") }}
+  {%- endif %}
+  <p class="text-sm text-secondary">
+    Needs you: {{ results.needs_you }}
+    ({{ results.queue_counts[1][1] }} to review, {{ results.queue_counts[2][1] }} to choose, {{ results.not_matched|length }} not matched).
+    Of {{ results.proposal_count }} proposal{{ '' if results.proposal_count == 1 else 's' }}
+    {%- for label, count in results.queue_counts %}, {{ count }} {{ label|lower }}{% endfor %}.
+    Automatic proposals are linked after each import; the rest wait for you.
+  </p>
+
+  {%- if results.groups %}
+  {%- for group in results.groups %}
+  {{ proposal_group(group, start, end) }}
+  {%- endfor %}
+  {%- else %}
+  {{ empty_state("No proposals in this range", "The rules found no links to propose. Transactions that should have a counterpart and do not are listed under Not matched.", mascot=true) }}
+  {%- endif %}
+
+  {{ not_matched_card(results.not_matched, start, end) }}
+
+  {%- for vendor in results.vendors %}
+  {{ receipts_card(vendor, start, end) }}
+  {%- endfor %}
+
+  {{ explained_card(results.explained, start, end) }}
+  {{ unmatched_card(results.unmatched, start, end) }}
+  {{ linked_card(results.linked, start, end) }}
+  {{ tally_card(results.tally) }}
+</section>
+{%- endmacro %}
+
+{# A notice with no results behind it: a stale run, or a range the page cannot use. #}
+{% macro stale_region(message, start, end) -%}
+{% from "components/alert.html" import alert with context %}
+{% from "components/button.html" import link_button %}
+<section id="reconcile-results" class="flex flex-col gap-4" hx-target="#reconcile-results" hx-swap="outerHTML">
+  {{ alert(message, variant="warning", live="status") }}
+  {{ link_button("Run again", href="/reconcile?start=" ~ start ~ "&end=" ~ end, variant="outline", size="sm") }}
+</section>
+{%- endmacro %}
+
+{% macro notice_region(message) -%}
+{% from "components/alert.html" import alert with context %}
+<section id="reconcile-results" class="flex flex-col gap-4" hx-target="#reconcile-results" hx-swap="outerHTML">
+  {{ alert(message, variant="warning", live="status") }}
+</section>
+{%- endmacro %}
+
+{# One group of proposals. Its three actions act on the rows checked here, or on its auto rows. #}
+{% macro proposal_group(group, start, end) -%}
+{% set auto_count = group.auto_signatures|length %}
+<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="group-{{ group.key }}">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h2 id="group-{{ group.key }}" class="font-medium text-primary">{{ group.title }} <span class="text-sm text-secondary">({{ group.rows|length }})</span></h2>
+    <div class="flex flex-wrap gap-2">
+      {{ button("Approve all auto (" ~ auto_count ~ ")", variant="outline", size="sm", disabled=auto_count == 0, attrs={
+        "hx-post": "/reconcile/approve",
+        "hx-include": "input[data-auto='" ~ group.key ~ "']",
+        "hx-vals": {"start": start, "end": end, "idempotency_key": group.auto_key}|tojson|forceescape,
+      }) }}
+      {{ button("Approve selected", variant="primary", size="sm", attrs={
+        "hx-post": "/reconcile/approve",
+        "hx-include": "input[data-pick='" ~ group.key ~ "']:checked",
+        "hx-vals": {"start": start, "end": end, "idempotency_key": group.approve_key}|tojson|forceescape,
+      }) }}
+      {{ button("Reject selected", variant="outline", size="sm", attrs={
+        "hx-post": "/reconcile/reject",
+        "hx-include": "input[data-pick='" ~ group.key ~ "']:checked",
+        "hx-vals": {"start": start, "end": end, "idempotency_key": group.reject_key}|tojson|forceescape,
+      }) }}
+    </div>
+  </div>
+  {%- for row in group.rows if row.queue == "auto_approve" %}
+  <input type="hidden" name="signature" value="{{ row.signature }}" data-auto="{{ group.key }}">
+  {%- endfor %}
+  <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="{{ group.title }} proposals">
+    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+      <thead>
+        <tr>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Select</span></th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Money out</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Money in</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Confidence</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Queue</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Evidence</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {%- for row in group.rows %}
+        <tr>
+          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+            <input type="checkbox" class="checkbox" name="signature" value="{{ row.signature }}" data-pick="{{ group.key }}" aria-label="Select this proposal">
+          </td>
+          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">{{ side_cell(row.money_out) }}</td>
+          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">{{ side_cell(row.money_in) }}</td>
+          <td class="px-3 py-3 align-top text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.confidence }}</td>
+          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">{{ pill(row.queue_label, tone=row.queue_tone, style="soft") }}</td>
+          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+            <div class="flex max-w-md flex-wrap gap-1">
+              {%- for chip in row.chips %}{{ pill(chip, tone="gray", style="outline") }}{% endfor %}
+            </div>
+            {%- for note in row.notes %}
+            <p class="mt-1 text-xs text-secondary">{{ note }}</p>
+            {%- endfor %}
+          </td>
+          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+            <div class="flex flex-col gap-2">
+              {{ button("Approve", variant="primary", size="sm", attrs={
+                "hx-post": "/reconcile/approve",
+                "hx-vals": {"start": start, "end": end, "signature": row.signature, "idempotency_key": row.approve_key}|tojson|forceescape,
+              }) }}
+              {{ button("Reject", variant="outline", size="sm", attrs={
+                "hx-post": "/reconcile/reject",
+                "hx-vals": {"start": start, "end": end, "signature": row.signature, "idempotency_key": row.reject_key}|tojson|forceescape,
+              }) }}
+            </div>
+          </td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{%- endmacro %}
+
+{% macro side_cell(side) -%}
+{%- if side %}
+<div class="flex min-w-0 flex-col">
+  <span class="text-xs text-secondary">{{ side.on }} · {{ side.account }}</span>
+  <span class="text-primary">{{ side.payee }}</span>
+  <span class="tabular-nums {{ 'text-success' if side.cents > 0 else 'text-primary' }}">{{ side.amount }}</span>
+</div>
+{%- else %}
+<span class="text-sm text-secondary">No match on this side</span>
+{%- endif %}
+{%- endmacro %}
+
+{% macro receipts_card(vendor, start, end) -%}
+<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="receipts-{{ vendor.key }}">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h2 id="receipts-{{ vendor.key }}" class="font-medium text-primary">{{ vendor.title }} receipts in this period</h2>
+      <p class="text-sm text-secondary">{{ vendor.files }} file{{ '' if vendor.files == 1 else 's' }} and {{ vendor.receipts }} receipt{{ '' if vendor.receipts == 1 else 's' }} read from your receipts folder. Matching uses all history; only charges whose transaction posted in this period are applied.</p>
+    </div>
+    {{ button("Apply " ~ vendor.to_apply ~ " " ~ vendor.title ~ " receipt" ~ ('' if vendor.to_apply == 1 else 's') ~ " in this period", variant="primary", size="sm", disabled=vendor.to_apply == 0, attrs={
+      "hx-post": "/reconcile/receipts/" ~ vendor.key ~ "/apply",
+      "hx-vals": {"start": start, "end": end, "expected": vendor.apply_digest, "idempotency_key": vendor.apply_key}|tojson|forceescape,
+    }) }}
+  </div>
+  {%- if vendor.files == 0 %}
+  <p class="text-sm text-secondary">No exports yet. Put this vendor's files in its folder under receipts, then run again.</p>
+  {%- endif %}
+  <dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm sm:grid-cols-[repeat(4,auto)_1fr]">
+    {%- for label, count in vendor.counts %}
+    <dt class="text-secondary">{{ label }}</dt>
+    <dd class="tabular-nums text-primary">{{ count }}</dd>
+    {%- endfor %}
+  </dl>
+  {%- if vendor.review %}
+  <details class="text-sm">
+    <summary class="cursor-pointer text-primary">Needs review ({{ vendor.review|length }})</summary>
+    <ul class="mt-2 flex flex-col gap-1 break-words text-secondary">
+      {%- for line in vendor.review %}
+      <li>{{ line }}</li>
+      {%- endfor %}
+    </ul>
+  </details>
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{# Transactions whose wording says a counterpart should exist, with no link or proposal for them. #}
+{% macro not_matched_card(rows, start, end) -%}
+<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="not-matched-title">
+  <div>
+    <h2 id="not-matched-title" class="font-medium text-primary">Not matched <span class="text-sm text-secondary">({{ rows|length }})</span></h2>
+    <p class="text-sm text-secondary">Transfers, card payments, and payments from people whose other side is not linked or proposed. Link one by hand, or say that none is expected.</p>
+  </div>
+  {%- if rows %}
+  <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Not matched transactions">
+    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+      <thead>
+        <tr>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Account</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Description</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Category</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {%- for row in rows %}
+        <tr>
+          <td class="px-3 py-3 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.on }}</td>
+          <td class="px-3 py-3 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.account }}</td>
+          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+            <span class="break-words">{{ row.description }}</span>
+            {%- if row.hint %}
+            <p class="mt-1 text-xs text-secondary">{{ row.hint }}</p>
+            {%- endif %}
+          </td>
+          <td class="px-3 py-3 align-top text-secondary{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.category }}</td>
+          <td class="px-3 py-3 align-top text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.amount }}</td>
+          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+            <div class="flex flex-col items-end gap-2">
+              {{ button("Link manually…", variant="outline", size="sm", attrs={
+                "hx-get": "/reconcile/link?txn=" ~ row.txn_id ~ "&start=" ~ start ~ "&end=" ~ end,
+                "hx-target": "#reconcile-link-body",
+                "hx-swap": "innerHTML",
+                "data-action": "page-dialogs#openDialog",
+                "data-dialog-id": "reconcile-link-dialog",
+              }) }}
+              {{ button("No match expected…", variant="outline", size="sm", attrs={
+                "hx-get": "/reconcile/acknowledge?scope=transaction&txn=" ~ row.txn_id ~ "&start=" ~ start ~ "&end=" ~ end,
+                "hx-target": "#reconcile-ack-body",
+                "hx-swap": "innerHTML",
+                "data-action": "page-dialogs#openDialog",
+                "data-dialog-id": "reconcile-ack-dialog",
+              }) }}
+              {{ button("None expected from this counterparty…", variant="outline", size="sm", attrs={
+                "hx-get": "/reconcile/acknowledge?scope=counterparty&txn=" ~ row.txn_id ~ "&start=" ~ start ~ "&end=" ~ end,
+                "hx-target": "#reconcile-ack-body",
+                "hx-swap": "innerHTML",
+                "data-action": "page-dialogs#openDialog",
+                "data-dialog-id": "reconcile-ack-dialog",
+              }) }}
+            </div>
+          </td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+  {%- else %}
+  <p class="text-sm text-secondary">Nothing in this range is waiting for a counterpart.</p>
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{# What would be Not matched, with the reason it needs nothing from you. None of it is a link. #}
+{% macro explained_card(rows, start, end) -%}
+<details class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs">
+  <summary class="cursor-pointer font-medium text-primary">Explained ({{ rows|length }})</summary>
+  {%- if rows %}
+  <p class="text-sm text-secondary">Expected to have a counterpart, but you or the ledger have explained why not. These are not reconciled: only links reconcile a transaction.</p>
+  <div class="table-scroll rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Explained transactions">
+    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+      <thead>
+        <tr>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Account</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Description</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Why</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {%- for row in rows %}
+        <tr>
+          <td class="px-3 py-2 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.on }}</td>
+          <td class="px-3 py-2 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.account }}</td>
+          <td class="px-3 py-2 align-top break-words{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.description }}</td>
+          <td class="px-3 py-2 align-top text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.amount }}</td>
+          <td class="px-3 py-2 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+            <span>{{ row.reason }}</span>
+            {%- if row.shared_words %}
+            <p class="mt-1 text-xs text-secondary">Shared words: {{ row.shared_words }}</p>
+            {%- endif %}
+          </td>
+          <td class="px-3 py-2 align-top text-right{% if not loop.first %} border-t border-subdued{% endif %}">
+            {%- if row.by == "acknowledged" %}
+            {{ button("Remove", variant="outline", size="sm", attrs={
+              "hx-post": "/reconcile/acknowledgments/" ~ row.acknowledgment_id ~ "/remove",
+              "hx-vals": {"start": start, "end": end, "idempotency_key": row.remove_key}|tojson|forceescape,
+            }) }}
+            {%- elif row.by == "counterparty" %}
+            <div class="flex flex-col items-end gap-2">
+              {{ button("Expect matches again", variant="outline", size="sm", attrs={
+                "hx-post": "/reconcile/counterparties/" ~ row.counterparty_id ~ "/expect-match",
+                "hx-vals": {"start": start, "end": end, "idempotency_key": row.remove_key}|tojson|forceescape,
+              }) }}
+              {{ link_button("Counterparties", href="/settings/counterparties", variant="outline", size="sm") }}
+            </div>
+            {%- endif %}
+          </td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+  {%- else %}
+  <p class="text-sm text-secondary">Nothing in this range is explained without a link.</p>
+  {%- endif %}
+</details>
+{%- endmacro %}
+
+{% macro unmatched_card(rows, start, end) -%}
+<details class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs">
+  <summary class="cursor-pointer font-medium text-primary">Link by hand ({{ rows|length }})</summary>
+  {%- if rows %}
+  <p class="text-sm text-secondary">Every transaction with an amount that no link explains yet, whether or not it should have a counterpart. Link one by hand, or leave it.</p>
+  <div class="table-scroll rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Transactions to link by hand">
+    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+      <thead>
+        <tr>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Account</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Payee</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Open amount</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {%- for row in rows %}
+        <tr>
+          <td class="px-3 py-2 whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.on }}</td>
+          <td class="px-3 py-2 whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.account }}</td>
+          <td class="px-3 py-2{% if not loop.first %} border-t border-subdued{% endif %}">
+            {{ row.payee }}
+            {%- if row.proposed %} {{ pill("Proposed", tone="indigo", style="soft") }}{% endif %}
+            {%- if row.partly_linked %} {{ pill("Partly linked", tone="gray", style="soft") }}{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.open_amount }}</td>
+          <td class="px-3 py-2 text-right{% if not loop.first %} border-t border-subdued{% endif %}">
+            {{ button("Link manually…", variant="outline", size="sm", attrs={
+              "hx-get": "/reconcile/link?txn=" ~ row.txn_id ~ "&start=" ~ start ~ "&end=" ~ end,
+              "hx-target": "#reconcile-link-body",
+              "hx-swap": "innerHTML",
+              "data-action": "page-dialogs#openDialog",
+              "data-dialog-id": "reconcile-link-dialog",
+            }) }}
+          </td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+  {%- else %}
+  <p class="text-sm text-secondary">Every transaction in this range is explained by a link.</p>
+  {%- endif %}
+</details>
+{%- endmacro %}
+
+{% macro linked_card(rows, start, end) -%}
+<details class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs">
+  <summary class="cursor-pointer font-medium text-primary">Linked ({{ rows|length }})</summary>
+  {%- if rows %}
+  <div class="table-scroll rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Linked transactions">
+    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+      <thead>
+        <tr>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Kind</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Money out and in</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Made by</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {%- for row in rows %}
+        <tr>
+          <td class="px-3 py-2 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.kind }}</td>
+          <td class="px-3 py-2 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+            <div class="flex flex-col gap-1">
+              {%- if row.money_out %}<span>Out: {{ row.money_out.on }} · {{ row.money_out.account }} · {{ row.money_out.payee }}</span>{% endif %}
+              {%- if row.money_in %}<span>In: {{ row.money_in.on }} · {{ row.money_in.account }} · {{ row.money_in.payee }}</span>{% endif %}
+            </div>
+          </td>
+          <td class="px-3 py-2 align-top text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.amount }}</td>
+          <td class="px-3 py-2 align-top text-secondary{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.rule }}</td>
+          <td class="px-3 py-2 align-top text-right{% if not loop.first %} border-t border-subdued{% endif %}">
+            {{ button("Unlink", variant="outline", size="sm", attrs={
+              "hx-post": "/reconcile/unlink/" ~ row.link_id,
+              "hx-vals": {"start": start, "end": end, "idempotency_key": row.unlink_key}|tojson|forceescape,
+            }) }}
+          </td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+  {%- else %}
+  <p class="text-sm text-secondary">No links in this range yet.</p>
+  {%- endif %}
+</details>
+{%- endmacro %}
+
+{# What you did with each rule's output: a rule with two unlinked links no longer links by itself. #}
+{% macro tally_card(rows) -%}
+{%- if rows %}
+<details class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs">
+  <summary class="cursor-pointer font-medium text-primary">Rules ({{ rows|length }})</summary>
+  <div class="table-scroll rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Links, unlinks, and rejections by rule">
+    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+      <thead>
+        <tr>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Rule</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Linked</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Unlinked</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Rejected</th>
+        </tr>
+      </thead>
+      <tbody>
+        {%- for row in rows %}
+        <tr>
+          <td class="px-3 py-2{% if not loop.first %} border-t border-subdued{% endif %}">
+            {{ row.rule }}
+            {%- if row.paused %} {{ pill("Needs review", tone="amber", style="soft") }}{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.linked }}</td>
+          <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.unlinked }}</td>
+          <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.rejected }}</td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{%- endif %}
+{%- endmacro %}
+
+{# The link dialog body: the transaction, a search for the other side, the kind, and the amount. #}
+{% macro link_body(source, source_remaining, source_remaining_text, candidates, amount, kinds, default_kind, start, end, idempotency_key, txn) -%}
+<div class="flex flex-col gap-1">
+  <h2 id="reconcile-link-title" class="font-medium text-primary">Link manually</h2>
+  <p class="text-sm text-secondary">{{ source.on }} · {{ source.account }} · {{ source.payee }} · {{ source.amount }}. {{ source_remaining_text }} is not linked yet.</p>
+</div>
+<form id="reconcile-link-form" class="flex flex-col gap-4" hx-post="/reconcile/link" hx-target="#reconcile-link-error" hx-swap="innerHTML" data-source-remaining="{{ source_remaining }}">
+  <input type="hidden" name="txn" value="{{ txn }}">
+  <input type="hidden" name="start" value="{{ start }}">
+  <input type="hidden" name="end" value="{{ end }}">
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <label class="form-field">
+    <span class="form-field__label">Find the other side by payee, amount, or date</span>
+    <input type="search" name="q" class="form-field__input" placeholder="Payee, 25.00, or 2026-08-01" autocomplete="off" data-autofocus
+      hx-get="/reconcile/link/candidates" hx-trigger="input changed delay:250ms, search" hx-target="#reconcile-link-candidates" hx-swap="innerHTML" hx-include="closest form">
+  </label>
+  <div role="radiogroup" aria-label="Other side" class="rounded-lg border border-secondary" data-action="change->reconcile#pickCandidate">
+    <div id="reconcile-link-candidates" class="flex max-h-64 flex-col gap-1 overflow-auto p-1">{{ candidate_list(candidates) }}</div>
+  </div>
+  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <label class="form-field">
+      <span class="form-field__label">Kind</span>
+      <select name="kind" class="form-field__input">
+        {%- for value, label in kinds %}
+        <option value="{{ value }}"{% if value == default_kind %} selected{% endif %}>{{ label }}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    <label class="form-field">
+      <span class="form-field__label">Amount, in dollars</span>
+      {{ amount_field(amount) }}
+    </label>
+  </div>
+  <div id="reconcile-link-error" aria-live="assertive"></div>
+  <div class="flex justify-end gap-2">
+    {{ button("Cancel", variant="outline", attrs={"data-action": "page-dialogs#closeDialog"}) }}
+    {{ button("Link", variant="primary", type="submit") }}
+  </div>
+</form>
+{%- endmacro %}
+
+{% macro candidate_list(candidates) -%}
+{%- for c in candidates %}
+<label class="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-surface-hover">
+  <input type="radio" name="other" value="{{ c.txn_id }}" data-remaining="{{ c.remaining }}" class="form-field__radio mt-1"{% if loop.first %} checked{% endif %}>
+  <span class="flex min-w-0 flex-1 flex-col text-sm">
+    <span class="truncate text-primary">{{ c.payee }}</span>
+    <span class="text-xs text-secondary">{{ c.on }} · {{ c.account }} · {{ c.remaining_text }} not linked</span>
+  </span>
+  <span class="tabular-nums text-primary">{{ c.amount }}</span>
+</label>
+{%- else %}
+<p class="px-2 py-2 text-sm text-secondary">No open transaction matches. Try a payee, an amount such as 25.00, or a date such as 2026-08-01.</p>
+{%- endfor %}
+{%- endmacro %}
+
+{% macro amount_field(amount, oob=false) -%}
+<input id="reconcile-link-amount" name="amount" type="text" inputmode="decimal" class="form-field__input" value="{{ amount }}"{% if oob %} hx-swap-oob="true"{% endif %}>
+{%- endmacro %}
+
+{# The dialog bodies for a transaction's acknowledgment. Both name the transaction and post to
+   the Reconcile routes with the range, so the results re-run when the dialog closes. #}
+{% macro ack_transaction_body(source, txn, start, end, idempotency_key) -%}
+<div class="flex flex-col gap-1">
+  <h2 id="reconcile-ack-title" class="font-medium text-primary">No match expected</h2>
+  <p class="text-sm text-secondary">{{ source.on }} · {{ source.account }} · {{ source.payee }} · {{ source.amount }}. This does not link or reconcile it; it only moves it out of Not matched. Remove it from Explained to undo.</p>
+</div>
+<form class="flex flex-col gap-4" hx-post="/reconcile/acknowledge" hx-target="#reconcile-ack-error" hx-swap="innerHTML">
+  <input type="hidden" name="txn" value="{{ txn }}">
+  <input type="hidden" name="start" value="{{ start }}">
+  <input type="hidden" name="end" value="{{ end }}">
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <label class="form-field">
+    <span class="form-field__label">Note (optional)</span>
+    <input type="text" name="note" maxlength="200" class="form-field__input" data-autofocus placeholder="Paid back in cash">
+  </label>
+  <div id="reconcile-ack-error" aria-live="assertive"></div>
+  <div class="flex justify-end gap-2">
+    {{ button("Cancel", variant="outline", attrs={"data-action": "page-dialogs#closeDialog"}) }}
+    {{ button("No match expected", variant="primary", type="submit") }}
+  </div>
+</form>
+{%- endmacro %}
+
+{% macro ack_counterparty_body(source, txn, start, end, idempotency_key, choices, kinds) -%}
+<div class="flex flex-col gap-1">
+  <h2 id="reconcile-ack-title" class="font-medium text-primary">No match expected from this counterparty</h2>
+  <p class="text-sm text-secondary">{{ source.on }} · {{ source.account }} · {{ choices.description }} · {{ source.amount }}. Every transaction whose payee text matches the counterparty's patterns, now and later, moves out of Not matched. Proposals are unchanged. You can review this under Settings, Counterparties.</p>
+</div>
+<form class="flex flex-col gap-4" hx-post="/reconcile/acknowledge/counterparty" hx-target="#reconcile-ack-error" hx-swap="innerHTML">
+  <input type="hidden" name="txn" value="{{ txn }}">
+  <input type="hidden" name="start" value="{{ start }}">
+  <input type="hidden" name="end" value="{{ end }}">
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <label class="form-field">
+    <span class="form-field__label">Counterparty</span>
+    <select name="counterparty" class="form-field__input" data-autofocus>
+      {%- for matcher in choices.matching %}
+      <option value="{{ matcher.id }}"{% if matcher.no_match_expected %} disabled{% endif %}>{{ matcher.name }}{% if matcher.no_match_expected %} (already marked){% endif %}</option>
+      {%- endfor %}
+      <option value=""{% if not choices.matching %} selected{% endif %}>New counterparty</option>
+    </select>
+  </label>
+  <fieldset class="flex flex-col gap-3">
+    <legend class="text-xs text-secondary">For a new counterparty</legend>
+    <label class="form-field">
+      <span class="form-field__label">Name</span>
+      <input type="text" name="name" maxlength="80" class="form-field__input">
+    </label>
+    <label class="form-field">
+      <span class="form-field__label">Kind</span>
+      <select name="kind" class="form-field__input">
+        {%- for value, label in kinds %}
+        <option value="{{ value }}"{% if value == "person" %} selected{% endif %}>{{ label }}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    <label class="form-field">
+      <span class="form-field__label">Payee pattern, a regular expression</span>
+      <input type="text" name="pattern" value="{{ choices.suggested_pattern }}" class="form-field__input" spellcheck="false">
+    </label>
+  </fieldset>
+  <div id="reconcile-ack-error" aria-live="assertive"></div>
+  <div class="flex justify-end gap-2">
+    {{ button("Cancel", variant="outline", attrs={"data-action": "page-dialogs#closeDialog"}) }}
+    {{ button("None expected from them", variant="primary", type="submit") }}
+  </div>
+</form>
+{%- endmacro %}
+
+{% macro dialog_error(message) -%}
+<p class="text-sm text-destructive" role="alert">{{ message }}</p>
+{%- endmacro %}
+
+{# The undo toast. Its Undo posts to the shared undo route with the range, so the results re-run. #}
+{% macro toast(message, batch_id=none, start=none, end=none) -%}
+<div class="toast" role="status" data-controller="toast">
+  <span class="toast-message">{{ message }}</span>
+  {%- if batch_id %}
+  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo?start=" ~ start ~ "&end=" ~ end ~ "&source=reconcile", "hx-target": "#toast-region"}) }}
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro toast_region(message, batch_id=none, start=none, end=none) -%}
+<div id="toast-region" hx-swap-oob="true" aria-live="polite">{{ toast(message, batch_id, start, end) }}</div>
+{%- endmacro %}

@@ -1,0 +1,9 @@
+{# Adapted from Sure (we-promise/sure), AGPL-3.0: app/components/DS/card.rb and card.html.erb.
+   Usage: {% call card(class_="max-w-md") %}...{% endcall %} #}
+{% from "components/_util.html" import html_attrs %}
+
+{% macro card(class_="", attrs=none) -%}
+<section class="bg-container rounded-xl shadow-border-xs p-5 flex flex-col{% if class_ %} {{ class_ }}{% endif %}"{{ html_attrs(attrs) }}>
+  {{ caller() }}
+</section>
+{%- endmacro %}

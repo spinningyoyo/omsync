@@ -1,0 +1,13 @@
+{% extends "layouts/shell.html" %}
+{% from "layouts/shell_parts.html" import page_header %}
+{% from "plan/parts.html" import budget_card, goals_card %}
+
+{% block page %}
+<div class="flex flex-col gap-6">
+  {{ page_header("Plan", "This month's budget and your goals, in one place.") }}
+  <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+    {{ budget_card(budget) }}
+    {{ goals_card(goals) }}
+  </div>
+</div>
+{% endblock %}

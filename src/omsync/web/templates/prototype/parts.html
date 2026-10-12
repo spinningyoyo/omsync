@@ -1,0 +1,78 @@
+{# Markup shared by the register page and by the fragments its routes return. #}
+
+{% macro cell_display(txn_id, field, value, autofocus=False) -%}
+<td id="cell-{{ txn_id }}-{{ field }}" class="cell" tabindex="-1" data-editable data-field="{{ field }}" data-txn-id="{{ txn_id }}" hx-get="/prototype/register/cell/{{ txn_id }}/{{ field }}/edit" hx-trigger="edit" hx-swap="outerHTML"{% if autofocus %} data-autofocus{% endif %}>{{ value }}</td>
+{%- endmacro %}
+
+{% macro cell_edit(txn_id, field, value, error="") -%}
+<td id="cell-{{ txn_id }}-{{ field }}" class="cell is-editing" tabindex="-1" data-editable data-field="{{ field }}" data-txn-id="{{ txn_id }}" hx-get="/prototype/register/cell/{{ txn_id }}/{{ field }}" hx-trigger="cancel" hx-swap="outerHTML">
+  <input name="value" value="{{ value }}" aria-label="{{ field|capitalize }}" autocomplete="off" data-autofocus hx-post="/prototype/register/cell/{{ txn_id }}/{{ field }}" hx-trigger="save" hx-target="closest td" hx-swap="outerHTML"{% if field == "category" %} list="category-options"{% endif %}>
+  {%- if error %}
+  <span class="error" role="alert">{{ error }}</span>
+  {%- endif %}
+</td>
+{%- endmacro %}
+
+{% macro txn_group(txn, editor=none, focus_field=none) -%}
+<tbody id="txn-{{ txn.id }}" class="txn-group" data-txn-group data-txn-id="{{ txn.id }}">
+<tr class="txn-row" id="row-{{ txn.id }}">
+  <td class="date">{{ txn.date.isoformat() }}</td>
+  {{ cell_display(txn.id, "payee", txn.payee, focus_field == "payee") }}
+  {{ cell_display(txn.id, "category", txn.category, focus_field == "category") }}
+  <td class="amount">{{ txn.amount_cents|money }}</td>
+  {{ cell_display(txn.id, "memo", txn.memo, focus_field == "memo") }}
+  <td class="actions"><button type="button" id="split-btn-{{ txn.id }}" class="split-btn" hx-get="/prototype/register/split/{{ txn.id }}" hx-trigger="click, open-split" hx-target="#txn-{{ txn.id }}" hx-swap="outerHTML">Split</button></td>
+</tr>
+{%- for line in txn.splits %}
+<tr class="split-row">
+  <td class="split-label">Split line {{ loop.index }}</td>
+  <td></td>
+  <td class="split-category">{{ line.category }}</td>
+  <td class="amount">{{ line.amount_cents|money }}</td>
+  <td></td>
+  <td></td>
+</tr>
+{%- endfor %}
+{%- if editor %}
+{{ split_editor(txn, editor) }}
+{%- endif %}
+</tbody>
+{%- endmacro %}
+
+{% macro split_editor(txn, editor) -%}
+<tr class="split-editor" id="split-editor-{{ txn.id }}" data-split-editor>
+<td colspan="6">
+  <form id="split-form-{{ txn.id }}" class="split-form" hx-post="/prototype/register/split/{{ txn.id }}" hx-target="#txn-{{ txn.id }}" hx-swap="outerHTML">
+    <p class="split-hint">Split {{ txn.amount_cents|money }}. Amounts take the transaction's sign.</p>
+    <div id="split-lines-{{ txn.id }}" class="split-lines" hx-post="/prototype/register/split/{{ txn.id }}/preview" hx-trigger="input delay:150ms" hx-target="#amount-left-{{ txn.id }}" hx-swap="outerHTML">
+      {%- for line in editor.lines %}
+      {{ split_line(txn.id, line, loop.index0 == editor.focus_index) }}
+      {%- endfor %}
+    </div>
+    {%- if editor.summary %}
+    <p class="error" role="alert">{{ editor.summary }}</p>
+    {%- endif %}
+    <div class="split-actions">
+      {{ amount_left_output(txn.id, editor.left_text, editor.left_invalid) }}
+      <button type="button" hx-get="/prototype/register/split/{{ txn.id }}/line" hx-target="#split-lines-{{ txn.id }}" hx-swap="beforeend">Add line</button>
+      <button type="submit">Save split</button>
+      <button type="button" data-close-split hx-get="/prototype/register/split/{{ txn.id }}/close" hx-trigger="click, close-split" hx-target="#txn-{{ txn.id }}" hx-swap="outerHTML">Cancel</button>
+    </div>
+  </form>
+</td>
+</tr>
+{%- endmacro %}
+
+{% macro split_line(txn_id, line, autofocus=False) -%}
+<div class="split-line">
+  <input name="amount" value="{{ line.amount }}" placeholder="0.00" inputmode="decimal" autocomplete="off" aria-label="Line amount"{% if autofocus %} data-autofocus{% endif %}{% if line.error %} aria-invalid="true"{% endif %}>
+  <input name="category" value="{{ line.category }}" list="category-options" placeholder="Category" autocomplete="off" aria-label="Line category">
+  {%- if line.error %}
+  <span class="error" role="alert">{{ line.error }}</span>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro amount_left_output(txn_id, text, invalid=False) -%}
+<output id="amount-left-{{ txn_id }}" class="amount-left{% if invalid %} is-invalid{% endif %}">{{ text }}</output>
+{%- endmacro %}

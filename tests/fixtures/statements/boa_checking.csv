@@ -1,0 +1,14 @@
+Description,,Summary Amt.
+Beginning balance as of 09/01/2026,,"$1,234.56"
+Total credits,,"$2,000.00"
+Total debits,,"-$1,299.77"
+Ending balance as of 09/30/2026,,"$1,934.79"
+
+Date,Description,Amount,Running Bal.
+09/01/2026,Beginning balance as of 09/01/2026,,"$1,234.56"
+09/02/2026,ACME GROCERY,-45.67,"$1,188.89"
+09/04/2026,ACME PAYROLL,2000.00,"$3,188.89"
+09/09/2026,CITY WATER,"-1,234.00","$1,954.89"
+09/10/2026,ACME VENDING,-0.10,"$1,954.79"
+09/12/2026,ZELLE PAYMENT TO JANE ROE FOR "Cash, Mexico Trip" CONF 98765,-20.00,"$1,934.79"
+

@@ -1,0 +1,134 @@
+{# The app shell: an 84px icon rail, a collapsible and resizable accounts panel, and the page.
+   Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/layouts/application.html.erb, with the
+   app_layout and sidebar_resize controllers replaced by accounts_panel_controller.js. Rails,
+   Turbo, the AI sidebar and onboarding are left out.
+   Below lg (1024 px) the rail becomes a bottom tab bar with the same items, and the accounts panel
+   opens as an overlay, which starts closed. Sure's mobile layout is the model: its header holds the
+   privacy toggle and the user menu, and its panel opens over the page. The privacy toggle blurs
+   every amount (privacy_mode_controller.js).
+   Pages extend this and fill the `page` block.
+
+   Fill mode: a page built around one long table can stay as tall as the window, so the table
+   scrolls under the controls above it and the controls below it stay in view. The page sets
+   `{% set fill_viewport = true %}` before its blocks, gives each element between its `page` block
+   and the table the `fill-chain` class, and gives the scrolling element, usually a `.table-scroll`,
+   the `fill-region` class. Its sticky header row stays in view while the rows scroll. From lg up
+   the page wrapper then fills the window; below lg the page scrolls as a whole, because a table
+   scrolling inside a phone-sized window leaves little room to read it. A page whose columns stack
+   below xl sets `fill_viewport` to "xl" instead, and the page scrolls as a whole until then. See
+   styles/shell.css. #}
+{% extends "layouts/app.html" %}
+{% from "components/icon.html" import icon with context %}
+{% from "components/brand.html" import wordmark, mascot with context %}
+{% from "components/menu.html" import menu, menu_item, menu_separator with context %}
+{% from "components/segmented_control.html" import segmented_control with context %}
+{% from "layouts/shell_parts.html" import nav_item, accounts_panel %}
+
+{% block head %}
+{{ super() }}
+{# Sets the accounts panel's width and collapsed state before first paint. The same keys are
+   written by accounts_panel_controller.js. Storage can be blocked, so every access is guarded. #}
+<script>
+  (function () {
+    var root = document.documentElement;
+    var width = 320;
+    var collapsed = false;
+    try {
+      var saved = parseInt(localStorage.getItem("omsync-accounts-width"), 10);
+      if (saved >= 240 && saved <= 320) width = saved;
+      collapsed = localStorage.getItem("omsync-accounts-collapsed") === "true";
+    } catch (e) {}
+    root.style.setProperty("--accounts-width", width + "px");
+    root.dataset.accountsCollapsed = String(collapsed);
+  })();
+</script>
+{% endblock %}
+
+{# The user menu: the signed-in email, Settings, the theme switch and sign-out. The rail holds one on
+   wide screens and the phone header holds another, so each has its own id. #}
+{% macro user_menu(id, placement, email) -%}
+{% call menu(id=id, label="User menu", placement=placement) %}
+<div class="px-3 pb-1 pt-2">
+  <p class="text-xs text-secondary">Signed in as</p>
+  <p class="truncate text-sm text-primary">{{ email }}</p>
+</div>
+{{ menu_separator() }}
+{{ menu_item("Settings", icon_name="settings", href="/settings") }}
+{{ menu_item("Bank sync", icon_name="banknote-arrow-down", href="/settings/providers") }}
+{{ menu_separator() }}
+<div class="flex flex-col gap-2 px-3 py-2">
+  <p class="text-xs text-secondary">Theme</p>
+  {{ segmented_control([
+    {"label": "Light", "active": false, "attrs": {"data-action": "click->theme#choose", "data-theme-target": "option", "data-theme-choice": "light"}},
+    {"label": "Dark", "active": false, "attrs": {"data-action": "click->theme#choose", "data-theme-target": "option", "data-theme-choice": "dark"}},
+    {"label": "System", "active": true, "attrs": {"data-action": "click->theme#choose", "data-theme-target": "option", "data-theme-choice": "system"}},
+  ], label="Theme", attrs={"data-controller": "theme"}) }}
+</div>
+{{ menu_separator() }}
+<form method="post" action="/sign-out" class="px-1">
+  <button type="submit" role="menuitem" tabindex="-1" class="flex w-full items-center gap-2 rounded-md p-2 hover:bg-container-hover focus-ring">
+    {{ icon("log-out", 20) }}
+    <span class="text-sm text-primary">Sign out</span>
+  </button>
+</form>
+{% endcall %}
+{%- endmacro %}
+
+{# The privacy toggle. The eye-off icon shows while amounts are clear, and the eye icon while they
+   are blurred (styles/privacy-mode.css). aria-pressed says which state is on. #}
+{% macro privacy_toggle() -%}
+<button type="button" class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-container-inset-hover hover:text-primary focus-ring" aria-label="Privacy mode" aria-pressed="false" title="Privacy mode: blur amounts" data-privacy-mode-target="toggle" data-action="privacy-mode#toggle">
+  <span class="privacy-toggle__off">{{ icon("eye-off", 20) }}</span>
+  <span class="privacy-toggle__on">{{ icon("eye", 20) }}</span>
+</button>
+{%- endmacro %}
+
+{% block content %}
+<div class="flex h-dvh flex-col overflow-hidden bg-surface text-primary lg:flex-row" data-controller="accounts-panel" data-action="keydown.esc@window->accounts-panel#closeOverlay">
+  <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-container focus:px-3 focus:py-2 focus:text-primary focus:shadow-border-xs">Skip to main content</a>
+
+  <div class="relative flex w-full shrink-0 flex-row border-t border-divider py-1 pb-[calc(env(safe-area-inset-bottom)+0.25rem)] max-lg:order-last max-lg:bg-surface lg:w-[84px] lg:flex-col lg:border-r lg:border-t-0 lg:py-4 lg:pb-4">
+    <div class="mb-4 flex flex-col items-center gap-1 max-lg:hidden">
+      {{ mascot(40) }}
+      <p class="text-sm font-medium tracking-tight text-primary">omsync</p>
+    </div>
+    <nav aria-label="Main" class="flex flex-1 flex-col max-lg:flex-row max-lg:items-stretch lg:flex-none">
+      {%- for group in nav_groups %}
+      {%- if not loop.first %}
+      <div role="separator" class="mx-4 my-3 border-t border-divider max-lg:mx-0 max-lg:my-auto max-lg:h-6 max-lg:w-px max-lg:border-l max-lg:border-t-0"></div>
+      {%- endif %}
+      <ul class="flex flex-col gap-1 max-lg:flex-auto max-lg:flex-row max-lg:gap-0">
+        {%- for item in group %}
+        <li class="max-lg:flex-auto">{{ nav_item(item, item.key == active, badges.get(item.key)) }}</li>
+        {%- endfor %}
+      </ul>
+      {%- endfor %}
+    </nav>
+
+    <div class="mt-auto mx-auto max-lg:hidden">
+      {{ user_menu("user-menu", "right-end", email) }}
+    </div>
+  </div>
+
+  {{ accounts_panel(account_groups, accounts_grouping, active_account_id) }}
+  <div class="accounts-backdrop" aria-hidden="true" data-action="click->accounts-panel#closeOverlay"></div>
+
+  {# relative makes main the containing block of absolutely placed content (such as sr-only text), so
+     main's overflow clips it and it cannot widen the page. #}
+  <main id="main" class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+    <div class="flex items-center gap-2 px-4 pt-3 lg:px-6 lg:pt-4" data-controller="privacy-mode">
+      <button type="button" class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-container-inset-hover hover:text-primary focus-ring" aria-controls="accounts-panel" aria-expanded="true" aria-label="Accounts panel" data-accounts-panel-target="toggle" data-action="accounts-panel#toggle">
+        {{ icon("panel-left", 20) }}
+      </button>
+      <div class="flex min-w-0 flex-1 justify-center lg:hidden">{{ wordmark("sm") }}</div>
+      <div class="ml-auto flex shrink-0 items-center gap-1">
+        {{ privacy_toggle() }}
+        <div class="lg:hidden">{{ user_menu("user-menu-mobile", "bottom-end", email) }}</div>
+      </div>
+    </div>
+    <div class="flex flex-col gap-6 px-4 pb-10 pt-4 lg:px-6{% if fill_viewport == "xl" %} fill-viewport-xl xl:pb-4{% elif fill_viewport %} fill-viewport lg:pb-4{% endif %}">
+      {% block page %}{% endblock %}
+    </div>
+  </main>
+</div>
+{% endblock %}

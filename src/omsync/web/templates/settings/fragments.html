@@ -1,0 +1,43 @@
+{# Fragment blocks for the add-provider wizard's replies (routes/settings_wizard.py). A block renders
+   without this file's top-level code, so each one imports the macros it uses. The wizard blocks
+   replace #wizard-step. #}
+
+{% block frag_error %}
+{% from "settings/parts.html" import step_error %}
+{{ step_error(message) }}
+{% endblock %}
+
+{% block frag_step_setup %}
+{% from "settings/parts.html" import setup_step %}
+{{ setup_step(state, connectors, form_key, message) }}
+{% endblock %}
+
+{% block frag_step_login %}
+{% from "settings/parts.html" import login_step %}
+{{ login_step(state, form_key, locked, logins, query, message, unlock_message) }}
+{% endblock %}
+
+{% block frag_vault_results %}
+{% from "settings/parts.html" import vault_results, state_fields %}
+{{ vault_results(locked, logins, "", message|default(""), unlock_action="/settings/providers/new/unlock", unlock_target="#wizard-step", unlock_hidden=state_fields(state)) }}
+{% endblock %}
+
+{% block frag_step_accounts %}
+{% from "settings/parts.html" import accounts_step %}
+{{ accounts_step(state, existing, rows, types, form_key, last4_is_statement_id, message, error) }}
+{% endblock %}
+
+{% block frag_step_map %}
+{% from "settings/parts.html" import map_step %}
+{{ map_step(state, rows, mapped, unreadable, picker, types, form_key, outcomes) }}
+{% endblock %}
+
+{% block frag_step_preview %}
+{% from "settings/parts.html" import preview_step %}
+{{ preview_step(state, view, balances, can_import, identity, notice) }}
+{% endblock %}
+
+{% block frag_step_imported %}
+{% from "settings/parts.html" import imported_step %}
+{{ imported_step(view, accounts) }}
+{% endblock %}

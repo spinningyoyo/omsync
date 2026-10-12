@@ -1,0 +1,26 @@
+{# Fragment blocks for the Counterparties replies (routes/counterparties.py and the shared undo
+   route). The list region goes out of band; the toast comes from the transactions toast macro, whose
+   Undo posts to the shared undo route. #}
+
+{% block frag_form_error %}
+<p class="text-sm text-destructive" role="alert">{{ message }}</p>
+{% endblock %}
+
+{% block frag_saved %}
+{% from "settings/counterparty_parts.html" import cp_list %}
+{% from "transactions/parts.html" import toast_region %}
+{{ cp_list(rows, create_key, oob=true) }}
+{{ toast_region(message, batch_id) }}
+{% endblock %}
+
+{% block frag_undo_reply %}
+{% from "settings/counterparty_parts.html" import cp_list %}
+{% from "transactions/parts.html" import toast %}
+{{ toast(message) }}
+{{ cp_list(rows, create_key, oob=true) }}
+{% endblock %}
+
+{% block frag_test_results %}
+{% from "settings/counterparty_parts.html" import cp_test_results %}
+{{ cp_test_results(matcher, out_rows, in_rows) }}
+{% endblock %}

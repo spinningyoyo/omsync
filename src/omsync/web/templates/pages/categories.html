@@ -1,0 +1,72 @@
+{% extends "layouts/shell.html" %}
+{% from "layouts/shell_parts.html" import page_header %}
+{% from "components/button.html" import button %}
+{% from "components/tabs.html" import tabs %}
+{% from "categories/parts.html" import category_list, new_category_form, keyword_panel, rule_panel, payee_tester, triage_panel, import_form, categorize_body %}
+
+{# The categories table and the keyword table each scroll inside their column, under the page header,
+   so the controls around them stay in view (see layouts/shell.html). #}
+{% set fill_viewport = "xl" %}
+
+{% block page %}
+{# The page root listens for dialog and focus events. Each region reloads itself on
+   categories-changed, which a successful write sends (see routes/categories.py).
+
+   The grid is the one row of columns that the fill chain passes through. From xl it takes the
+   height left under the header, and each column passes the row's height on to its table. #}
+<div class="fill-chain flex flex-col gap-6" data-controller="categories" data-action="htmx:afterSettle->categories#settled close-dialogs@window->categories#closeDialogs">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    {{ page_header("Categories", "Categories group your spending. Keywords assign them to payees and receipt items.") }}
+    <div class="flex flex-wrap gap-2">
+      {{ button("New category", variant="primary", attrs={"data-action": "categories#openDialog", "data-dialog-id": "new-category-dialog"}) }}
+      {{ button("Preview categorize", variant="outline", attrs={"data-action": "categories#openDialog", "data-dialog-id": "categorize-dialog", "hx-get": "/categories/categorize", "hx-target": "#categorize-body", "hx-swap": "innerHTML"}) }}
+    </div>
+  </div>
+
+  <div class="grid gap-6 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(27rem,1fr)_minmax(0,1.6fr)] xl:grid-rows-[minmax(0,1fr)]">
+    {{ category_list(rows, view, drafts, errors) }}
+
+    {% set keywords_body %}
+    {{ keyword_panel(keywords.list_key, keywords.lists, keywords.conflicts, keywords.rows, keywords.choices, keywords.form) }}
+    {% endset %}
+    {% set rules_body %}
+    {{ rule_panel(amount_rules.rows, amount_rules.choices, amount_rules.form) }}
+    {% endset %}
+    {% set tester_body %}
+    {{ payee_tester(payee, amount, matches, names, payee_error, amount_rule) }}
+    {% endset %}
+    {% set triage_body %}
+    {{ triage_panel(triage.payees, triage.vendors, triage.choices) }}
+    {% endset %}
+    {% set import_body %}
+    {{ import_form(lists) }}
+    {% endset %}
+    <section class="fill-chain flex min-w-0 flex-col" aria-label="Keywords, amount rules, payee tester, triage, and import">
+      {{ tabs("categories", [
+        {"id": "keywords", "label": "Keywords", "body": keywords_body},
+        {"id": "rules", "label": "Amount rules", "body": rules_body, "scroll": true},
+        {"id": "test", "label": "Test a payee", "body": tester_body, "scroll": true},
+        {"id": "triage", "label": "Triage", "body": triage_body, "scroll": true},
+        {"id": "import", "label": "Import", "body": import_body, "scroll": true},
+      ], tab, "Keyword tools", fill=true) }}
+    </section>
+  </div>
+
+  <dialog id="new-category-dialog" class="m-auto w-full max-w-md bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="new-category-title" data-action="close->categories#restoreFocus">
+    <div class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs">
+      <h2 id="new-category-title" class="font-medium text-primary">New category</h2>
+      {{ new_category_form(new_form) }}
+    </div>
+  </dialog>
+
+  <dialog id="icon-picker-dialog" class="m-auto w-full max-w-xl bg-transparent p-0 text-primary backdrop:bg-overlay" aria-label="Choose an icon" data-action="close->categories#restoreFocus">
+    <div id="icon-picker-body" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs"></div>
+  </dialog>
+
+  <dialog id="categorize-dialog" class="m-auto w-full max-w-md bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="categorize-title" data-action="close->categories#restoreFocus">
+    <div id="categorize-body" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-live="polite"></div>
+  </dialog>
+
+  <div id="toast-region" aria-live="polite"></div>
+</div>
+{% endblock %}

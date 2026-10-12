@@ -1,0 +1,15 @@
+{# Adapted from Sure (we-promise/sure), AGPL-3.0: app/components/DS/toggle.rb and toggle.html.erb.
+   A switch built on a visually hidden checkbox (role="switch"), so keyboard and screen readers
+   get a real control. The visible label names it. attrs adds attributes to the checkbox, such as
+   htmx's, and is optional. #}
+{% from "components/_util.html" import html_attrs %}
+
+{% macro toggle(id, name, label, checked=false, disabled=false, attrs=none) -%}
+<div class="inline-flex items-center gap-3 select-none">
+  <div class="relative inline-block">
+    <input type="checkbox" role="switch" id="{{ id }}" name="{{ name }}" value="1" class="sr-only peer"{% if checked %} checked{% endif %}{% if disabled %} disabled{% endif %}{{ html_attrs(attrs) }}>
+    <label for="{{ id }}" aria-hidden="true" class="relative block w-9 h-5 cursor-pointer rounded-full bg-toggle-track motion-safe:transition-colors motion-safe:duration-300 after:content-[''] after:block after:bg-white after:absolute after:rounded-full after:top-0.5 after:left-0.5 after:w-4 after:h-4 after:shadow-sm motion-safe:after:transition-transform motion-safe:after:duration-300 motion-safe:after:ease-in-out peer-checked:bg-success peer-checked:after:translate-x-4 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus-ring peer-disabled:opacity-70 peer-disabled:cursor-not-allowed"></label>
+  </div>
+  <label for="{{ id }}" class="text-sm text-primary{% if disabled %} opacity-70{% endif %}">{{ label }}</label>
+</div>
+{%- endmacro %}

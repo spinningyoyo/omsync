@@ -1,0 +1,31 @@
+{# Fragment blocks for the account page's replies (routes/accounts.py). A saved or undone change sends
+   its header and the accounts panel out of band, so both show it, and the toast comes after them. A
+   block imports the macros it uses, because it renders without this file's top-level code. #}
+
+{% block frag_edit_error %}
+<p class="text-sm text-destructive" role="alert">{{ message }}</p>
+{% endblock %}
+
+{% block frag_saved %}
+{% from "accounts/parts.html" import account_header %}
+{% from "layouts/shell_parts.html" import panel_groups %}
+{% from "transactions/parts.html" import toast_region %}
+{{ account_header(detail, type_label, form_key, transactions_href, oob=true) }}
+{{ panel_groups(groups, oob=true) }}
+{{ toast_region(label, batch_id) }}
+{% endblock %}
+
+{% block frag_grouping %}
+{% from "layouts/shell_parts.html" import grouping_control, panel_groups %}
+{{ grouping_control(grouping, active_account_id, oob=true) }}
+{{ panel_groups(groups, oob=true) }}
+{% endblock %}
+
+{% block frag_undone %}
+{% from "accounts/parts.html" import account_header %}
+{% from "layouts/shell_parts.html" import panel_groups %}
+{% from "transactions/parts.html" import toast %}
+{{ toast(message) }}
+{%- if detail %}{{ account_header(detail, type_label, form_key, transactions_href, oob=true) }}{% endif %}
+{{ panel_groups(groups, oob=true) }}
+{% endblock %}

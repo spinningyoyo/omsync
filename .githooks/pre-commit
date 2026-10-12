@@ -1,0 +1,12 @@
+#!/bin/sh
+# Enable once per clone: git config core.hooksPath .githooks
+set -e
+blocked=$(git diff --cached --name-only --diff-filter=ACR \
+    | grep -iE '(\.(db|sqlite[0-9]*|ofx|qfx|qbo|csv|xlsx?|pdf|zip|txt)|(^|/)\.env(\..*)?)$' \
+    | grep -vE '^(tests/fixtures|docs|src/omsync/web/static)/' || true)
+if [ -n "$blocked" ]; then
+    echo "pre-commit: these look like personal data; only tests/fixtures/ may hold statements:" >&2
+    echo "$blocked" | sed 's/^/  /' >&2
+    exit 1
+fi
+exec sh scripts/check.sh

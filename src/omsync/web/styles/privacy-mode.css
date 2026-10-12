@@ -1,0 +1,45 @@
+/*
+ * Adapted from Sure (we-promise/sure), AGPL-3.0: app/assets/tailwind/privacy-mode.css
+ * Privacy mode blurs financial numbers. The class goes on every amount (web/amounts.py) and the
+ * toggle sets html.privacy-mode (layouts/shell.html, privacy_mode_controller.js).
+ * Unchanged apart from the comment; the blur is 8 pixels, as in Sure.
+ */
+html.privacy-mode .privacy-sensitive {
+  filter: blur(8px);
+  user-select: none;
+  transition: filter 0.2s ease;
+}
+
+html.privacy-mode .privacy-sensitive:not(.privacy-sensitive-interactive) {
+  pointer-events: none;
+}
+
+html:not(.privacy-mode) .privacy-sensitive {
+  transition: filter 0.2s ease;
+}
+
+/* The toggle shows eye-off while amounts are clear and eye while they are blurred. */
+.privacy-toggle__off,
+.privacy-toggle__on {
+  display: inline-flex;
+}
+
+.privacy-toggle__on {
+  display: none;
+}
+
+html.privacy-mode .privacy-toggle__on {
+  display: inline-flex;
+}
+
+html.privacy-mode .privacy-toggle__off {
+  display: none;
+}
+
+/* The accounts panel's balances and subtotals are tabular figures. Its markup is pinned by tests,
+   so privacy mode blurs them here by that class, rather than by a marker on each figure. */
+html.privacy-mode #accounts-panel .tabular-nums {
+  filter: blur(8px);
+  user-select: none;
+  transition: filter 0.2s ease;
+}

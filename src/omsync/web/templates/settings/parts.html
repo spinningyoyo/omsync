@@ -1,0 +1,394 @@
+{# The Settings parts: the sub-nav, the doctor list, and the five steps of the add-provider wizard.
+   Each step is a block of #wizard-step that htmx replaces whole. Its hidden fields carry the values
+   the next step needs; each step checks them again on the server. See routes/settings_wizard.py.
+   The Bank sync cards are in settings/provider_parts.html. Macros import what they use, because a
+   fragment block renders without this file's top level. #}
+{% from "components/icon.html" import icon with context %}
+{% from "components/button.html" import button, link_button %}
+{% from "components/dialog.html" import dialog with context %}
+{% from "components/pill.html" import pill with context %}
+{% from "components/password_field.html" import password_field %}
+{% from "components/table.html" import table %}
+
+{% macro settings_nav(sections, active_href) -%}
+<nav aria-label="Settings" class="flex flex-col gap-4 md:w-56 md:shrink-0">
+  {%- for section in sections %}
+  <section class="flex flex-col gap-2" aria-labelledby="settings-nav-{{ loop.index }}">
+    <div class="flex items-center gap-2 px-3">
+      <h2 id="settings-nav-{{ loop.index }}" class="text-xs font-medium uppercase text-secondary">{{ section.title }}</h2>
+      <span class="h-px grow bg-divider" aria-hidden="true"></span>
+    </div>
+    <ul class="flex flex-col gap-1">
+      {%- for item in section.items %}
+      <li>
+        {%- if item.href %}
+        <a href="{{ item.href }}" class="flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm focus-ring{% if item.href == active_href %} bg-container text-primary shadow-border-xs{% else %} text-secondary hover:bg-surface-hover{% endif %}"{% if item.href == active_href %} aria-current="page"{% endif %}>
+          {%- if item.icon %}{{ icon(item.icon, 16) }}{% endif %}
+          {{ item.label }}
+        </a>
+        {%- else %}
+        <span class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm text-secondary" aria-disabled="true">
+          {{ item.label }}{{ pill("Coming soon", tone="gray", size="sm") }}
+        </span>
+        {%- endif %}
+      </li>
+      {%- endfor %}
+    </ul>
+  </section>
+  {%- endfor %}
+</nav>
+{%- endmacro %}
+
+{% macro doctor_list(checks) -%}
+<ul class="flex flex-col gap-2 text-sm">
+  {%- for check in checks %}
+  <li class="flex items-start gap-2">
+    {{ icon("circle-check" if check.ok else "circle-x", 16, "mt-0.5 shrink-0 " ~ ("text-success" if check.ok else "text-destructive")) }}
+    <span class="flex min-w-0 flex-col">
+      <span class="text-primary">{{ check.name }}</span>
+      <span class="break-all text-xs text-secondary">{{ check.message }}</span>
+    </span>
+  </li>
+  {%- endfor %}
+</ul>
+{%- endmacro %}
+
+{% macro step_heading(number, title) -%}
+<div class="flex flex-col gap-1">
+  <p class="text-xs font-medium uppercase text-secondary">Step {{ number }} of 5</p>
+  <h2 class="text-lg font-medium text-primary">{{ title }}</h2>
+</div>
+{%- endmacro %}
+
+{# The hidden fields the steps carry. The class lets a button include them with hx-include. #}
+{% macro state_fields(state, form_key=none) -%}
+<input type="hidden" class="wizard-state" name="institution" value="{{ state.institution }}">
+<input type="hidden" class="wizard-state" name="name" value="{{ state.name }}">
+<input type="hidden" class="wizard-state" name="connector" value="{{ state.connector }}">
+<input type="hidden" class="wizard-state" name="provider" value="{{ state.provider }}">
+{%- if form_key %}
+<input type="hidden" class="wizard-state" name="idempotency_key" value="{{ form_key }}">
+{%- endif %}
+{%- endmacro %}
+
+{% macro step_error(message) -%}
+{%- if message %}<p class="text-sm text-destructive" role="alert">{{ message }}</p>{% endif -%}
+{%- endmacro %}
+
+{# Step 1: the institution, the provider that fetches its statements, and the provider's bank. The
+   provider key follows the institution key until it is typed over (the key-suggest controller). #}
+{% macro setup_step(state, connectors, form_key, message="") -%}
+<div id="wizard-step" class="flex flex-col gap-6">
+  {{ step_heading(1, "Institution, provider and bank") }}
+  <form class="flex flex-col gap-4" hx-post="/settings/providers/new/connector" hx-target="#wizard-step" hx-swap="outerHTML" data-controller="key-suggest">
+    <input type="hidden" name="idempotency_key" value="{{ form_key }}">
+    <label class="form-field">
+      <span class="form-field__label">Institution key</span>
+      <input name="institution" value="{{ state.institution }}" required maxlength="32" pattern="[a-z0-9][a-z0-9_\-]*" autocomplete="off" class="form-field__input" data-autofocus aria-describedby="institution-help" data-key-suggest-target="institution" data-action="input->key-suggest#institutionChanged">
+    </label>
+    <p id="institution-help" class="text-xs text-secondary">Lowercase letters, digits, - or _, such as boa. A key that already exists adds a provider to that institution. A new key creates the institution, and its statement folder is the key in capitals.</p>
+    <label class="form-field">
+      <span class="form-field__label">Display name</span>
+      <input name="name" value="{{ state.name }}" maxlength="60" autocomplete="off" class="form-field__input" aria-describedby="name-help">
+    </label>
+    <p id="name-help" class="text-xs text-secondary">Used only when the institution is new. An existing institution keeps its own name, so this field is ignored.</p>
+    <label class="form-field">
+      <span class="form-field__label">Provider key</span>
+      <input name="provider" value="{{ state.provider }}" maxlength="32" pattern="[a-z0-9][a-z0-9_\-]*" autocomplete="off" class="form-field__input" aria-describedby="provider-help" data-key-suggest-target="provider">
+    </label>
+    <p id="provider-help" class="text-xs text-secondary">Names this login's fetching, such as chase_joint. It must be new, and it defaults to the institution key.</p>
+    <label class="form-field">
+      <span class="form-field__label">Bank</span>
+      <select name="connector" required class="form-field__input">
+        <option value=""{% if not state.connector %} selected{% endif %} disabled>Choose a bank</option>
+        {%- for key, label in connectors %}
+        <option value="{{ key }}"{% if key == state.connector %} selected{% endif %}>{{ label }}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    {{ step_error(message) }}
+    <div class="flex justify-end">{{ button("Next", variant="primary", type="submit") }}</div>
+  </form>
+</div>
+{%- endmacro %}
+
+{# The results region of the vault search: the unlock form when the vault is locked, otherwise the
+   matching logins as radio buttons. Each radio belongs to the form named by form_id, so the search can
+   sit beside that form rather than inside it. unlock_hidden is the markup of the hidden fields the
+   unlock form posts, and unlock_target is the element its reply replaces. #}
+{% macro vault_results(locked, logins, unlock_message="", message="", unlock_action="", unlock_target="", unlock_hidden="", form_id="login-form", choice_required=true) -%}
+{%- if locked %}
+<form class="flex flex-col gap-3 rounded-lg border border-divider p-4" hx-post="{{ unlock_action }}" hx-target="{{ unlock_target }}" hx-swap="outerHTML">
+  <p class="text-sm text-primary">The vault is locked. Unlock it with your master password to search your logins. The password is not kept.</p>
+  {{ unlock_hidden }}
+  {{ password_field(data_autofocus=true) }}
+  {{ step_error(unlock_message) }}
+  <div class="flex justify-end">{{ button("Unlock vault", variant="secondary", type="submit") }}</div>
+</form>
+{%- elif message %}
+{{ step_error(message) }}
+{%- elif logins is none %}
+<p class="text-sm text-secondary">Type part of a login's name to find it.</p>
+{%- elif not logins %}
+<p class="text-sm text-secondary">No logins match this search.</p>
+{%- else %}
+<fieldset class="flex flex-col gap-1">
+  <legend class="text-sm font-medium text-primary">Logins</legend>
+  {%- for item in logins %}
+  <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-primary hover:bg-container-hover">
+    <input type="radio" name="vault_item_id" value="{{ item.id }}" form="{{ form_id }}"{% if choice_required %} required{% endif %}>
+    <span>{{ item.name or "Unnamed login" }}</span>
+  </label>
+  {%- endfor %}
+</fieldset>
+{%- endif %}
+{%- endmacro %}
+
+{# Step 2: the vault login. Its search is debounced; saving adds the provider with this login as one
+   batch. #}
+{% macro login_step(state, form_key, locked, logins, query, message="", unlock_message="") -%}
+<div id="wizard-step" class="flex flex-col gap-6">
+  {{ step_heading(2, "Vault login") }}
+  <p class="text-sm text-secondary">Choose the Bitwarden login provider {{ state.provider }} uses to fetch {{ state.name }}'s statements. omsync keeps only its reference, never the password.</p>
+  <label class="form-field">
+    <span class="form-field__label">Search logins</span>
+    <input type="search" name="q" value="{{ query }}" autocomplete="off" class="form-field__input" aria-controls="vault-results" hx-get="/settings/providers/new/logins" hx-trigger="input changed delay:300ms, search" hx-target="#vault-results" hx-include="#login-form">
+  </label>
+  <div id="vault-results" aria-live="polite" class="flex flex-col gap-2">
+    {{ vault_results(locked, logins, unlock_message, "", unlock_action="/settings/providers/new/unlock", unlock_target="#wizard-step", unlock_hidden=state_fields(state)) }}
+  </div>
+  <form id="login-form" class="flex flex-col gap-4" hx-post="/settings/providers/new/login" hx-target="#wizard-step" hx-swap="outerHTML">
+    {{ state_fields(state, form_key) }}
+    {{ step_error(message) }}
+    <div class="flex justify-end">{{ button("Save and continue", variant="primary", type="submit") }}</div>
+  </form>
+</div>
+{%- endmacro %}
+
+{# Step 3: the accounts to sync, then the sync and the file check. The
+   accounts are created before any statement file names them. For BoA each one also gets an alias
+   equal to its last four digits, because its CSV folders are named that way. #}
+{% macro accounts_step(state, existing, rows, types, form_key, last4_is_statement_id, message="", error=false) -%}
+<div id="wizard-step" class="flex flex-col gap-6">
+  {{ state_fields(state, form_key) }}
+  {{ step_heading(3, "Accounts to sync") }}
+  <p class="text-sm text-secondary">The bank finds each account on its site by its last four digits. Name each account you want omsync to fetch. You can add more later.</p>
+  {%- if last4_is_statement_id %}
+  <p class="text-xs text-secondary">For this bank the statement account ID is the last four digits, so each account gets that alias.</p>
+  {%- endif %}
+  {%- if existing %}
+  <ul class="flex flex-col gap-1 text-sm">
+    {%- for account in existing %}
+    <li class="flex flex-wrap items-center gap-x-2 gap-y-1 text-primary">
+      <span>{{ account.name }}</span>
+      <span class="text-secondary">{{ account.last4 }} · {{ account.type }}</span>
+      {%- if account.joint %}{{ pill("Joint", tone="blue") }}{% endif %}
+      {%- if account.closed %}{{ pill("Closed", tone="gray") }}{% endif %}
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- endif %}
+  <form id="accounts-form" class="flex flex-col gap-4" hx-post="/settings/providers/new/accounts" hx-target="#wizard-step" hx-swap="outerHTML" hx-include=".wizard-state">
+    {%- for row in rows %}
+    <fieldset class="grid gap-3 rounded-lg border border-divider p-4 sm:grid-cols-2">
+      <legend class="px-1 text-sm font-medium text-primary">Account {{ loop.index }}</legend>
+      <label class="form-field">
+        <span class="form-field__label">Last four digits</span>
+        <input name="last4_{{ row.index }}" value="{{ row.last4 }}" inputmode="numeric" maxlength="4" autocomplete="off" class="form-field__input">
+      </label>
+      <label class="form-field">
+        <span class="form-field__label">Account name</span>
+        <input name="name_{{ row.index }}" value="{{ row.name }}" maxlength="60" autocomplete="off" class="form-field__input">
+      </label>
+      <label class="form-field">
+        <span class="form-field__label">Type</span>
+        <select name="type_{{ row.index }}" class="form-field__input">
+          {%- for type_value, type_label in types %}
+          <option value="{{ type_value }}"{% if type_value == row.type %} selected{% endif %}>{{ type_label }}</option>
+          {%- endfor %}
+        </select>
+      </label>
+      <label class="flex items-center gap-2 self-end pb-2 text-sm text-primary">
+        <input type="checkbox" name="joint_{{ row.index }}" value="1"{% if row.joint %} checked{% endif %}> Joint account
+      </label>
+    </fieldset>
+    {%- endfor %}
+    {%- if message %}
+    <p class="text-sm {{ 'text-destructive' if error else 'text-primary' }}" {{ 'role="alert"' if error else 'role="status"' }}>{{ message }}</p>
+    {%- endif %}
+    <div class="flex justify-end">{{ button("Save accounts", variant="secondary", type="submit") }}</div>
+  </form>
+  <div class="flex flex-col gap-2 text-sm text-primary">
+    <p>Then sync from the Bank sync page, or run <code class="break-all">omsync sync {{ state.provider }}</code> in a terminal. Either fetches the accounts above, and asks for your master password and any MFA code. Come back here and check for files.</p>
+    <p class="text-xs text-secondary">A sync needs at least one saved account.</p>
+  </div>
+  <div class="flex justify-end">{{ button("Check for files", variant="primary", attrs={"hx-post": "/settings/providers/new/check", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}</div>
+</div>
+{%- endmacro %}
+
+{# Step 4: one row per statement account not yet mapped. Each row is named by its token. #}
+{% macro map_step(state, rows, mapped, unreadable, picker, types, form_key, outcomes) -%}
+<div id="wizard-step" class="flex flex-col gap-6">
+  {{ state_fields(state) }}
+  {{ step_heading(4, "Map accounts") }}
+  {%- if outcomes %}
+  <ul class="flex flex-col gap-1 text-sm" aria-live="polite">
+    {%- for outcome in outcomes %}
+    <li class="{{ 'text-success' if outcome.ok else 'text-destructive' }}">{{ outcome.text }}</li>
+    {%- endfor %}
+  </ul>
+  {%- endif %}
+  {%- if not rows and not mapped and not unreadable %}
+  <p class="text-sm text-secondary">No statement files are waiting for this institution yet. Put them in its folder, then check for files.</p>
+  {%- endif %}
+  {%- if rows %}
+  <form id="map-form" class="flex flex-col gap-4" hx-post="/settings/providers/new/map" hx-target="#wizard-step" hx-swap="outerHTML" hx-include=".wizard-state">
+    <input type="hidden" name="idempotency_key" value="{{ form_key }}">
+    <p class="text-sm text-secondary">Say which account each statement account belongs to. A reissued card is the same account under a new number, so choose the existing account for it.</p>
+    {%- for row in rows %}
+    <fieldset class="flex flex-col gap-3 rounded-lg border border-divider p-4">
+      <legend class="px-1 text-sm font-medium text-primary">{{ row.last4 }}</legend>
+      <p class="text-xs text-secondary">{{ row.type_hint }} · {{ row.file_count }} file{{ "s" if row.file_count != 1 }} · {{ row.span }}</p>
+      <input type="hidden" name="row" value="{{ row.token }}">
+      <label class="flex items-center gap-2 text-sm text-primary">
+        <input type="radio" name="choice_{{ row.token }}" value="new"{% if row.choice_default == "new" %} checked{% endif %}> New account
+      </label>
+      <div class="grid gap-3 pl-6 sm:grid-cols-2">
+        <label class="form-field">
+          <span class="form-field__label">Account name</span>
+          <input name="name_{{ row.token }}" value="{{ row.default_name }}" maxlength="60" autocomplete="off" class="form-field__input">
+        </label>
+        <label class="form-field">
+          <span class="form-field__label">Type</span>
+          <select name="type_{{ row.token }}" class="form-field__input">
+            {%- for type_value, type_label in types %}
+            <option value="{{ type_value }}"{% if type_value == row.type_default %} selected{% endif %}>{{ type_label }}</option>
+            {%- endfor %}
+          </select>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-primary">
+          <input type="checkbox" name="joint_{{ row.token }}" value="1"> Joint account
+        </label>
+      </div>
+      {%- if picker %}
+      <label class="flex items-center gap-2 text-sm text-primary">
+        <input type="radio" name="choice_{{ row.token }}" value="alias"{% if row.choice_default == "alias" %} checked{% endif %}> Same as existing account (a reissued card, or an account made before its file)
+      </label>
+      <div class="pl-6">
+        <label class="form-field">
+          <span class="form-field__label">Existing account</span>
+          <select name="account_{{ row.token }}" class="form-field__input">
+            {%- for account_id, label in picker %}
+            <option value="{{ account_id }}"{% if account_id == row.preselect %} selected{% endif %}>{{ label }}</option>
+            {%- endfor %}
+          </select>
+        </label>
+      </div>
+      {%- endif %}
+      <label class="flex items-center gap-2 text-sm text-primary">
+        <input type="radio" name="choice_{{ row.token }}" value="skip"> Skip for now
+      </label>
+    </fieldset>
+    {%- endfor %}
+    <div class="flex justify-end">{{ button("Save mappings", variant="primary", type="submit") }}</div>
+  </form>
+  {%- endif %}
+  {%- if mapped %}
+  <div class="flex flex-col gap-1 text-sm text-secondary">
+    <p>Already mapped:</p>
+    <ul class="flex flex-col gap-1">
+      {%- for item in mapped %}
+      <li>{{ item.last4 }} belongs to {{ item.account or "an account" }}</li>
+      {%- endfor %}
+    </ul>
+  </div>
+  {%- endif %}
+  {%- if unreadable %}
+  <div class="flex flex-col gap-1 text-sm">
+    <p class="text-destructive">These files could not be read, so no account is listed for them:</p>
+    <ul class="flex flex-col gap-1 text-primary">
+      {%- for name in unreadable %}
+      <li>{{ name }}</li>
+      {%- endfor %}
+    </ul>
+    <p class="text-xs text-secondary">Each must be an OFX file, or the institution's CSV format in its account folder.</p>
+  </div>
+  {%- endif %}
+  <div class="flex flex-wrap justify-end gap-2">
+    {{ button("Check for files", variant="outline", attrs={"hx-post": "/settings/providers/new/check", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
+    {{ button("Preview import", variant="primary", attrs={"hx-post": "/settings/providers/new/preview", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
+  </div>
+</div>
+{%- endmacro %}
+
+{# Step 5: what the import would do. Nothing is written until Import. `identity` is the preview's token: Import sends it back, and the server imports only if it still matches. #}
+{% macro preview_step(state, view, balances, can_import, identity="", notice="") -%}
+<div id="wizard-step" class="flex flex-col gap-6">
+  {{ state_fields(state) }}
+  {{ step_heading(5, "Import") }}
+  {%- if notice %}
+  <p class="error" role="alert">{{ notice }}</p>
+  {%- endif %}
+  {%- if view.files %}
+  <p class="text-sm text-secondary">This is a preview. Nothing has been written yet.</p>
+  {{ table(view.columns, view.table_rows, "Files to import") }}
+  {%- if balances %}
+  <div class="flex flex-col gap-1 text-sm">
+    <p class="font-medium text-primary">Balances before this import</p>
+    {%- for check in balances %}
+    <p class="{{ 'text-primary' if check.ok else 'text-warning' }}">{{ check.account }}: {{ check.text }}</p>
+    {%- endfor %}
+  </div>
+  {%- endif %}
+  <p class="text-sm text-primary">{{ view.planned }} file{{ "s" if view.planned != 1 }} will import, and {{ view.review }} row{{ "s" if view.review != 1 }} will wait for review.</p>
+  {%- else %}
+  <p class="text-sm text-secondary">No statement files are waiting for this institution. Put them in its folder and check again.</p>
+  {%- endif %}
+  <div class="flex flex-wrap justify-end gap-2">
+    {{ button("Back to map accounts", variant="outline", attrs={"hx-post": "/settings/providers/new/check", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
+    {%- if can_import %}
+    <input type="hidden" class="wizard-state" name="identity" value="{{ identity }}">
+    {{ button("Import", variant="primary", attrs={"hx-post": "/settings/providers/new/import", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
+    {%- endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+{# After Import: the results, and links to each account's transactions and page. #}
+{% macro imported_step(view, accounts) -%}
+<div id="wizard-step" class="flex flex-col gap-6">
+  {{ step_heading(5, "Import") }}
+  {%- if view.files %}
+  <p class="text-sm text-primary">Imported. Each file was one batch, and omsync batches undo reverses one.</p>
+  {{ table(view.columns, view.table_rows, "Imported files") }}
+  {%- for check in view.checks %}
+  <p class="text-sm {{ 'text-primary' if check.ok else 'text-warning' }}">{{ check.account }}: {{ check.text }}</p>
+  {%- endfor %}
+  {%- if view.auto_linked %}
+  <p class="text-sm text-primary">Linked {{ view.auto_linked }} pair{{ "s" if view.auto_linked != 1 }} automatically, as one batch you can undo.</p>
+  {{ link_button("Open Reconcile", href="/reconcile", variant="outline", size="sm") }}
+  {%- endif %}
+  {%- if view.auto_problem %}
+  <p class="text-sm text-warning">Automatic linking did not run: {{ view.auto_problem }}. Review the proposals on Reconcile.</p>
+  {%- endif %}
+  {%- else %}
+  <p class="text-sm text-secondary">Nothing was waiting for this institution.</p>
+  {%- endif %}
+  {%- if accounts %}
+  <div class="flex flex-col gap-3">
+    <p class="text-sm font-medium text-primary">Go to</p>
+    <ul class="flex flex-col gap-2">
+      {%- for account in accounts %}
+      <li class="flex flex-wrap items-center gap-3 text-sm">
+        <span class="text-primary">{{ account.label }}</span>
+        {{ link_button("Transactions", href="/transactions?account=" ~ account.id, variant="outline", size="sm") }}
+        {{ link_button("Account", href="/accounts/" ~ account.id, variant="outline", size="sm") }}
+      </li>
+      {%- endfor %}
+    </ul>
+  </div>
+  {%- endif %}
+  <div class="flex justify-end">{{ link_button("Back to bank sync", href="/settings/providers", variant="ghost") }}</div>
+</div>
+{%- endmacro %}
+

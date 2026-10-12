@@ -1,0 +1,105 @@
+{# The report for paper: no shell, and the print styles from styles/print-report.css. The Print button
+   calls window.print(), and it is hidden when printing.
+   Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/reports/print.html.erb. #}
+{% extends "layouts/app.html" %}
+{% from "components/button.html" import button with context %}
+
+{% block content %}
+<div class="print-body min-h-screen">
+  <main class="print-container tufte-report">
+    <div class="flex items-center justify-between gap-3 pb-4 print:hidden">
+      <a href="/reports?{{ view.state_query }}" class="text-sm text-link underline-offset-2 hover:underline focus-ring rounded-sm">Back to reports</a>
+      {{ button("Print", variant="outline", size="sm", attrs={"id": "print-report"}) }}
+    </div>
+
+    <header class="tufte-header">
+      <h1 class="tufte-title">Reports</h1>
+      <span class="tufte-period">{{ view.period_label }}</span>
+      <p class="tufte-meta">{{ view.joint_note }}. Compared with {{ view.prior_label }}. Printed {{ printed }}.</p>
+    </header>
+
+    {%- if not view.has_transactions %}
+    <p class="tufte-section">No transactions yet. Run <code>omsync import --apply</code> to bring in statements.</p>
+    {%- else %}
+    <section class="tufte-section">
+      <h2 class="tufte-section-title">Summary</h2>
+      <div class="tufte-metric-row">
+        {%- for card in view.cards %}
+        <div class="tufte-metric-card">
+          <span class="tufte-metric-card-label">{{ card.label }}</span>
+          <span class="tufte-metric-card-value">{{ card.value }}</span>
+          {%- if card.change %}<span class="tufte-metric-card-change">{{ card.change }}</span>{% endif %}
+        </div>
+        {%- endfor %}
+      </div>
+    </section>
+
+    <section class="tufte-section">
+      <h2 class="tufte-section-title">Monthly trend</h2>
+      <table class="tufte-table">
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th class="tufte-right">Income</th>
+            <th class="tufte-right">Expenses</th>
+            <th class="tufte-right">Net</th>
+            <th class="tufte-right">Savings rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {%- for row in view.trend_rows %}
+          <tr>
+            <td>{{ row.month }}</td>
+            <td class="tufte-right">{{ row.income }}</td>
+            <td class="tufte-right">{{ row.expenses }}</td>
+            <td class="tufte-right">{{ row.net }}</td>
+            <td class="tufte-right">{{ row.rate }}</td>
+          </tr>
+          {%- endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="tufte-section">
+      <h2 class="tufte-section-title">Spending by category</h2>
+      <table class="tufte-table">
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th class="tufte-right">Share</th>
+            <th class="tufte-right">Amount</th>
+            <th class="tufte-right">Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {%- for row in view.categories %}
+          <tr>
+            <td>{{ row.name }} <span class="tufte-muted">{{ row.type }}</span></td>
+            <td class="tufte-right">{{ row.share }}</td>
+            <td class="tufte-right">{{ row.amount }}</td>
+            <td class="tufte-right">{{ row.change }}</td>
+          </tr>
+          {%- else %}
+          <tr><td colspan="4">No spending in this period.</td></tr>
+          {%- endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Expenses</td>
+            <td></td>
+            <td class="tufte-right">{{ view.expenses }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+      <p class="tufte-footnote">Uncategorized {{ view.uncategorized }}. Not counted in income or expenses.</p>
+    </section>
+    {%- endif %}
+
+    <footer class="tufte-footer">omsync · {{ printed }}</footer>
+  </main>
+</div>
+<script>
+  document.getElementById("print-report").addEventListener("click", function () { window.print(); });
+</script>
+{% endblock %}

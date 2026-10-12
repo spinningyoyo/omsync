@@ -1,0 +1,33 @@
+/*
+ * Adapted from Sure (we-promise/sure), AGPL-3.0: app/assets/tailwind/geist-font.css
+ * Geist (variable) and Noto Sans Thai (variable; Thai and Latin Extended subsets), both under
+ * SIL OFL 1.1. Absolute URLs keep the paths the same in the built CSS. Provenance and
+ * checksums: static/fonts/FONTS.md.
+ */
+@font-face {
+  font-family: 'Geist';
+  src: url('/static/fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Sans Thai';
+  src: url('/static/fonts/NotoSansThai-thai.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+
+@font-face {
+  font-family: 'Noto Sans Thai';
+  src: url('/static/fonts/NotoSansThai-latin-ext.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}

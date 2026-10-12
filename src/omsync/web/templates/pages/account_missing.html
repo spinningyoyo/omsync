@@ -1,0 +1,7 @@
+{% extends "layouts/shell.html" %}
+{% from "layouts/shell_parts.html" import page_header, empty_state %}
+
+{% block page %}
+{{ page_header("Account not found") }}
+{{ empty_state("No open account here", "This account does not exist, or it is closed. A closed account opens with ?closed=1 at the end of its address.") }}
+{% endblock %}

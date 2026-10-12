@@ -1,0 +1,36 @@
+{# The regions that a register reply re-renders out of band, and the review regions. A full update
+   covers the chips and the search box. A search reply covers only what a search can change, so the
+   field the user is typing in is left alone. #}
+{% from "transactions/parts.html" import register_state, register_tabs, table_body, toast_region %}
+{% from "transactions/filters.html" import filter_chips, filter_search, saved_menu %}
+{% from "transactions/bulk.html" import bulk_form %}
+{% from "transactions/review.html" import review_list %}
+{% from "layouts/shell_parts.html" import count_badge %}
+
+{# `focus` names the pager control that takes focus back (see pager in parts.html). #}
+{% macro update_regions(state, rows, full=true, focus=none) -%}
+{{ register_state(state, oob=true) }}
+{%- if full %}
+{{ filter_chips(state, oob=true) }}
+{{ filter_search(state, oob=true) }}
+{%- endif %}
+{{ saved_menu(state, oob=true) }}
+{{ bulk_form(state, oob=true) }}
+<div id="register-table" hx-swap-oob="innerHTML">{{ table_body(state, rows, focus) }}</div>
+{%- endmacro %}
+
+{# The review list, its tab, and the Transactions badge, out of band. #}
+{% macro review_regions(items, review_count, message="", tabs=true) -%}
+<div id="review-list" hx-swap-oob="innerHTML">{{ review_list(items, message) }}</div>
+{%- if tabs %}
+{{ register_tabs(review_count, "review", "/transactions", oob=true) }}
+{{ count_badge("transactions", review_count, oob=true) }}
+{%- endif %}
+{%- endmacro %}
+
+{% macro review_done(items, review_count, label, batch_id, message="") -%}
+{{ review_list(items, message, true) }}
+{{ register_tabs(review_count, "review", "/transactions", oob=true) }}
+{{ count_badge("transactions", review_count, oob=true) }}
+{{ toast_region(label, batch_id) }}
+{%- endmacro %}

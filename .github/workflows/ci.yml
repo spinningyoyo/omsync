@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Lint, format, and import layers
+        run: sh scripts/check.sh
+      - name: Install Chromium for e2e tests
+        run: uv run playwright install --with-deps chromium
+      - name: Test
+        run: uv run pytest -q

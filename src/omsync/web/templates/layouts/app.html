@@ -1,0 +1,45 @@
+{# Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/layouts/_dark_mode_check.html.erb
+   (the no-flash theme script). The page sets data-theme before first paint. The choice is
+   stored in localStorage under omsync-theme, as light, dark or system. #}
+{% extends "base.html" %}
+
+{% block head %}
+<script>
+  (function () {
+    var choice = "system";
+    try {
+      var saved = localStorage.getItem("omsync-theme");
+      if (saved === "light" || saved === "dark" || saved === "system") choice = saved;
+    } catch (e) {}
+    var dark = choice === "dark" ||
+      (choice === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  })();
+</script>
+{# Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/layouts/_privacy_mode_check.html.erb.
+   Privacy mode is on from the first paint, so amounts are never seen unblurred. The key is
+   omsync-privacy-mode in localStorage. #}
+<script>
+  (function () {
+    try {
+      if (localStorage.getItem("omsync-privacy-mode") === "true") {
+        document.documentElement.classList.add("privacy-mode");
+      }
+    } catch (e) {}
+  })();
+</script>
+<link rel="stylesheet" href="/static/css/app.css">
+<script src="/static/vendor/htmx.min.js" defer></script>
+{# Deferred and module scripts run in document order. A page that draws charts adds its libraries
+   here so they exist before application.js connects the controllers that read them. #}
+{% block chart_scripts %}{% endblock %}
+<script type="module" src="/static/js/application.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="min-h-screen">
+  <main class="mx-auto max-w-5xl px-4 py-6 sm:px-6 flex flex-col gap-10">
+    {% block main %}{% endblock %}
+  </main>
+</div>
+{% endblock %}

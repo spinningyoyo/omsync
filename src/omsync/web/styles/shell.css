@@ -1,0 +1,105 @@
+/*
+ * App shell layout. The accounts panel's width lives in the --accounts-width variable on <html>,
+ * and its collapsed state in data-accounts-collapsed. The inline script in layouts/shell.html sets
+ * both before first paint, and accounts_panel_controller.js updates them. Widths follow the
+ * 240 to 320 pixel range in docs/features/sign-in-and-shell.md.
+ *
+ * These rules are deliberately unlayered. The panel also has the `flex` utility, which sits in
+ * Tailwind's utilities layer, and layered rules lose to that layer whatever their specificity.
+ * Unlayered rules win, so the collapsed panel really is hidden.
+ *
+ * Below lg (1024 pixels) there is no docked panel. It is closed until its toggle sets
+ * data-accounts-overlay="true" on <html>, and then it floats over the page with a backdrop. That
+ * state is not saved; the desktop collapse state applies from lg up only.
+ */
+.accounts-panel {
+  width: var(--accounts-width, 320px);
+}
+
+.accounts-backdrop {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  [data-accounts-collapsed="true"] .accounts-panel {
+    display: none;
+  }
+}
+
+@media (max-width: 1023px) {
+  .accounts-panel {
+    display: none;
+  }
+
+  [data-accounts-overlay="true"] .accounts-panel {
+    display: flex;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    width: min(var(--accounts-width, 320px), calc(100vw - 3rem));
+    background: var(--color-surface);
+    box-shadow: var(--shadow-xl);
+  }
+
+  [data-accounts-overlay="true"] .accounts-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: var(--utility-bg-overlay);
+  }
+}
+
+/*
+ * Fill mode (see layouts/shell.html). From lg up, a page that sets fill_viewport is as tall as the
+ * window: its wrapper (.fill-viewport) takes the space under the page header, each .fill-chain
+ * element passes that height down, and the .fill-region at the end of the chain is the one thing
+ * that scrolls. A region shorter than the space stays as short as its content, and a window too
+ * short to give the wrapper room for a few rows scrolls the whole page instead. A chain element
+ * that is hidden (a tab panel) stays hidden. Below lg these rules do not apply and the page scrolls
+ * as a whole.
+ *
+ * A page whose columns sit side by side only from xl sets fill_viewport to "xl" and gets the same
+ * rules from xl up (.fill-viewport-xl), so its stacked columns are not squeezed into the window.
+ */
+@media (min-width: 1024px) {
+  .fill-viewport {
+    flex: 1 1 0%;
+    min-height: 30rem;
+  }
+
+  .fill-viewport .fill-chain:not(.hidden) {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0%;
+    min-height: 0;
+  }
+
+  .fill-viewport .fill-region {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
+@media (min-width: 1280px) {
+  .fill-viewport-xl {
+    flex: 1 1 0%;
+    min-height: 30rem;
+  }
+
+  .fill-viewport-xl .fill-chain:not(.hidden) {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0%;
+    min-height: 0;
+  }
+
+  .fill-viewport-xl .fill-region {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}

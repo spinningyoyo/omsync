@@ -1,0 +1,134 @@
+{# Fragment blocks for the Categories page. Each route renders one block (see routes/categories.py).
+   A block imports the macros it uses from parts.html, because it renders without this file's
+   top-level code. The toast, when a reply has one, comes last and out of band. #}
+
+{% block frag_category_list %}
+{% from "transactions/parts.html" import toast_region %}
+{% from "categories/parts.html" import category_list %}
+{{ category_list(rows, view, drafts, errors, message or "") }}
+{%- if label %}{{ toast_region(label, batch_id) }}{% endif %}
+{% endblock %}
+
+{% block frag_icon_picker %}
+{% from "categories/parts.html" import icon_picker %}
+{{ icon_picker(category, view, q, names, total, next_offset) }}
+{% endblock %}
+
+{% block frag_icon_results %}
+{% from "categories/parts.html" import icon_results %}
+{{ icon_results(category, view, q, names, total, next_offset) }}
+{% endblock %}
+
+{% block frag_icon_items %}
+{% from "categories/parts.html" import icon_items %}
+{{ icon_items(category, view, q, names, total, next_offset) }}
+{% endblock %}
+
+{% block frag_new_category %}
+{% from "transactions/parts.html" import toast_region %}
+{% from "categories/parts.html" import new_category_form %}
+{{ new_category_form(form) }}
+{%- if label %}{{ toast_region(label, batch_id) }}{% endif %}
+{% endblock %}
+
+{% block frag_keyword_panel %}
+{% from "categories/parts.html" import keyword_panel %}
+{{ keyword_panel(list_key, lists, conflicts, rows, choices, form) }}
+{% endblock %}
+
+{% block frag_keyword_add %}
+{% from "transactions/parts.html" import toast_region %}
+{% from "categories/parts.html" import keyword_add_form %}
+{{ keyword_add_form(form, list_key, choices) }}
+{%- if label %}{{ toast_region(label, batch_id) }}{% endif %}
+{% endblock %}
+
+{# A row reply starts with its <tr>, then the toast (see transactions/parts.html). #}
+{% block frag_keyword_row %}
+{% from "transactions/parts.html" import toast_region %}
+{% from "categories/parts.html" import keyword_row %}
+{{ keyword_row(row) }}
+{%- if label %}{{ toast_region(label, batch_id) }}{% endif %}
+{% endblock %}
+
+{% block frag_keyword_edit %}
+{% from "categories/parts.html" import keyword_edit_row %}
+{{ keyword_edit_row(form, choices) }}
+{% endblock %}
+
+{% block frag_rule_panel %}
+{% from "categories/parts.html" import rule_panel %}
+{{ rule_panel(rows, choices, form) }}
+{% endblock %}
+
+{% block frag_rule_add %}
+{% from "transactions/parts.html" import toast_region %}
+{% from "categories/parts.html" import rule_add_form %}
+{{ rule_add_form(form, choices) }}
+{%- if label %}{{ toast_region(label, batch_id) }}{% endif %}
+{% endblock %}
+
+{% block frag_rule_row %}
+{% from "transactions/parts.html" import toast_region %}
+{% from "categories/parts.html" import rule_row %}
+{{ rule_row(row) }}
+{%- if label %}{{ toast_region(label, batch_id) }}{% endif %}
+{% endblock %}
+
+{% block frag_rule_edit %}
+{% from "categories/parts.html" import rule_edit_row %}
+{{ rule_edit_row(form, choices) }}
+{% endblock %}
+
+{# A batch reply passes its label; a refusal or a no-op passes its message. #}
+{% block frag_toast %}
+{% from "transactions/parts.html" import toast_region %}
+{{ toast_region(label or message, batch_id or none) }}
+{% endblock %}
+
+{% block frag_message %}
+<p class="text-sm text-destructive" role="alert">{{ message }}</p>
+{% endblock %}
+
+{% block frag_payee_results %}
+{% from "categories/parts.html" import payee_results %}
+{{ payee_results(payee, matches, names, error, amount_rule) }}
+{% endblock %}
+
+{% block frag_triage %}
+{% from "categories/parts.html" import triage_panel %}
+{{ triage_panel(payees, vendors, choices) }}
+{% endblock %}
+
+{% block frag_triage_form %}
+{% from "categories/parts.html" import triage_form %}
+{{ triage_form(form, kind, text, slot, list_key, choices) }}
+{% endblock %}
+
+{% block frag_triage_done %}
+{% from "transactions/parts.html" import toast_region %}
+<p class="text-sm text-secondary">Keyword added to {{ list_key }}. Preview categorize to apply it.</p>
+{{ toast_region(label, batch_id) }}
+{% endblock %}
+
+{% block frag_import_preview %}
+{% from "categories/parts.html" import import_preview %}
+{{ import_preview(warnings, plan, list_key, mapping_json, revision, key) }}
+{% endblock %}
+
+{% block frag_import_done %}
+{% from "transactions/parts.html" import toast_region %}
+<p class="text-sm text-primary">{{ message }}</p>
+{{ toast_region(label, batch_id) }}
+{% endblock %}
+
+{% block frag_categorize %}
+{% from "categories/parts.html" import categorize_body %}
+{{ categorize_body(plan, error, revision, key) }}
+{% endblock %}
+
+{% block frag_categorize_done %}
+{% from "transactions/parts.html" import toast_region %}
+<p class="text-sm text-primary">{{ message }}</p>
+{{ toast_region(label, batch_id) }}
+{% endblock %}

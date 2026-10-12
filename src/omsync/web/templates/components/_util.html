@@ -1,0 +1,5 @@
+{# Helpers shared by the component macros. #}
+{# A value of none leaves the attribute out. #}
+{% macro html_attrs(values) -%}
+{%- for name, value in (values or {}).items() %}{% if value is not none %} {{ name }}="{{ value }}"{% endif %}{% endfor -%}
+{%- endmacro %}

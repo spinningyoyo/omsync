@@ -1,0 +1,21 @@
+{% extends "layouts/settings.html" %}
+{% from "layouts/shell_parts.html" import page_header %}
+{% from "components/button.html" import link_button %}
+{% from "settings/provider_parts.html" import provider_list %}
+{% from "settings/sync_parts.html" import close_on_failure_control, sync_all_control, sync_region, sync_question %}
+
+{% block settings_page %}
+<div class="flex flex-wrap items-start justify-between gap-4">
+  {{ page_header(page_title, "How omsync fetches each institution's statements: the providers that log in to its bank, and the accounts each one fetches.") }}
+  <div class="flex flex-wrap items-center gap-2">
+    {{ sync_all_control(sync.running) }}
+    {{ link_button("Add provider", href="/settings/providers/new", variant="primary", icon="plus") }}
+  </div>
+</div>
+<div id="toast-region" aria-live="polite"></div>
+{{ close_on_failure_control(close_on_failure) }}
+{{ sync_region(sync) }}
+<section id="link-accounts" aria-live="polite" class="rounded-xl bg-container p-6 shadow-border-xs empty:hidden"></section>
+{{ sync_question(sync.question) }}
+{{ provider_list(groups) }}
+{% endblock %}

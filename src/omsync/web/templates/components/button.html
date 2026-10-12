@@ -1,0 +1,57 @@
+{# Adapted from Sure (we-promise/sure), AGPL-3.0: app/components/DS/buttonish.rb, button.rb,
+   link.rb and button.html.erb. Variants: primary, secondary, destructive, outline, ghost, icon.
+   Import with context, because the icon needs icon_svg from the render context. #}
+{% from "components/icon.html" import icon as svg with context %}
+{% from "components/_util.html" import html_attrs %}
+
+{% set VARIANTS = {
+  "primary": {"container": "text-inverse bg-inverse hover:bg-inverse-hover disabled:bg-gray-500 theme-dark:disabled:bg-gray-400", "icon": "text-inverse"},
+  "secondary": {"container": "text-primary bg-gray-200 theme-dark:bg-gray-700 hover:bg-gray-300 theme-dark:hover:bg-gray-600 disabled:bg-gray-200 theme-dark:disabled:bg-gray-600", "icon": "text-primary"},
+  "destructive": {"container": "text-inverse button-bg-destructive hover:button-bg-destructive-hover disabled:bg-red-200 theme-dark:disabled:bg-red-600", "icon": "text-inverse"},
+  "outline": {"container": "text-primary border border-secondary bg-transparent hover:bg-surface-hover", "icon": "text-secondary"},
+  "ghost": {"container": "text-primary bg-transparent hover:bg-container-inset-hover", "icon": "text-secondary"},
+  "icon": {"container": "hover:bg-container-inset-hover", "icon": "text-secondary"},
+} %}
+
+{# Icon-only sizes match the text buttons' height (sm about 28px, md 36px, lg 48px). Touch
+   screens get 44px targets (WCAG 2.5.5). #}
+{% set SIZES = {
+  "sm": {"box": "px-2 py-1", "icon_box": "inline-flex items-center justify-center w-7 h-7 pointer-coarse:w-11 pointer-coarse:h-11", "radius": "rounded-md", "text": "text-sm", "icon_px": 16},
+  "md": {"box": "px-3 py-2", "icon_box": "inline-flex items-center justify-center w-9 h-9 pointer-coarse:w-11 pointer-coarse:h-11", "radius": "rounded-lg", "text": "text-sm", "icon_px": 20},
+  "lg": {"box": "px-4 py-3", "icon_box": "inline-flex items-center justify-center w-12 h-12", "radius": "rounded-xl", "text": "text-base", "icon_px": 24},
+} %}
+
+{% macro button_classes(variant, size, icon_only, full_width, class_) -%}
+{{ [
+  "font-medium whitespace-nowrap focus-ring disabled:cursor-not-allowed aria-disabled:cursor-not-allowed aria-disabled:opacity-50",
+  "inline-flex items-center gap-1",
+  SIZES[size].radius,
+  SIZES[size].icon_box if icon_only else SIZES[size].box,
+  "" if icon_only else SIZES[size].text,
+  "w-full justify-center" if full_width else "",
+  VARIANTS[variant].container,
+  class_,
+] | reject("equalto", "") | join(" ") }}
+{%- endmacro %}
+
+{# <button>. Pass text, or an icon with aria_label for an icon-only button. #}
+{% macro button(text=none, variant="primary", size="md", icon=none, icon_position="left", type="button", disabled=false, full_width=false, aria_label=none, class_="", attrs=none) -%}
+{%- set icon_only = variant == "icon" or (icon and not text) -%}
+<button type="{{ type }}" class="{{ button_classes(variant, size, icon_only, full_width, class_) }}"{% if disabled %} disabled{% endif %}{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}{{ html_attrs(attrs) }}>
+  {%- if icon and icon_position != "right" %}{{ svg(icon, SIZES[size].icon_px, VARIANTS[variant].icon) }}{% endif -%}
+  {%- if text %}<span class="min-w-0 truncate">{{ text }}</span>{% endif -%}
+  {%- if icon and icon_position == "right" %}{{ svg(icon, SIZES[size].icon_px, VARIANTS[variant].icon) }}{% endif -%}
+</button>
+{%- endmacro %}
+
+{# A link styled as a button. Disabled links keep their href but cannot be clicked or tabbed to. #}
+{% macro link_button(text=none, href="#", variant="primary", size="md", icon=none, icon_position="left", disabled=false, full_width=false, aria_label=none, class_="", attrs=none) -%}
+{%- set icon_only = variant == "icon" or (icon and not text) -%}
+{%- set new_tab = attrs and attrs.target == "_blank" -%}
+<a href="{{ href }}" class="{{ button_classes(variant, size, icon_only, full_width, class_) }}"{% if disabled %} aria-disabled="true" tabindex="-1" style="pointer-events: none"{% endif %}{% if new_tab %} rel="noopener noreferrer"{% endif %}{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}{{ html_attrs(attrs) }}>
+  {%- if icon and icon_position != "right" %}{{ svg(icon, SIZES[size].icon_px, VARIANTS[variant].icon) }}{% endif -%}
+  {%- if text %}<span class="min-w-0 truncate">{{ text }}</span>{% endif -%}
+  {%- if icon and icon_position == "right" %}{{ svg(icon, SIZES[size].icon_px, VARIANTS[variant].icon) }}{% endif -%}
+  {%- if new_tab %}<span class="sr-only">(opens in new tab)</span>{% endif -%}
+</a>
+{%- endmacro %}

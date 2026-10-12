@@ -1,0 +1,41 @@
+{# Adapted from Sure (we-promise/sure), AGPL-3.0: app/components/DS/dialog.rb, dialog.html.erb
+   and dialog_controller.js. The native <dialog> opens with showModal(), so focus is trapped,
+   Escape closes it, and a click outside the panel closes it. Focus goes back to the trigger.
+
+   Usage:
+     {% call dialog(id="rename", title="Rename account", trigger="Rename", width="sm") %}
+       <p>Body markup.</p>
+     {% endcall %}
+   Import with context for the close icon. #}
+{% from "components/icon.html" import icon with context %}
+{% from "components/button.html" import button with context %}
+
+{% macro dialog(id, title, trigger, trigger_variant="outline", subtitle=none, width="md", actions=none, trigger_size="md") -%}
+{%- set widths = {"sm": "lg:max-w-[300px]", "md": "lg:max-w-[550px]", "lg": "lg:max-w-[700px]"} -%}
+<div class="inline-block" data-controller="dialog">
+  {{ button(text=trigger, variant=trigger_variant, size=trigger_size, attrs={"data-action": "dialog#open"}) }}
+  <dialog id="{{ id }}" class="bg-transparent text-primary backdrop:bg-overlay p-0 m-0 w-full h-full max-w-none max-h-none lg:p-1" role="dialog" aria-modal="true" aria-labelledby="{{ id }}-title" data-dialog-target="dialog" data-action="click->dialog#clickOutside close->dialog#restoreFocus">
+    <div class="flex h-full w-full items-center justify-center">
+      <div class="flex flex-col bg-container rounded-xl shadow-border-xs mx-3 lg:mx-0 w-full max-h-full {{ widths.get(width, widths.md) }}" data-dialog-target="content">
+        <div class="grow py-4 space-y-4 flex flex-col overflow-auto">
+          <header class="px-4 flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <h2 id="{{ id }}-title" class="font-medium text-primary">{{ title }}</h2>
+              {{ button(variant="icon", size="sm", icon="x", aria_label="Close", class_="ml-auto", attrs={"data-action": "dialog#close"}) }}
+            </div>
+            {%- if subtitle %}
+            <p class="text-sm text-secondary">{{ subtitle }}</p>
+            {%- endif %}
+          </header>
+          <div class="px-4 grow">
+            {{ caller() }}
+          </div>
+        </div>
+        {%- if actions %}
+        <div class="flex items-center gap-2 justify-end p-4">{{ actions }}</div>
+        {%- endif %}
+      </div>
+    </div>
+  </dialog>
+</div>
+{%- endmacro %}

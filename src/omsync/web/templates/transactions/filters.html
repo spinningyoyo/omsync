@@ -1,0 +1,181 @@
+{# The filter bar, one row: the search box, the add-filter menu, the chips, the all/any toggle, Clear
+   filters, and the saved-filter menu with its dialogs. A condition's form opens as a popover under
+   its chip or under the add-filter menu, in that trigger's own slot.
+
+   Each part has its own id, so a reply can re-render one part out of band. The search box is only
+   re-rendered on a full update, so a search reply never replaces the field the user is typing in.
+   The menu and form controls read the state from the hidden #register-state form with hx-include. #}
+{% from "components/icon.html" import icon with context %}
+{% from "components/menu.html" import menu, menu_item, menu_separator with context %}
+{% from "components/button.html" import button %}
+{% from "components/segmented_control.html" import segmented_control %}
+
+{# A trigger's slot, where its filter form opens as a popover. The filter controller closes it. #}
+{% macro form_slot() -%}
+<div class="filter-slot absolute left-0 top-full z-50 mt-2"></div>
+{%- endmacro %}
+
+{# The add-filter menu and the chips, each with its own form slot. #}
+{% macro filter_chips(state, oob=false) -%}
+<div id="filter-chips" class="flex min-w-0 flex-auto flex-wrap items-center gap-2"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <div class="relative" data-filter-anchor>
+    {% call menu(id="filter-add-menu", label="Add a filter", trigger="+ Filter", placement="bottom-start") %}
+      {% for key, label in filter_field_choices %}
+      {{ menu_item(label, attrs={"hx-get": "/transactions/filter/form", "hx-vals": '{"field": "' ~ key ~ '"}', "hx-include": "#register-state", "hx-target": "next .filter-slot", "hx-swap": "innerHTML", "data-filter-add": ""}) }}
+      {% endfor %}
+    {% endcall %}
+    {{ form_slot() }}
+  </div>
+  {%- for index, label in state.chips %}
+  <span class="relative inline-flex items-center rounded-full border border-secondary bg-container text-sm text-primary" data-filter-anchor>
+    <button type="button" class="rounded-l-full py-1 pl-3 pr-1 focus-ring" hx-get="/transactions/filter/form" hx-vals='{"index": {{ index }}}' hx-include="#register-state" hx-target="next .filter-slot" hx-swap="innerHTML">{{ label }}</button>
+    <button type="button" class="rounded-r-full py-1 pl-1 pr-2 text-secondary hover:text-primary focus-ring" aria-label="Remove filter: {{ label }}" hx-post="/transactions/filter/remove" hx-vals='{"index": {{ index }}}' hx-include="#register-state" hx-swap="none">{{ icon("x", 14) }}</button>
+    {{ form_slot() }}
+  </span>
+  {%- endfor %}
+  {%- if state.spec.conditions | length > 1 %}
+  {{ segmented_control([
+    {"label": "Match all", "active": state.spec.match == "all", "attrs": {"hx-post": "/transactions/filter/match", "hx-vals": '{"match": "all"}', "hx-include": "#register-state", "hx-swap": "none"}},
+    {"label": "Match any", "active": state.spec.match == "any", "attrs": {"hx-post": "/transactions/filter/match", "hx-vals": '{"match": "any"}', "hx-include": "#register-state", "hx-swap": "none"}},
+  ], label="How conditions combine") }}
+  {%- endif %}
+  {%- if state.filtered %}
+  <a href="{{ state.scope_url }}" class="whitespace-nowrap text-sm text-secondary underline focus-ring rounded-sm">Clear filters</a>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# The search box: a bordered field with a search icon. Typing sends the state with the text, after a
+   pause of 250 ms, and starts again at the first page. The filled-in placeholder is as readable as
+   a value, unlike the bare field's. #}
+{% macro filter_search(state, oob=false) -%}
+<label id="filter-search-field" class="form-field w-64 max-w-full shrink-0 flex-row items-center gap-2 py-1.5"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {{ icon("search", 16, "shrink-0 text-secondary") }}
+  <input id="filter-search" type="search" name="q" value="{{ state.search or '' }}" placeholder="Search payee or memo" aria-label="Search transactions" autocomplete="off" class="form-field__input placeholder:text-secondary placeholder-shown:opacity-100" hx-get="/transactions/table" hx-include="#register-state" hx-vals='{"page": 1}' hx-trigger="input changed delay:250ms, search" hx-swap="none">
+</label>
+{%- endmacro %}
+
+{# Which operation shows which value inputs. The controller shows the matching ones on change. #}
+{% macro op_hidden(values, ops) -%}{{ ' hidden' if values.op not in ops.split() else '' }}{%- endmacro %}
+
+{# The form for one condition, shown in a trigger's slot: a new one for a field, or an existing one
+   by its index. #}
+{% macro filter_form(values, state) -%}
+{%- set field = values.field -%}
+<form id="filter-form" class="flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-xl bg-container p-4 shadow-border-lg" hx-post="/transactions/filter/add" hx-include="#register-state" hx-target="closest .filter-slot" hx-swap="innerHTML" data-action="keydown->filter#formKeydown" aria-label="{{ 'Edit filter' if values.is_edit else 'Add filter' }}">
+  <input type="hidden" name="field" value="{{ field }}">
+  <input type="hidden" name="index" value="{{ values.index }}">
+  <p class="text-sm font-medium text-primary">{{ filter_labels[field] }}</p>
+  <label class="form-field"><span class="form-field__label">Condition</span>
+    <select name="op" data-action="change->filter#opChanged" class="form-field__input">
+      {%- for op, label in filter_op_choices(field) %}
+      <option value="{{ op }}"{% if op == values.op %} selected{% endif %}>{{ label }}</option>
+      {%- endfor %}
+    </select>
+  </label>
+
+  {%- if field == "date" %}
+  <label class="form-field" data-ops="is after before"{{ op_hidden(values, "is after before") }}><span class="form-field__label">Date</span>
+    <input type="date" name="value" value="{{ values.value }}" class="form-field__input" data-autofocus>
+  </label>
+  <label class="form-field" data-ops="between"{{ op_hidden(values, "between") }}><span class="form-field__label">To</span>
+    <input type="date" name="value_to" value="{{ values.value_to }}" class="form-field__input">
+  </label>
+  {%- elif field == "account" %}
+  <fieldset class="flex flex-col gap-1 text-sm text-primary">
+    <legend class="text-sm text-secondary">Accounts</legend>
+    {%- for account in state.accounts %}
+    <label class="flex items-center gap-2"><input type="checkbox" name="account_id" value="{{ account.id }}"{% if account.id in values.account_ids %} checked{% endif %}{% if loop.first %} data-autofocus{% endif %}> {{ account.name }}{% if account.last4 %} <span class="text-secondary">{{ account_digits(account.last4, account.alias_last4) }}</span>{% endif %}</label>
+    {%- endfor %}
+  </fieldset>
+  {%- elif field == "category" %}
+  <fieldset class="flex max-h-60 flex-col gap-1 overflow-y-auto text-sm text-primary" data-ops="is is_not"{{ op_hidden(values, "is is_not") }}>
+    <legend class="text-sm text-secondary">Categories</legend>
+    {%- for category_id, name in state.categories %}
+    <label class="flex items-center gap-2"><input type="checkbox" name="category_id" value="{{ category_id }}"{% if category_id in values.category_ids %} checked{% endif %}{% if loop.first %} data-autofocus{% endif %}> {{ name }}</label>
+    {%- endfor %}
+  </fieldset>
+  {%- elif field == "payee" %}
+  <label class="form-field"><span class="form-field__label">Text</span>
+    <input name="value" value="{{ values.value }}" autocomplete="off" class="form-field__input" data-autofocus>
+  </label>
+  {%- elif field == "amount" %}
+  <label class="form-field"><span class="form-field__label">Amount</span>
+    <input name="amount" value="{{ values.amount }}" inputmode="decimal" placeholder="0.00" autocomplete="off" class="form-field__input" data-autofocus>
+  </label>
+  <p class="text-xs text-secondary">Spending is negative, so “less than -10” finds spending over $10.</p>
+  <label class="form-field" data-ops="between"{{ op_hidden(values, "between") }}><span class="form-field__label">To</span>
+    <input name="amount_to" value="{{ values.amount_to }}" inputmode="decimal" placeholder="0.00" autocomplete="off" class="form-field__input">
+  </label>
+  {%- elif field == "memo" %}
+  <label class="form-field" data-ops="contains"{{ op_hidden(values, "contains") }}><span class="form-field__label">Text</span>
+    <input name="value" value="{{ values.value }}" autocomplete="off" class="form-field__input" data-autofocus>
+  </label>
+  {%- elif field == "origin" %}
+  <label class="form-field"><span class="form-field__label">Origin</span>
+    <select name="origin" class="form-field__input">
+      {%- for origin in ["none", "keyword", "receipt", "manual"] %}
+      <option value="{{ origin }}"{% if origin == values.origin %} selected{% endif %}>{{ origin }}</option>
+      {%- endfor %}
+    </select>
+  </label>
+  {%- endif %}
+
+  {%- if values.error %}
+  <p class="text-sm text-destructive" role="alert">{{ values.error }}</p>
+  {%- endif %}
+  <div class="flex items-center gap-2">
+    {{ button("Save filter" if values.is_edit else "Add filter", variant="primary", size="sm", type="submit") }}
+    {{ button("Cancel", variant="ghost", size="sm", attrs={"data-action": "filter#cancelForm"}) }}
+  </div>
+</form>
+{%- endmacro %}
+
+{# The saved-filter menu: the list, Save as, Update when the filter has changed, and Delete. The
+   dialogs sit outside the menu, so they stay in the page when the menu closes. #}
+{% macro saved_menu(state, oob=false) -%}
+<div id="saved-menu-slot" class="ml-auto flex items-center gap-1"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {%- set trigger = state.saved.name ~ (" (changed)" if state.saved_modified else "") if state.saved else "Saved filters" %}
+  {% call menu(id="saved-filters-menu", label=trigger, trigger=trigger) %}
+    {%- for item in state.saved_items %}
+    {{ menu_item(item.name, attrs={"hx-get": "/transactions/saved-filters/" ~ item.id ~ "/apply", "hx-include": "#register-state", "hx-swap": "none"}) }}
+    {%- endfor %}
+    {%- if state.saved_items %}{{ menu_separator() }}{% endif %}
+    {{ menu_item("Save as…", attrs={"data-action": "filter#openDialog", "data-dialog-id": "save-filter-dialog"}) }}
+    {%- if state.saved and state.saved_modified %}
+    {{ menu_item("Update “" ~ state.saved.name ~ "”", attrs={"hx-post": "/transactions/saved-filters/" ~ state.saved.id ~ "/update", "hx-include": "#register-state", "hx-vals": '{"idempotency_key": "' ~ state.form_key ~ '"}', "hx-target": "#toast-region", "hx-swap": "innerHTML"}) }}
+    {%- endif %}
+    {%- if state.saved %}
+    {{ menu_item("Delete “" ~ state.saved.name ~ "”", icon_name="trash-2", destructive=true, attrs={"data-action": "filter#openDialog", "data-dialog-id": "delete-filter-dialog"}) }}
+    {%- endif %}
+  {% endcall %}
+
+  <dialog id="save-filter-dialog" class="m-auto bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="save-filter-title" data-action="close->filter#restoreFocus">
+    <form class="flex w-80 max-w-full flex-col gap-3 rounded-xl bg-container p-4 shadow-border-xs" hx-post="/transactions/saved-filters" hx-include="#register-state" hx-target="#saved-filter-status" hx-swap="innerHTML">
+      <input type="hidden" name="idempotency_key" value="{{ state.form_key }}">
+      <h2 id="save-filter-title" class="font-medium text-primary">Save filter</h2>
+      <label class="form-field"><span class="form-field__label">Name</span>
+        <input name="name" maxlength="60" required autocomplete="off" class="form-field__input" data-autofocus>
+      </label>
+      <p id="saved-filter-status" class="text-sm text-destructive" role="alert"></p>
+      <div class="flex items-center justify-end gap-2">
+        {{ button("Cancel", variant="ghost", size="sm", attrs={"data-action": "filter#closeDialog"}) }}
+        {{ button("Save", variant="primary", size="sm", type="submit") }}
+      </div>
+    </form>
+  </dialog>
+
+  {%- if state.saved %}
+  <dialog id="delete-filter-dialog" class="m-auto bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="delete-filter-title" data-action="close->filter#restoreFocus">
+    <div class="flex w-80 max-w-full flex-col gap-3 rounded-xl bg-container p-4 shadow-border-xs">
+      <h2 id="delete-filter-title" class="font-medium text-primary">Delete “{{ state.saved.name }}”?</h2>
+      <p class="text-sm text-secondary">Undo is offered right after, while nothing else has changed.</p>
+      <div class="flex items-center justify-end gap-2">
+        {{ button("Cancel", variant="ghost", size="sm", attrs={"data-action": "filter#closeDialog"}) }}
+        {{ button("Delete", variant="destructive", size="sm", attrs={"hx-post": "/transactions/saved-filters/" ~ state.saved.id ~ "/delete", "hx-include": "#register-state", "hx-vals": '{"idempotency_key": "' ~ state.form_key ~ '"}', "hx-target": "#toast-region", "hx-swap": "innerHTML"}) }}
+      </div>
+    </div>
+  </dialog>
+  {%- endif %}
+</div>
+{%- endmacro %}

@@ -1,0 +1,9 @@
+{% extends "layouts/settings.html" %}
+{% from "layouts/shell_parts.html" import page_header %}
+{% from "settings/rental_parts.html" import rental_region %}
+
+{% block settings_page %}
+{{ page_header(page_title, "Which accounts are rental properties, and which categories count as rental expenses. The rental report on Reports uses both.") }}
+<div id="toast-region" aria-live="polite"></div>
+{{ rental_region(view) }}
+{% endblock %}

@@ -1,0 +1,272 @@
+/*
+ * The transactions register: its table, inline editors, split editor, undo toast, filter bar, and bulk
+ * edit. Colours and spacing come from the design tokens. The focused cell and the focused button use an outline in
+ * --color-focus-ring, so keyboard focus shows in both themes. See docs/features/transactions.md.
+ */
+
+.register {
+  @apply w-full border-separate border-spacing-0 text-sm text-primary;
+}
+
+/* The header row stays at the top of the table's scrolling region while the rows pass under it. */
+.register th {
+  @apply sticky top-0 z-10 border-b border-divider px-3 py-2 text-left text-xs font-medium uppercase text-secondary;
+  background-color: var(--table-scroll-bg);
+}
+
+.register td {
+  @apply px-3 py-2 align-middle;
+}
+
+.register th.num,
+.register td.amount {
+  @apply text-right tabular-nums;
+}
+
+.register td.amount.inflow {
+  @apply text-success;
+}
+
+.register td.date,
+.register td.account,
+.register td.actions {
+  @apply whitespace-nowrap;
+}
+
+.register td.date,
+.register td.account {
+  @apply text-secondary;
+}
+
+.register td.actions {
+  @apply w-px text-right;
+}
+
+/* The selection checkboxes hug the left edge, so the columns after them keep their room. */
+.register th.select,
+.register td.select {
+  @apply w-px pr-0 pl-3;
+}
+
+.register td.select input,
+.register th.select input {
+  @apply size-4;
+}
+
+.register .muted {
+  @apply text-secondary;
+}
+
+/* A new transaction starts a new band, drawn with the lighter subdued rule. */
+.register tbody + tbody > tr:first-child > td {
+  @apply border-t border-subdued;
+}
+
+/* The row that holds focus is highlighted, so the selection is visible at a glance. */
+.register tbody.txn-group:focus-within > tr.txn-row {
+  background-color: var(--color-container-hover);
+}
+
+/* Memo and category are fields that look like plain text until they are hovered or focused. */
+.register td.cell-input {
+  @apply px-1 py-1;
+}
+
+.register td.cell-input input,
+.register td.cell-input select {
+  @apply w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-primary hover:border-secondary;
+}
+
+.register td.cell-input input::placeholder {
+  @apply text-secondary;
+}
+
+/* The memo is a fixed 350px, and the payee takes the rest of the row. The payee clamps to two lines, so a
+   long statement description cannot grow the row; the full text is the cell's tooltip. */
+.register td.payee {
+  min-width: 9rem;
+}
+
+.register td.payee .payee-text {
+  @apply line-clamp-2 wrap-anywhere;
+}
+
+.register td.cell-input[data-field="memo"] {
+  width: 350px;
+  min-width: 350px;
+  max-width: 350px;
+}
+
+.register td.cell-input[data-field="category"] {
+  min-width: 8rem;
+}
+
+.register td.cell-input input:focus,
+.register td.cell-input select:focus {
+  @apply border-secondary bg-container;
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
+.register td.cell-input input[readonly] {
+  @apply text-secondary hover:border-transparent;
+}
+
+.register td.cell-input input[aria-invalid="true"],
+.register td.cell-input select[aria-invalid="true"] {
+  @apply border-destructive;
+}
+
+/* Split lines are indented under their transaction. */
+.register tr.split-row td {
+  @apply text-secondary;
+}
+
+.register tr.split-row td.split-label {
+  padding-left: 1.75rem;
+}
+
+.register tr.split-editor > td {
+  @apply bg-container-inset px-4 py-3;
+}
+
+/* The split icon is the shared Lucide split.svg, drawn as a mask so each row carries no SVG. */
+.register .split-btn {
+  @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-secondary hover:bg-container-inset-hover pointer-coarse:h-11 pointer-coarse:w-11;
+}
+
+.register .split-glyph {
+  @apply block size-4 bg-current;
+  -webkit-mask: url("/static/icons/split.svg") center / contain no-repeat;
+  mask: url("/static/icons/split.svg") center / contain no-repeat;
+}
+
+.register button:focus-visible,
+.register a:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.split-form {
+  @apply flex max-w-xl flex-col gap-2;
+}
+
+.split-hint {
+  @apply text-sm text-secondary;
+}
+
+.split-lines {
+  @apply flex flex-col gap-2;
+}
+
+.split-line {
+  @apply grid grid-cols-[1fr_1fr_1fr] gap-2;
+}
+
+.split-line .error {
+  grid-column: 1 / -1;
+}
+
+.split-line input,
+.split-line select {
+  @apply w-full min-w-0 rounded-md border border-secondary bg-container px-2 py-1.5 text-sm text-primary;
+}
+
+.split-line input[aria-invalid="true"] {
+  @apply border-destructive;
+}
+
+.split-actions {
+  @apply mt-2 flex flex-wrap items-center gap-2;
+}
+
+.split-remove {
+  @apply mt-2;
+}
+
+.amount-left {
+  @apply mr-2 tabular-nums text-secondary;
+}
+
+.amount-left.is-invalid {
+  @apply text-destructive;
+}
+
+.error {
+  @apply block text-xs text-destructive;
+}
+
+.hint {
+  @apply block text-xs text-secondary;
+}
+
+#toast-region {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  z-index: 40;
+}
+
+.toast {
+  @apply flex items-center gap-3 rounded-lg bg-container px-4 py-2 text-sm text-primary shadow-border-xs;
+}
+
+/* The Categories table: each cell is a field that looks like plain text until it is hovered or focused. */
+.categories-table td.cell-input input:not([type="checkbox"]),
+.categories-table td.cell-input select {
+  @apply w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-primary hover:border-secondary;
+}
+
+.categories-table td.cell-input input:not([type="checkbox"]):focus,
+.categories-table td.cell-input select:focus {
+  @apply border-secondary bg-container;
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
+.categories-table td.cell-input input[aria-invalid="true"] {
+  @apply border-destructive;
+}
+
+/* The table sits in a narrow column, so its cells are tight and the Type dropdown never clips. */
+.categories-table th,
+.categories-table td {
+  @apply px-2;
+}
+
+.categories-table th.select,
+.categories-table td.select {
+  @apply w-px pr-0 pl-2;
+}
+
+.categories-table th.icon,
+.categories-table td.icon {
+  @apply w-px pr-0 pl-1;
+}
+
+.categories-table td.cell-input select {
+  @apply min-w-[7.75rem];
+}
+
+/* A keyword row that a conflict link leads to clears the sticky header, and flashes once. Under
+   reduced motion the highlight holds, then goes, instead of fading. */
+.keywords-table tbody tr {
+  scroll-margin-top: 3rem;
+}
+
+.keywords-table tr.row-flash > td {
+  animation: row-flash 2s ease-out;
+}
+
+@keyframes row-flash {
+  from {
+    background-color: --alpha(var(--color-warning) / 30%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .keywords-table tr.row-flash > td {
+    animation-timing-function: steps(1, end);
+  }
+}

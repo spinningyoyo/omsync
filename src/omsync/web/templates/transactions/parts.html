@@ -1,0 +1,283 @@
+{# Markup for the transactions register, shared by the page and its fragments.
+
+   htmx parses a response by its first tag. Table rows must come first in a response that also
+   carries an out-of-band toast, because a table row cannot follow a div when it is swapped out of
+   band.
+
+   Each block in fragments.html imports the macros it uses, because a block renders without this
+   file's top-level code. #}
+{% from "components/button.html" import button %}
+{% from "components/segmented_control.html" import segmented_control %}
+{% from "components/brand.html" import mascot %}
+
+{# The text a memo cell shows, or a split's category cell, which shows "Split" because its lines
+   hold the categories. #}
+{% macro cell_value(row, field_name) -%}
+{%- if field_name == "memo" -%}{{ row.memo or "" }}
+{%- elif row.is_split -%}Split
+{%- else -%}{{ row.category or "" }}
+{%- endif -%}
+{%- endmacro %}
+
+{# The options of a category picker: `empty` first, which stands for no category, then the
+   categories to choose from. `selected` is a category id, or none for the empty option. `stored` is
+   the (id, name) of a category that the transaction has but that is hidden, so it is not in the
+   list. It stays as a selected option that cannot be picked, so the picker never shows anything
+   other than what is stored. #}
+{% macro category_options(categories, selected, empty, stored=none) -%}
+{%- set chosen = "" if selected is none else selected|string -%}
+<option value=""{% if not chosen %} selected{% endif %}>{{ empty }}</option>
+{%- if stored and stored[0] not in categories|map(attribute=0) %}
+<option value="{{ stored[0] }}"{% if chosen == stored[0]|string %} selected{% endif %} disabled>{{ stored[1] }}</option>
+{%- endif %}
+{%- for category_id, name in categories %}
+<option value="{{ category_id }}"{% if chosen == category_id|string %} selected{% endif %}>{{ name }}</option>
+{%- endfor %}
+{%- endmacro %}
+
+{# A category or memo cell. Memo is an input and category is a select, so each takes its edit
+   without a mode switch. A change saves it, and the controller sends the field's value (a
+   category's id) with the cell's key and version. The key makes a double submit apply once. The
+   version is the field's token from when the cell was rendered. The server refuses a save made from
+   an older one. A split's category is read-only. #}
+{% macro cell_input(row, field_name, categories, value=none, key="", version="", error="", hint="", autofocus=false) -%}
+{%- set idem = key or new_key() -%}
+{%- set token = version or field_version(row, field_name) -%}
+<td class="cell-input" data-editable data-field="{{ field_name }}" data-txn-id="{{ row.id }}" data-key="{{ idem }}" data-version="{{ token }}">
+  {%- if field_name == "category" and not row.is_split %}
+  <select name="value" aria-label="Category" autocomplete="off"{% if autofocus %} data-autofocus{% endif %}{% if error %} aria-invalid="true"{% endif %}>
+    {{ category_options(categories, value if value is not none else row.category_id, "Uncategorized", (row.category_id, row.category) if row.category_id is not none else none) }}
+  </select>
+  {%- else %}
+  <input name="value" value="{{ value if value is not none else cell_value(row, field_name) }}" aria-label="{{ field_name|capitalize }}" autocomplete="off"{% if field_name == "category" %} readonly{% endif %}{% if autofocus %} data-autofocus{% endif %}{% if error %} aria-invalid="true"{% endif %}>
+  {%- endif %}
+  {%- if error %}
+  <span class="error" role="alert">{{ error }}</span>
+  {%- elif hint %}
+  <span class="hint">{{ hint }}</span>
+  {%- endif %}
+</td>
+{%- endmacro %}
+
+{# The number of columns in the register, which a split editor spans. #}
+{% macro column_count(show_account) -%}{{ 8 if show_account else 7 }}{%- endmacro %}
+
+{# The checkbox that selects a transaction for a bulk edit. Its form attribute ties it to #bulk-form,
+   so htmx sends it with that form. #}
+{% macro select_box(row) -%}
+<td class="select"><input type="checkbox" name="ids" value="{{ row.id }}" form="bulk-form" data-action="click->selection#clickRow" aria-label="Select {{ row.payee }}"></td>
+{%- endmacro %}
+
+{# The table's header row. The header checkbox selects the rows on this page. #}
+{% macro table_head(show_account) -%}
+<thead>
+  <tr>
+    <th scope="col" class="select"><input type="checkbox" form="bulk-form" aria-label="Select all rows on screen" data-selection-target="all" data-action="click->selection#toggleAll"></th>
+    <th scope="col">Date</th>
+    {%- if show_account %}
+    <th scope="col">Account</th>
+    {%- endif %}
+    <th scope="col">Payee</th>
+    <th scope="col">Memo</th>
+    <th scope="col">Category</th>
+    <th scope="col" class="num">Amount</th>
+    <th scope="col"><span class="sr-only">Actions</span></th>
+  </tr>
+</thead>
+{%- endmacro %}
+
+{# One transaction: its row, its split lines, and the split editor when it is open. The tbody id
+   is what out-of-band swaps and the controller look up. #}
+{% macro txn_group(row, show_account, categories, focus_field=none, oob=false, editor=none, key="", clear_key="", version="") -%}
+<tbody id="txn-{{ row.id }}" class="txn-group" data-txn-group data-txn-id="{{ row.id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
+<tr class="txn-row">
+  {{ select_box(row) }}
+  <td class="date">{{ row.posted_on.isoformat() }}</td>
+  {%- if show_account %}
+  <td class="account">{{ row.account_name }}{% if row.account_digits %} <span class="muted">{{ row.account_digits }}</span>{% endif %}</td>
+  {%- endif %}
+  <td class="payee" data-field="payee" data-txn-id="{{ row.id }}"><span class="payee-text" title="{{ row.payee }}">{{ row.payee }}</span></td>
+  {{ cell_input(row, "memo", categories, autofocus=focus_field == "memo") }}
+  {{ cell_input(row, "category", categories, autofocus=focus_field == "category") }}
+  <td class="amount {{ 'outflow' if row.amount_cents < 0 else 'inflow' }}">{{ row.amount_cents|money }}</td>
+  <td class="actions"><button type="button" class="split-btn" data-action="click->register#openSplitFromButton" data-txn-id="{{ row.id }}" aria-label="Split {{ row.payee }}" title="Split"><span class="split-glyph" aria-hidden="true"></span></button></td>
+</tr>
+{%- for line in row.splits %}
+<tr class="split-row">
+  <td></td>
+  <td></td>
+  {%- if show_account %}
+  <td></td>
+  {%- endif %}
+  <td class="split-label">Split line {{ loop.index }}</td>
+  <td class="split-memo">{{ line.memo or "" }}</td>
+  <td class="split-category">{{ line.category or "Uncategorized" }}</td>
+  <td class="amount {{ 'outflow' if line.amount_cents < 0 else 'inflow' }}">{{ line.amount_cents|money }}</td>
+  <td></td>
+</tr>
+{%- endfor %}
+{%- if editor %}
+{{ split_editor(row, editor, categories, key, clear_key, show_account, version) }}
+{%- endif %}
+</tbody>
+{%- endmacro %}
+
+{# The split editor under a transaction. Save is enabled only when the amount left is $0.00. #}
+{% macro split_editor(row, editor, categories, key, clear_key, show_account, version="") -%}
+<tr class="split-editor" data-split-editor data-txn-id="{{ row.id }}">
+  <td colspan="{{ column_count(show_account) }}">
+    <form data-register-form="split" class="split-form">
+      <input type="hidden" name="idempotency_key" value="{{ key }}">
+      <input type="hidden" name="version" value="{{ version }}">
+      <p class="split-hint">Split {{ row.amount_cents|money }}. Amounts take the transaction's sign.</p>
+      <div class="split-lines" data-split-lines>
+        {%- for line in editor.lines %}
+        {{ split_line(line, categories, loop.index0 == editor.focus_index) }}
+        {%- endfor %}
+      </div>
+      {%- if editor.summary %}
+      <p class="error" role="alert">{{ editor.summary }}</p>
+      {%- endif %}
+      <div class="split-actions">
+        {{ amount_left(row.id, editor.left_text, editor.left_invalid) }}
+        {{ button("Add line", variant="secondary", size="sm", attrs={"data-action": "click->register#addLine", "data-txn-id": row.id}) }}
+        {{ save_button(row.id, editor.can_save) }}
+        {{ button("Cancel", variant="ghost", size="sm", attrs={"data-action": "click->register#closeSplitFromButton", "data-txn-id": row.id}) }}
+      </div>
+    </form>
+    {%- if row.is_split %}
+    <form data-register-form="clear" class="split-remove">
+      <input type="hidden" name="idempotency_key" value="{{ clear_key }}">
+      <input type="hidden" name="version" value="{{ version }}">
+      {{ button("Remove split", variant="outline", size="sm", type="submit") }}
+    </form>
+    {%- endif %}
+  </td>
+</tr>
+{%- endmacro %}
+
+{# One line of the split editor: an amount, a category, and a memo. #}
+{% macro split_line(line, categories, autofocus=false) -%}
+<div class="split-line">
+  <input name="amount" value="{{ line.amount }}" placeholder="0.00" inputmode="decimal" autocomplete="off" aria-label="Line amount"{% if autofocus %} data-autofocus{% endif %}{% if line.error %} aria-invalid="true"{% endif %}>
+  <select name="category" autocomplete="off" aria-label="Line category">
+    {{ category_options(categories, line.category_id, "Category") }}
+  </select>
+  <input name="memo" value="{{ line.memo }}" placeholder="Memo" autocomplete="off" aria-label="Line memo">
+  {%- if line.error %}
+  <span class="error" role="alert">{{ line.error }}</span>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# "Amount left", recomputed by the server as the amounts are typed. #}
+{% macro amount_left(txn_id, text, invalid=false) -%}
+<output id="amount-left-{{ txn_id }}" class="amount-left{% if invalid %} is-invalid{% endif %}">{{ text }}</output>
+{%- endmacro %}
+
+{# The Save button. Out of band, it replaces the button after each preview. #}
+{% macro save_button(txn_id, can_save, oob=false) -%}
+{%- if oob -%}
+{{ button("Save split", variant="primary", size="sm", type="submit", disabled=not can_save, attrs={"id": "split-save-" ~ txn_id, "hx-swap-oob": "true"}) }}
+{%- else -%}
+{{ button("Save split", variant="primary", size="sm", type="submit", disabled=not can_save, attrs={"id": "split-save-" ~ txn_id}) }}
+{%- endif -%}
+{%- endmacro %}
+
+{# The undo toast. Its Undo button posts to the batch and targets this region. `account` names the
+   register's account for a row undo. `state_query` is the register state (RegisterState.query), sent
+   with the undo for a bulk edit or a saved filter, whose undo re-renders the register as it was
+   shown. #}
+{% macro toast(message, batch_id=none, account=none, state_query="", source=none) -%}
+<div class="toast" role="status" data-controller="toast">
+  <span class="toast-message">{{ message }}</span>
+  {%- if batch_id and state_query %}
+  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo?" ~ state_query, "hx-target": "#toast-region"}) }}
+  {%- elif batch_id %}
+  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo" ~ ("?account=" ~ account if account else "") ~ ("?source=" ~ source if source else ""), "hx-target": "#toast-region"}) }}
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# The toast region, swapped out of band so that a new change replaces the old toast. #}
+{% macro toast_region(message, batch_id=none, account=none, state_query="", source=none) -%}
+<div id="toast-region" hx-swap-oob="true" aria-live="polite">{{ toast(message, batch_id, account, state_query, source) }}</div>
+{%- endmacro %}
+
+{# The rows of one page. #}
+{% macro register_rows(rows, show_account, categories) -%}
+{%- for row in rows %}
+{{ txn_group(row, show_account, categories) }}
+{%- endfor %}
+{%- endmacro %}
+
+{# The pager under the table: the rows shown, the rows per page, and the previous and next page. Each
+   control sends the register state with hx-include and is replaced with the rest of the table, so
+   `focus` ("prev", "next", or "size") names the one that takes focus back. When that button has no
+   page to go to, focus goes to the other one. #}
+{% macro pager(state, focus=none) -%}
+{%- set target = focus -%}
+{%- if focus == "next" and not state.has_next %}{% set target = "prev" %}{% endif -%}
+{%- if focus == "prev" and not state.has_prev %}{% set target = "next" %}{% endif -%}
+<nav class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm text-secondary" aria-label="Pages">
+  <p>{{ "{:,}".format(state.first_row) }}–{{ "{:,}".format(state.last_row) }} of {{ "{:,}".format(state.matching) }}</p>
+  <label class="flex items-center gap-2">Rows per page
+    <select name="size" autocomplete="off" class="rounded-md border border-secondary bg-container px-2 py-1 text-sm text-primary" hx-post="/transactions/page-size" hx-include="#register-state" hx-trigger="change" hx-swap="none"{% if target == "size" %} data-autofocus{% endif %}>
+      {%- for size in register_page_sizes %}
+      <option value="{{ size }}"{% if size == state.page_size %} selected{% endif %}>{{ size }}</option>
+      {%- endfor %}
+    </select>
+  </label>
+  <div class="flex items-center gap-2">
+    {{ button("Prev", variant="outline", size="sm", icon="chevron-left", disabled=not state.has_prev, attrs={"hx-get": "/transactions/table", "hx-vals": '{"page": ' ~ (state.page - 1) ~ ', "focus": "prev"}', "hx-include": "#register-state", "hx-swap": "none", "data-autofocus": "" if target == "prev" and state.has_prev else none}) }}
+    <span class="tabular-nums" aria-live="polite">{{ state.page }} / {{ state.pages }}</span>
+    {{ button("Next", variant="outline", size="sm", icon="chevron-right", icon_position="right", disabled=not state.has_next, attrs={"hx-get": "/transactions/table", "hx-vals": '{"page": ' ~ (state.page + 1) ~ ', "focus": "next"}', "hx-include": "#register-state", "hx-swap": "none", "data-autofocus": "" if target == "next" and state.has_next else none}) }}
+  </div>
+</nav>
+{%- endmacro %}
+
+{# The table and its pager, or what stands in for them. It is the body of #register-table. The table
+   is the page's fill region (see layouts/shell.html), so it scrolls under the controls above it and
+   its header row stays in view. `state` decides the empty message: a filtered register with no
+   matches says so. #}
+{% macro table_body(state, rows, focus=none) -%}
+{%- if rows %}
+<div class="table-scroll fill-region shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Transactions">
+  <table class="register">
+    {{ table_head(state.show_account) }}
+    {{ register_rows(rows, state.show_account, state.categories) }}
+  </table>
+</div>
+{{ pager(state, focus) }}
+{%- elif state.filtered %}
+<section class="flex max-w-xl flex-col gap-2 rounded-xl bg-container p-8 shadow-border-xs">
+  <p class="text-sm text-secondary">No transactions match these filters.</p>
+</section>
+{%- else %}
+<section class="flex max-w-xl flex-col gap-2 rounded-xl bg-container p-8 shadow-border-xs">
+  <div class="mb-2 text-primary">{{ mascot(96) }}</div>
+  <p class="text-sm text-secondary">No transactions yet. Run <code>omsync import --apply</code>.</p>
+</section>
+{%- endif %}
+{%- endmacro %}
+
+{# The hidden form that carries the register state (account, filter, saved filter, page) to htmx
+   requests. It is re-rendered after each change, so the next request reads fresh values. #}
+{% macro register_state(state, oob=false) -%}
+<form id="register-state" hidden{% if oob %} hx-swap-oob="true"{% endif %}>
+  {%- if state.account_id %}<input type="hidden" name="account" value="{{ state.account_id }}">{% endif %}
+  {%- if state.f %}<input type="hidden" name="f" value="{{ state.f }}">{% endif %}
+  {%- if state.saved %}<input type="hidden" name="saved" value="{{ state.saved.id }}">{% endif %}
+  <input type="hidden" name="page" value="{{ state.page }}">
+</form>
+{%- endmacro %}
+
+{# All and Needs review, as links. The count is the number of open import reviews. #}
+{% macro register_tabs(review_count, view, all_href, oob=false) -%}
+<div id="register-tabs"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {{ segmented_control([
+    {"label": "All", "active": view == "all", "href": all_href},
+    {"label": "Needs review (" ~ review_count ~ ")", "active": view == "review", "href": "/transactions/review"},
+  ], label="Transactions view") }}
+</div>
+{%- endmacro %}

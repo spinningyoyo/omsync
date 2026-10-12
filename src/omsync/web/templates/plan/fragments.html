@@ -1,0 +1,63 @@
+{# Replies from the Plan routes, one block per reply. Each block names the regions it changes, out of
+   band, and its toast. A line edit is the exception: its row is the first element, so htmx swaps it
+   in place. Each block imports what it uses,
+   because a fragment renders without the page's top-level code. #}
+
+{% block frag_budget_main %}
+{% from "plan/parts.html" import budget_main, toast_region with context %}
+{{ budget_main(page, error=error, oob=true) }}
+{{ toast_region(message, batch_id, plan) }}
+{% endblock %}
+
+{% block frag_line_row %}
+{% from "plan/parts.html" import line_row, budget_summary, section_total, toast_region with context %}
+{{ line_row(row, page) }}
+{%- if summary %}
+{{ budget_summary(page, oob=true) }}
+{%- for section in page.sections %}
+<template>{{ section_total(section, oob=true) }}</template>
+{%- endfor %}
+{{ toast_region(message, batch_id, plan) }}
+{%- endif %}
+{% endblock %}
+
+{% block frag_goal_list %}
+{% from "plan/parts.html" import goal_list, toast_region with context %}
+{{ goal_list(page, create, oob=true) }}
+{{ toast_region(message, batch_id, plan) }}
+{% endblock %}
+
+{% block frag_goal_create_form %}
+{% from "plan/parts.html" import goal_form with context %}
+{{ goal_form(form, oob=true) }}
+{% endblock %}
+
+{% block frag_goal_changed %}
+{% from "plan/parts.html" import goal_main, toast_region with context %}
+{{ goal_main(goal, oob=true) }}
+{{ toast_region(message, batch_id, plan) }}
+{% endblock %}
+
+{% block frag_goal_edit_form %}
+{% from "plan/parts.html" import goal_form with context %}
+{{ goal_form(form, oob=true) }}
+{% endblock %}
+
+{% block frag_goal_error %}
+{% from "plan/parts.html" import goal_main with context %}
+{{ goal_main(goal, error=error, oob=true) }}
+{% endblock %}
+
+{% block frag_goal_deleted %}
+{% from "plan/parts.html" import goal_deleted, toast_region with context %}
+{{ goal_deleted(name, oob=true) }}
+{{ toast_region(message, batch_id, plan) }}
+{% endblock %}
+
+{% block frag_undone %}
+{% from "plan/parts.html" import budget_main, goal_list, goal_main, toast with context %}
+{%- if page %}{{ budget_main(page, oob=true) }}{% endif %}
+{%- if goals %}{{ goal_list(goals, create, oob=true) }}{% endif %}
+{%- if goal %}{{ goal_main(goal, oob=true) }}{% endif %}
+{{ toast(message) }}
+{% endblock %}

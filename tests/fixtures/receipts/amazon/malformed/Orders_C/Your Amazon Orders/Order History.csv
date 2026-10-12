@@ -1,0 +1,3 @@
+Order ID,Order Date,Order Status,Ship Date,Product Name,ASIN,Unit Price,Unit Price Tax,Shipping Charge,Total Amount,Shipment Item Subtotal,Shipment Item Subtotal Tax,Payment Method Type
+C-3001,2026-09-05T09:00:00Z,Closed,2026-09-05T12:00:00Z,Fake Pen Case,FAKEASIN13,4.55,0.45,0.00,5.00,4.55,0.45,Visa - 1111
+C-3002,not a date,Closed,2026-09-06T12:00:00Z,Fake Stapler,FAKEASIN14,9.09,0.91,0.00,10.00,9.09,0.91,Visa - 1111

@@ -1,0 +1,67 @@
+{# Adapted from Sure (we-promise/sure), AGPL-3.0: app/components/DS/menu.rb, menu.html.erb,
+   menu_item.rb, menu_item.html.erb and menu_controller.js. A strict action list (role="menu").
+   Use it only for actions. Forms and pickers need another component.
+
+   Usage:
+     {% call menu(id="row-actions", label="Row actions") %}
+       {{ menu_item("Edit", icon_name="pencil") }}
+       {{ menu_separator() }}
+       {{ menu_item("Delete", icon_name="trash-2", destructive=true) }}
+     {% endcall %}
+   The trigger is an icon button with the label as its accessible name. Pass `trigger` for a text
+   button instead, such as "+ Filter"; its text is then the accessible name. Import with context. #}
+{% from "components/icon.html" import icon with context %}
+{% from "components/_util.html" import html_attrs %}
+
+{# placement: bottom-end (the default, opens below the trigger and extends to the left of it, for a
+   trigger at the right of the content), bottom-start (opens below it and extends to the right, for
+   a trigger at the left of the content, where a leftward panel would open under the accounts
+   panel), or right-end (opens to the right of it, for a trigger at the foot of a rail where a
+   downward panel would be off screen). #}
+{% macro menu(id, label, placement="bottom-end", trigger=none) -%}
+{%- set panel_place = {"bottom-end": "right-0 top-full mt-3", "bottom-start": "left-0 top-full mt-3", "right-end": "left-full bottom-0 ml-3"}[placement] -%}
+<div class="relative inline-block" data-controller="menu" data-action="keydown->menu#keydown click@window->menu#clickOutside">
+  {%- if trigger %}
+  <button type="button" class="inline-flex items-center gap-1 h-9 px-3 rounded-lg text-sm font-medium text-primary hover:bg-container-inset-hover focus-ring cursor-pointer" aria-label="{{ trigger }}" aria-haspopup="menu" aria-expanded="false" aria-controls="{{ id }}" data-menu-target="button" data-action="menu#toggle">
+    <span class="min-w-0 truncate">{{ trigger }}</span>
+    {{ icon("chevron-down", 16, "text-secondary") }}
+  </button>
+  {%- else %}
+  <button type="button" class="inline-flex items-center justify-center w-9 h-9 pointer-coarse:w-11 pointer-coarse:h-11 rounded-lg hover:bg-container-inset-hover focus-ring cursor-pointer" aria-label="{{ label }}" aria-haspopup="menu" aria-expanded="false" aria-controls="{{ id }}" data-menu-target="button" data-action="menu#toggle">
+    {{ icon("ellipsis-vertical", 20, "text-secondary") }}
+  </button>
+  {%- endif %}
+  <div id="{{ id }}" role="menu" aria-label="{{ label }}" data-menu-target="content" data-action="click->menu#close" class="hidden absolute {{ panel_place }} z-50 px-2">
+    <div class="min-w-[200px] shadow-border-lg bg-container rounded-lg">
+      <div class="py-1">
+        {{ caller() }}
+      </div>
+    </div>
+  </div>
+</div>
+{%- endmacro %}
+
+{# attrs adds HTML attributes to the item, such as htmx or Stimulus attributes. #}
+{% macro menu_item(text, icon_name=none, href=none, destructive=false, attrs=none) -%}
+<div class="px-1" role="none">
+  {%- set tone = "text-destructive" if destructive else "text-primary" -%}
+  {%- set hover = "hover:bg-red-tint-5 theme-dark:hover:bg-red-tint-10" if destructive else "hover:bg-container-hover" -%}
+  {%- set classes = "flex items-center gap-2 p-2 rounded-md w-full focus-ring " ~ hover -%}
+  {%- if href %}
+  <a href="{{ href }}" role="menuitem" tabindex="-1" class="{{ classes }}"{{ html_attrs(attrs) }}>
+  {%- else %}
+  <button type="button" role="menuitem" tabindex="-1" class="{{ classes }}"{{ html_attrs(attrs) }}>
+  {%- endif %}
+    {%- if icon_name %}{{ icon(icon_name, 20, "text-destructive" if destructive else "") }}{% endif %}
+    <span class="text-sm {{ tone }}">{{ text }}</span>
+  {%- if href %}
+  </a>
+  {%- else %}
+  </button>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro menu_separator() -%}
+<div role="separator" class="my-1 border-t border-divider"></div>
+{%- endmacro %}

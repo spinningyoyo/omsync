@@ -1,0 +1,21 @@
+{% extends "layouts/shell.html" %}
+{% from "layouts/shell_parts.html" import page_header %}
+{% from "reconcile/parts.html" import range_picker, results_region %}
+
+{% block page %}
+{# The page root holds the link dialog and listens for htmx settles and close-dialogs. The results
+   region swaps itself after each decision (see reconcile/parts.html). #}
+<div class="flex flex-col gap-6" data-controller="page-dialogs reconcile" data-action="htmx:afterSettle->page-dialogs#settled close-dialogs@window->page-dialogs#closeDialogs">
+  {{ page_header("Reconcile", "Find the links that explain your transactions: transfers, returns, P2P payments, and joint settlements. Review each proposal, then approve, reject, or link by hand. Anything that should have a counterpart and does not is listed as not matched.") }}
+  {{ range_picker(start, end, presets, active_preset) }}
+  {{ results_region(results, notice, start, end) }}
+
+  <dialog id="reconcile-link-dialog" class="m-auto w-full max-w-lg bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="reconcile-link-title" data-action="close->page-dialogs#restoreFocus">
+    <div id="reconcile-link-body" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs"></div>
+  </dialog>
+  <dialog id="reconcile-ack-dialog" class="m-auto w-full max-w-lg bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="reconcile-ack-title" data-action="close->page-dialogs#restoreFocus">
+    <div id="reconcile-ack-body" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs"></div>
+  </dialog>
+  <div id="toast-region" aria-live="polite"></div>
+</div>
+{% endblock %}

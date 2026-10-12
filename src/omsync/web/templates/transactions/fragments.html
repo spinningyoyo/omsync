@@ -1,0 +1,125 @@
+{# Fragment blocks for the register. Each route renders one block, and each block imports the
+   macros it uses from its own file, because a block renders without this file's top-level code.
+   The frag_ prefix marks the blocks that routes render. #}
+
+{% block frag_cell %}
+{% from "transactions/parts.html" import cell_input %}
+{{ cell_input(row, field, categories, value, key, version, error, hint) }}
+{% endblock %}
+
+{% block frag_cell_saved %}
+{% from "transactions/parts.html" import cell_input, toast_region %}
+{{ cell_input(row, field, categories) }}
+{{ toast_region(label, batch_id, account) }}
+{% endblock %}
+
+{% block frag_group %}
+{% from "transactions/parts.html" import txn_group %}
+{{ txn_group(row, show_account, categories, focus_field) }}
+{% endblock %}
+
+{% block frag_group_saved %}
+{% from "transactions/parts.html" import txn_group, toast_region %}
+{{ txn_group(row, show_account, categories, focus_field) }}
+{{ toast_region(label, batch_id, account) }}
+{% endblock %}
+
+{% block frag_editor %}
+{% from "transactions/parts.html" import txn_group %}
+{{ txn_group(row, show_account, categories, none, false, editor, key, clear_key, version) }}
+{% endblock %}
+
+{% block frag_split_line %}
+{% from "transactions/parts.html" import split_line %}
+{{ split_line(line, categories, autofocus) }}
+{% endblock %}
+
+{% block frag_amount_left %}
+{% from "transactions/parts.html" import amount_left, save_button %}
+{{ amount_left(txn_id, text, invalid) }}
+{{ save_button(txn_id, can_save, true) }}
+{% endblock %}
+
+{# The row comes first: a table row must lead the response, or htmx drops it (see parts.html). #}
+{% block frag_undo %}
+{% from "transactions/parts.html" import toast, txn_group %}
+{%- if row %}
+{{ txn_group(row, show_account, categories, focus_field, true) }}
+{%- endif %}
+{{ toast(message) }}
+{% endblock %}
+
+{% block frag_toast %}
+{% from "transactions/parts.html" import toast %}
+{{ toast(message) }}
+{% endblock %}
+
+{# Filter, search, saved-filter, and bulk replies. The regions come first, out of band, and the
+   main content (a form, a toast, or a dialog body) follows. #}
+{% block frag_update %}
+{% from "transactions/regions.html" import update_regions %}
+{{ update_regions(state, rows, full, focus) }}
+{% endblock %}
+
+{% block frag_filter_form %}
+{% from "transactions/filters.html" import filter_form %}
+{{ filter_form(values, state) }}
+{% endblock %}
+
+{% block frag_message %}
+<p class="text-sm text-destructive" role="alert">{{ message }}</p>
+{% endblock %}
+
+{% block frag_saved_applied %}
+{% from "transactions/regions.html" import update_regions %}
+{% from "transactions/parts.html" import toast_region %}
+{{ update_regions(state, rows, full, focus) }}
+{%- if label %}{{ toast_region(label, batch_id, none, state.query) }}{% endif %}
+{% endblock %}
+
+{% block frag_refresh_undo %}
+{% from "transactions/regions.html" import update_regions %}
+{% from "transactions/parts.html" import toast %}
+{{ update_regions(state, rows, full, focus) }}
+{{ toast(message) }}
+{% endblock %}
+
+{% block frag_bulk_applied %}
+{% from "transactions/regions.html" import update_regions %}
+{% from "transactions/parts.html" import toast_region %}
+{{ update_regions(state, rows, true) }}
+{{ toast_region(label, batch_id, none, state.query) }}
+{% endblock %}
+
+{% block frag_bulk_value %}
+{% from "transactions/bulk.html" import bulk_value_form %}
+{{ bulk_value_form(action, categories) }}
+{% endblock %}
+
+{% block frag_bulk_preview %}
+{% from "transactions/bulk.html" import bulk_preview %}
+{{ bulk_preview(plan, action, value, revision, key) }}
+{% endblock %}
+
+{% block frag_bulk_error %}
+{% from "transactions/bulk.html" import bulk_error %}
+{{ bulk_error(message) }}
+{% endblock %}
+
+{# Needs review. The list is the main content, so a resolve swaps it in place. #}
+{% block frag_review_list %}
+{% from "transactions/review.html" import review_list %}
+{{ review_list(items, message, autofocus) }}
+{% endblock %}
+
+{% block frag_review_resolved %}
+{% from "transactions/regions.html" import review_done %}
+{{ review_done(items, review_count, label, batch_id, message) }}
+{% endblock %}
+
+{% block frag_review_undo %}
+{% from "transactions/regions.html" import review_regions %}
+{% from "transactions/parts.html" import toast %}
+{{ review_regions(items, review_count) }}
+{{ toast(message) }}
+{% endblock %}

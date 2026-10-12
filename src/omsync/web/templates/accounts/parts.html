@@ -1,0 +1,142 @@
+{# Parts of the account page: the header with its edit dialog, the balance chart's card, the balance
+   check card, and the sync card. Adapted from Sure (we-promise/sure), AGPL-3.0:
+   app/views/accounts/show/_header.html.erb and app/components/UI/account_page.html.erb (header and
+   layout). The chart is in static/js/controllers/balance_chart_controller.js. Rails, Turbo, the
+   account tabs, statements, and sharing are left out.
+
+   Each block that uses these macros imports them, because fragments render without this file's
+   top-level code. #}
+{% from "components/button.html" import button, link_button %}
+{% from "components/dialog.html" import dialog with context %}
+{% from "components/pill.html" import pill with context %}
+
+{% macro account_header(detail, type_label, form_key, transactions_href, oob=false) -%}
+{%- set s = detail.summary -%}
+<header id="account-header" class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <div class="flex min-w-0 flex-col gap-2">
+    <div class="flex min-w-0 flex-wrap items-center gap-2">
+      <h1 class="min-w-0 truncate text-2xl font-medium text-primary">{{ s.name }}</h1>
+      {%- if s.joint %}{{ pill("Joint", tone="blue") }}{% endif %}
+      {%- if s.closed %}{{ pill("Closed", tone="gray") }}{% endif %}
+    </div>
+    <p class="text-sm text-secondary">{{ s.institution }} · {{ type_label }}{% if s.last4 %} · {{ account_digits(s.last4, s.alias_last4) }}{% endif %}</p>
+    <p class="flex flex-wrap items-baseline gap-x-2 text-sm text-secondary">
+      {%- if s.latest %}
+      <span class="text-2xl font-medium tabular-nums text-primary">{{ s.latest.cents|money }}</span>
+      <span>as of {{ s.latest.as_of.strftime("%b %-d, %Y") }}</span>
+      {%- else %}
+      <span>No balance yet</span>
+      {%- endif %}
+    </p>
+    <p class="text-xs text-secondary">
+      {{ detail.transaction_count }} transaction{% if detail.transaction_count != 1 %}s{% endif %}
+      {%- if detail.first_posted %}, {{ detail.first_posted.strftime("%b %-d, %Y") }} to {{ detail.last_posted.strftime("%b %-d, %Y") }}{% endif %}
+    </p>
+  </div>
+  <div class="flex flex-wrap items-center gap-2">
+    {{ link_button("View transactions", href=transactions_href, variant="outline") }}
+    {% call dialog(id="edit-account", title="Edit account", trigger="Edit", trigger_variant="outline", width="sm") %}
+      {{ edit_form(s, form_key) }}
+    {% endcall %}
+  </div>
+</header>
+{%- endmacro %}
+
+{# The edit form. It posts to the account; a refusal swaps its message into #account-edit-status, and
+   a saved change replaces the header, which removes the dialog. Checkboxes always post, as 1 or
+   nothing, so the form sends the whole state. #}
+{% macro edit_form(s, form_key) -%}
+<form id="account-edit-form" class="flex flex-col gap-4" hx-post="/accounts/{{ s.id }}" hx-target="#account-edit-status" hx-swap="innerHTML">
+  <input type="hidden" name="idempotency_key" value="{{ form_key }}">
+  <label class="form-field">
+    <span class="form-field__label">Name</span>
+    <input name="name" value="{{ s.name }}" required maxlength="60" autocomplete="off" class="form-field__input" data-autofocus>
+  </label>
+  <label class="form-field">
+    <span class="form-field__label">Last four digits</span>
+    <input name="last4" value="{{ s.last4 or '' }}" minlength="4" maxlength="4" autocomplete="off" class="form-field__input">
+  </label>
+  <p class="text-xs text-secondary">A label only. After a reissue, map the new number to this account in Settings, then change the label here.</p>
+  <label class="flex items-center gap-2 text-sm text-primary">
+    <input type="checkbox" name="joint" value="1"{% if s.joint %} checked{% endif %}> Joint account
+  </label>
+  <label class="flex items-center gap-2 text-sm text-primary">
+    <input type="checkbox" name="closed" value="1"{% if s.closed %} checked{% endif %}> Closed
+  </label>
+  <p class="text-xs text-secondary">A closed account leaves the accounts panel. Its page opens with <code>?closed=1</code>.</p>
+  <div id="account-edit-status" aria-live="polite"></div>
+  <div class="flex items-center justify-end gap-2">
+    {{ button("Cancel", variant="outline", attrs={"data-action": "dialog#close"}) }}
+    {{ button("Save", variant="primary", type="submit") }}
+  </div>
+</form>
+{%- endmacro %}
+
+{# The chart's card. The points are JSON in a data attribute; the attribute is single-quoted because
+   tojson leaves double quotes in place. With no balances there is no chart, only the empty state. #}
+{% macro chart_card(points_json) -%}
+<section class="flex min-w-0 flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs lg:col-span-2" aria-labelledby="balance-chart-title">
+  <h2 id="balance-chart-title" class="text-sm font-medium text-primary">Statement balances</h2>
+  {%- if points_json %}
+  <div class="relative min-h-64 w-full grow" data-controller="balance-chart" data-balance-chart-points-value='{{ points_json|tojson }}' role="img" aria-label="Chart of the statement balances over time"></div>
+  {%- else %}
+  <p class="text-sm text-secondary">No statement balances yet.</p>
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{# The balance check: agreement through a date, or each issue with its interval, its amounts, and a
+   link to the transactions in that interval. #}
+{% macro balance_card(status, issues) -%}
+<section class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="balance-check-title">
+  <div class="flex items-center justify-between gap-2">
+    <h2 id="balance-check-title" class="text-sm font-medium text-primary">Balance check</h2>
+    {%- if status.ok %}{{ pill("OK", tone="green") }}{% else %}{{ pill(issues|length ~ " to review", tone="amber") }}{% endif %}
+  </div>
+  {%- if status.ok and status.checked_through %}
+  <p class="text-sm text-primary">Balances agree through {{ status.checked_through.strftime("%b %-d, %Y") }}</p>
+  {%- elif status.ok %}
+  <p class="text-sm text-secondary">Nothing to check yet. Two statements are needed to compare balances.</p>
+  {%- else %}
+  <p class="text-sm text-secondary">A statement balance does not match the transactions between it and the one before. Something is probably missing or duplicated.</p>
+  <ul class="flex flex-col gap-3">
+    {%- for issue in issues %}
+    <li class="flex flex-col gap-2 rounded-lg border border-divider p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="text-sm font-medium text-primary">{{ issue.span }}</span>
+        <a href="{{ issue.href }}" class="text-sm text-link underline-offset-2 hover:underline focus-ring rounded-sm">Show transactions</a>
+      </div>
+      <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+        <dt class="text-secondary">Expected</dt><dd class="tabular-nums text-primary">{{ issue.expected|sensitive }}</dd>
+        <dt class="text-secondary">Computed</dt><dd class="tabular-nums text-primary">{{ issue.computed|sensitive }}</dd>
+        <dt class="text-secondary">Difference</dt><dd class="tabular-nums text-primary">{{ issue.difference|sensitive }}</dd>
+      </dl>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{# The sync card: which connector fetches this institution's statements, and its last sync runs. #}
+{% macro sync_card(connector, syncs) -%}
+<section class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="sync-title">
+  <h2 id="sync-title" class="text-sm font-medium text-primary">Sync</h2>
+  <p class="text-sm text-secondary">Connector: <span class="text-primary">{{ connector }}</span></p>
+  {%- if syncs %}
+  <ul class="flex flex-col">
+    {%- for sync in syncs %}
+    <li class="flex flex-col gap-1 border-t border-divider py-2">
+      <div class="flex items-center justify-between gap-2">
+        {{ pill(sync.status, tone=sync.tone) }}
+        <span class="whitespace-nowrap text-xs tabular-nums text-secondary">{{ sync.when }}</span>
+      </div>
+      <p class="text-xs text-secondary">{{ sync.files }}{% if sync.message %} · {{ sync.message }}{% endif %}</p>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="text-sm text-secondary">No syncs yet.</p>
+  {%- endif %}
+</section>
+{%- endmacro %}

@@ -1,0 +1,219 @@
+{# The reports page's parts: the period picker, the hidden state form, the joint share toggle, the
+   summary cards, the trend chart and table, the spending breakdown, and the budget card.
+   Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/reports/index.html.erb,
+   _period_picker, _summary_dashboard, _trends_insights, _breakdown_table, _category_row and
+   _budget_performance. Net worth, investment flows and performance, and Google Sheets are left out.
+
+   Each macro that the fragments use takes oob=true, so an htmx reply swaps it in place by id. #}
+{% from "components/icon.html" import icon with context %}
+{% from "components/button.html" import link_button with context %}
+{% from "components/menu.html" import menu, menu_item with context %}
+{% from "components/segmented_control.html" import segmented_control with context %}
+{% from "components/table.html" import table %}
+{% from "components/toggle.html" import toggle %}
+{% from "layouts/shell_parts.html" import empty_state %}
+{% from "plan/parts.html" import budget_card as plan_budget_card with context %}
+
+{# The period picker: presets as segments, the custom range below them, and the Print link. #}
+{% macro period_controls(view, oob=false) -%}
+<div id="period-controls" class="flex flex-col gap-3"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="max-w-full overflow-x-auto">
+      {{ segmented_control(view.presets, label="Report period") }}
+    </div>
+    {{ link_button("Print", href=view.print_href, variant="outline", size="sm", icon="printer", attrs={"target": "_blank", "rel": "noopener"}) }}
+  </div>
+  {%- if view.selection.key == "custom" %}
+  <form id="custom-range" class="flex flex-wrap items-end gap-3 rounded-lg bg-surface-inset p-3" method="get" action="/reports" hx-get="/reports" hx-swap="none" hx-push-url="true">
+    <input type="hidden" name="period" value="custom">
+    <label class="form-field w-40">
+      <span class="form-field__label">From</span>
+      <input type="date" name="start" value="{{ view.selection.start }}" required class="form-field__input">
+    </label>
+    <label class="form-field w-40">
+      <span class="form-field__label">To</span>
+      <input type="date" name="end" value="{{ view.selection.end }}" required class="form-field__input">
+    </label>
+    <button type="submit" class="inline-flex items-center rounded-md border border-secondary bg-transparent px-3 py-2 text-sm font-medium text-primary hover:bg-surface-hover focus-ring">Show</button>
+  </form>
+  {%- endif %}
+  {%- if view.selection.error %}
+  <p class="text-sm text-destructive" role="alert">{{ view.selection.error }}</p>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# The values the joint toggle sends with its change: the period, from the hidden state form. #}
+{% macro report_state(view, oob=false) -%}
+<form id="report-state" hidden{% if oob %} hx-swap-oob="true"{% endif %}>
+  <input type="hidden" name="period" value="{{ view.selection.key }}">
+  <input type="hidden" name="start" value="{{ view.selection.start }}">
+  <input type="hidden" name="end" value="{{ view.selection.end }}">
+</form>
+{%- endmacro %}
+
+{# The toggle sits in the header, outside the swapped regions, so it keeps focus when it changes. #}
+{% macro joint_toggle(view) -%}
+<form id="joint-share" method="post" action="/reports/joint-share" hx-post="/reports/joint-share" hx-trigger="change" hx-include="#report-state" hx-swap="none">
+  {{ toggle("joint-share-input", "joint", "Show my half of joint accounts", checked=view.joint_share) }}
+</form>
+{%- endmacro %}
+
+{# The year select and the Export menu. The select sits beside the menu, not inside it: the menu
+   closes on any click inside its panel and takes the arrow keys, so a select there cannot be used.
+   A change asks for the menu again (routes/reports.py, export_menu) and swaps only the menu. #}
+{% macro export_controls(export, oob=false) -%}
+<div id="export-controls" class="flex flex-wrap items-end gap-3"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <div class="form-field w-28">
+    <div class="form-field__body">
+      <label class="form-field__label" for="export-year">Year</label>
+      <select id="export-year" name="year" class="form-field__input w-full" hx-get="/reports/export/menu" hx-trigger="change" hx-target="#export-menu" hx-swap="outerHTML">
+        {%- for year in export.years %}
+        <option value="{{ year }}"{% if year == export.year %} selected{% endif %}>{{ year }}</option>
+        {%- endfor %}
+      </select>
+    </div>
+  </div>
+  {{ export_menu(export) }}
+</div>
+{%- endmacro %}
+
+{% macro export_menu(export) -%}
+<div id="export-menu">
+  {%- call menu(id="export-menu-items", label="Export", trigger="Export") %}
+  {{ menu_item("Transactions for " ~ export.year ~ " (.xlsx)", href="/reports/export/transactions?year=" ~ export.year) }}
+  {%- if export.rental_ready %}
+  {{ menu_item("Rental report for " ~ export.year ~ " (.xlsx)", href="/reports/export/rental?year=" ~ export.year) }}
+  {%- else %}
+  {{ unavailable_item("Rental report for " ~ export.year ~ " (.xlsx)", "Set up rental properties in Settings") }}
+  {%- endif %}
+  {%- endcall %}
+</div>
+{%- endmacro %}
+
+{# A menu item that cannot be chosen. It stays in the menu, so the reason shows as a tooltip and as
+   text, which a keyboard user can read. #}
+{% macro unavailable_item(text, reason) -%}
+<div class="px-1" role="none">
+  <span role="menuitem" tabindex="-1" aria-disabled="true" title="{{ reason }}" class="flex w-full flex-col gap-0.5 rounded-md p-2 cursor-not-allowed">
+    <span class="text-sm text-secondary">{{ text }}</span>
+    <span class="text-xs text-subdued">{{ reason }}</span>
+  </span>
+</div>
+{%- endmacro %}
+
+{% macro summary_cards(view) -%}
+<section class="flex flex-col gap-3" aria-labelledby="summary-title">
+  <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+    <h2 id="summary-title" class="text-sm font-medium text-primary">Summary for {{ view.period_label }}</h2>
+    <p class="text-sm text-secondary">{{ view.joint_note }}. Compared with {{ view.prior_label }}.</p>
+  </div>
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    {%- for card in view.cards %}
+    <div class="flex flex-col gap-2 rounded-xl bg-container p-5 shadow-border-xs">
+      <p class="text-sm text-secondary">{{ card.label }}</p>
+      <p class="text-2xl font-medium tabular-nums {{ card.value_tone or 'text-primary' }}">{{ card.value|sensitive }}</p>
+      {%- if card.change %}
+      <p class="flex items-center gap-1.5 text-sm {{ card.change_tone }}">
+        {%- if card.arrow %}{{ icon(card.arrow, 16) }}{% endif -%}
+        <span>{{ card.change|sensitive }}</span>
+      </p>
+      {%- endif %}
+    </div>
+    {%- endfor %}
+  </div>
+</section>
+{%- endmacro %}
+
+{# The bar chart of income and expenses with a net line, and the same figures as a table. The data
+   is JSON in a data attribute, with the amounts already formatted, so the chart shows what the
+   table shows. #}
+{% macro trend_card(view) -%}
+<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="trend-title">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h2 id="trend-title" class="text-sm font-medium text-primary">Monthly trend</h2>
+    <p class="flex items-center gap-3 text-xs text-secondary">
+      <span class="flex items-center gap-1.5"><span class="inline-block size-2 rounded-full bg-success"></span>Income</span>
+      <span class="flex items-center gap-1.5"><span class="inline-block size-2 rounded-full bg-gray-400"></span>Expenses</span>
+      <span class="flex items-center gap-1.5"><span class="inline-block h-0.5 w-3" style="background-color: var(--utility-text-primary)"></span>Net</span>
+    </p>
+  </div>
+  <div class="relative h-64 w-full" data-controller="bar-chart" data-bar-chart-data-value='{{ view.trend_points|tojson }}' role="img" aria-label="Bar chart of income and expenses by month, with net as a line, for the twelve months to the end of this period"></div>
+  {{ table(view.trend_columns, view.trend_cells, "Income, expenses, and net by month") }}
+</section>
+{%- endmacro %}
+
+{# The breakdown table: each category links to the register, with its share as a bar and a percent,
+   its change, and a six-month sparkline drawn on the server. #}
+{% macro breakdown_card(view) -%}
+<section class="flex flex-col gap-4" aria-labelledby="breakdown-title">
+  <div class="flex flex-wrap items-baseline justify-between gap-2">
+    <h2 id="breakdown-title" class="text-sm font-medium text-primary">Spending by category</h2>
+    <p class="text-sm text-secondary">Expenses <span class="font-medium tabular-nums text-primary">{{ view.expenses|sensitive }}</span></p>
+  </div>
+  {%- if view.categories %}
+  <div class="table-scroll rounded-xl shadow-border-xs focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Spending by category">
+    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+      <thead>
+        <tr>
+          <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Category</th>
+          <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Share</th>
+          <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
+          <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Change</th>
+          <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Last six months</th>
+        </tr>
+      </thead>
+      <tbody>
+        {%- for row in view.categories %}
+        <tr>
+          <td class="border-t border-subdued px-4 py-3">
+            <a href="{{ row.href }}" class="font-medium text-primary underline-offset-2 hover:underline focus-ring rounded-sm">{{ row.name }}</a>
+            <span class="ml-1 text-xs text-subdued">{{ row.type }}</span>
+          </td>
+          <td class="border-t border-subdued px-4 py-3 text-right tabular-nums">
+            <span class="inline-flex items-center justify-end gap-2">
+              <span class="inline-block h-1.5 w-16 overflow-hidden rounded-full bg-surface-inset" aria-hidden="true"><span class="block h-full rounded-full bg-gray-400" style="width: {{ row.bar }}%"></span></span>
+              <span>{{ row.share }}</span>
+            </span>
+          </td>
+          <td class="border-t border-subdued px-4 py-3 text-right tabular-nums">{{ row.amount|sensitive }}</td>
+          <td class="border-t border-subdued px-4 py-3 text-right tabular-nums {{ row.change_tone }}">{{ row.change|sensitive }}</td>
+          <td class="border-t border-subdued px-4 py-3">
+            {%- if row.spark %}
+            <svg class="h-5 w-14" viewBox="0 0 56 20" aria-hidden="true" focusable="false">
+              <polyline points="{{ row.spark }}" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" style="stroke: var(--color-gray-500)"></polyline>
+            </svg>
+            {%- endif %}
+          </td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+  {%- else %}
+  <p class="text-sm text-secondary">No spending in this period.</p>
+  {%- endif %}
+  <p class="text-sm text-secondary">Uncategorized <span class="tabular-nums text-primary">{{ view.uncategorized|sensitive }}</span>. These lines are not in income or expenses until you categorize them.</p>
+</section>
+{%- endmacro %}
+
+{# Budget performance: this month's budget from Plan, the same card the Plan hub shows. With no
+   budget yet, the card links to Plan to set one up. #}
+{% macro budget_card(view) -%}
+{{ plan_budget_card(view.budget, title="Budget performance", heading="budget-title") }}
+{%- endmacro %}
+
+{# The report body: the summary, the trend, the breakdown, and the budget card. With no transactions
+   at all, the empty state stands in for them. #}
+{% macro report_main(view, oob=false) -%}
+<div id="report-main" class="flex flex-col gap-6"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {%- if view.has_transactions %}
+  {{ summary_cards(view) }}
+  {{ trend_card(view) }}
+  {{ breakdown_card(view) }}
+  {{ budget_card(view) }}
+  {%- else %}
+  {{ empty_state("No transactions yet", "Run `omsync import --apply` to bring in statements. Reports appear once there are transactions.") }}
+  {%- endif %}
+</div>
+{%- endmacro %}

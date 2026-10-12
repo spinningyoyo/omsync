@@ -1,0 +1,89 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "omsync"
+version = "0.1.0"
+description = "A local, single-user personal finance tracker."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "AGPL-3.0-only"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "jinja2",
+    "jinja2-fragments",
+    "sqlalchemy>=2.0",
+    "alembic",
+    "typer",
+    "keyring",
+    "python-multipart",
+    "ofxparse>=0.21",
+    "selenium>=4.20",
+    "openpyxl>=3.1.5",
+]
+
+[project.scripts]
+omsync = "omsync.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    "httpx",
+    "pytest-playwright>=0.10.0",
+    "import-linter>=2.15",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"sqlalchemy.Column".msg = "Map columns with Mapped[...] and mapped_column."
+"sqlalchemy.orm.declarative_base".msg = "Subclass omsync.core.db.Base."
+
+[tool.ruff.lint.per-file-ignores]
+"src/omsync/migrations/**" = ["TID251"]
+
+[tool.importlinter]
+root_package = "omsync"
+
+[[tool.importlinter.contracts]]
+name = "Domain packages never import the web or CLI layers"
+type = "forbidden"
+source_modules = [
+    "omsync.ingest",
+    "omsync.ledger",
+    "omsync.plan",
+    "omsync.receipts",
+    "omsync.reconcile",
+    "omsync.reports",
+]
+forbidden_modules = ["omsync.web", "omsync.cli"]
+
+[[tool.importlinter.contracts]]
+name = "core imports no other omsync package"
+type = "forbidden"
+source_modules = ["omsync.core"]
+forbidden_modules = [
+    "omsync.cli",
+    "omsync.web",
+    "omsync.ingest",
+    "omsync.ledger",
+    "omsync.plan",
+    "omsync.receipts",
+    "omsync.reconcile",
+    "omsync.reports",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "e2e: drives the running app in Chromium through Playwright; run `playwright install chromium` first",
+    "slow: builds the wheel and installs it into a fresh venv; skip with `uv run pytest -m \"not slow\"`",
+]

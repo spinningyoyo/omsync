@@ -1,0 +1,11 @@
+{# An institution's logo at size px, or its first letter on the same tile when it has none. The tile
+   is decorative: the institution's name is always written next to it. `institution_logo_url` is a
+   Jinja global registered in app.py (web/institution_logos.py). #}
+{% macro institution_logo(key, name, size=20) -%}
+{%- set url = institution_logo_url(key) -%}
+{%- if url %}
+<img src="{{ url }}" alt="" width="{{ size }}" height="{{ size }}" class="shrink-0 rounded-md object-contain shadow-border-xs" style="width: {{ size }}px; height: {{ size }}px" loading="lazy">
+{%- else %}
+<span class="flex shrink-0 items-center justify-center rounded-md bg-container text-[10px] font-medium uppercase text-secondary shadow-border-xs" style="width: {{ size }}px; height: {{ size }}px" aria-hidden="true">{{ name[:1] }}</span>
+{%- endif %}
+{%- endmacro %}

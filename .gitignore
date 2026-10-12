@@ -1,0 +1,32 @@
+# Personal financial data never enters this repository.
+/data/
+*.db
+*.db-*
+*.sqlite*
+*.ofx
+*.qfx
+*.qbo
+*.csv
+*.xlsx
+*.xls
+*.pdf
+*.zip
+.env
+.env.*
+exports/
+backups/
+browser-profile/
+
+# Python and tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+
+# Synthetic test fixtures are safe to commit.
+!tests/fixtures/**
+
+# Design system tooling: the Tailwind standalone CLI (scripts/build-css.sh)
+/.tools/

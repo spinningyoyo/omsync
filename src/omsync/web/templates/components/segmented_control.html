@@ -1,0 +1,21 @@
+{# Adapted from Sure (we-promise/sure), AGPL-3.0: app/components/DS/segmented_control.rb and the
+   .segmented-control rules in components.css. A single-select pill group for filters and mode
+   switches. It is not the tabs widget.
+
+   segments: list of {label, active, href, attrs}. A segment with href is a link (aria-current);
+   otherwise it is a button (aria-pressed). The Stimulus controller toggles
+   segmented-control__segment--active. #}
+{% from "components/_util.html" import html_attrs %}
+
+{% macro segmented_control(segments, label=none, full_width=false, attrs=none) -%}
+<div class="segmented-control{% if full_width %} w-full{% endif %}" role="group"{% if label %} aria-label="{{ label }}"{% endif %}{{ html_attrs(attrs) }}>
+  {%- for seg in segments %}
+  {%- set classes = "segmented-control__segment focus-ring" ~ (" flex-1" if full_width else "") ~ (" segmented-control__segment--active" if seg.active else "") %}
+  {%- if seg.href %}
+  <a href="{{ seg.href }}" class="{{ classes }}"{% if seg.active %} aria-current="true"{% endif %}{{ html_attrs(seg.attrs) }}>{{ seg.label }}</a>
+  {%- else %}
+  <button type="button" class="{{ classes }}" aria-pressed="{{ 'true' if seg.active else 'false' }}"{{ html_attrs(seg.attrs) }}>{{ seg.label }}</button>
+  {%- endif %}
+  {%- endfor %}
+</div>
+{%- endmacro %}

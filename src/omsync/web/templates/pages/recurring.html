@@ -1,0 +1,37 @@
+{% extends "layouts/shell.html" %}
+{% from "layouts/shell_parts.html" import page_header %}
+{% from "components/button.html" import button %}
+{% from "recurring/parts.html" import view_switcher, summary_region, suggestions_region, body_region %}
+
+{% block page %}
+{# The page root listens for dialog and htmx events. The regions reload themselves on
+   recurring-changed, which a successful write sends (routes/recurring.py). The dialogs and the toast
+   sit outside the regions, so a reload never removes them. #}
+<div class="flex flex-col gap-6" data-controller="page-dialogs" data-action="close-dialogs@window->page-dialogs#closeDialogs htmx:afterSettle->page-dialogs#settled">
+  {{ page_header("Recurring", "Bills, subscriptions, and other charges that repeat on a schedule.") }}
+  {{ view_switcher(view) }}
+  {{ summary_region(summary) }}
+  {{ suggestions_region(suggestions) }}
+  {{ body_region(body) }}
+
+  <dialog id="recurring-drawer" class="m-auto w-full max-w-lg bg-transparent p-0 text-primary backdrop:bg-overlay" aria-label="Series details" data-action="close->page-dialogs#restoreFocus">
+    <div class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs">
+      <div class="flex justify-end">
+        {{ button(variant="icon", size="sm", icon="x", aria_label="Close", attrs={"data-action": "page-dialogs#closeDialog"}) }}
+      </div>
+      <div id="recurring-drawer-body" aria-live="polite"></div>
+    </div>
+  </dialog>
+
+  <dialog id="recurring-confirm-dialog" class="m-auto w-full max-w-md bg-transparent p-0 text-primary backdrop:bg-overlay" aria-label="Confirm series" data-action="close->page-dialogs#restoreFocus">
+    <div class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs">
+      <div class="flex justify-end">
+        {{ button(variant="icon", size="sm", icon="x", aria_label="Close", attrs={"data-action": "page-dialogs#closeDialog"}) }}
+      </div>
+      <div id="recurring-confirm-body" aria-live="polite"></div>
+    </div>
+  </dialog>
+
+  <div id="toast-region" aria-live="polite"></div>
+</div>
+{% endblock %}

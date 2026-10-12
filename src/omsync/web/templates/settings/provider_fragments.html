@@ -1,0 +1,49 @@
+{# Fragment blocks for the Bank sync replies (routes/settings_providers.py). Each saved change or undo
+   sends the whole institution list out of band and the toast with it. #}
+
+{% block frag_provider_vault %}
+{% from "settings/parts.html" import vault_results %}
+{{ vault_results(locked, logins, unlock_message, message, unlock_action="/settings/providers/" ~ key ~ "/edit/unlock", unlock_target="#provider-edit-" ~ key, form_id="provider-edit-form-" ~ key, choice_required=false) }}
+{% endblock %}
+
+{% block frag_provider_edit %}
+{% from "settings/provider_parts.html" import provider_edit %}
+{{ provider_edit(card, locked, logins, query, unlock_message, message) }}
+{% endblock %}
+
+{% block frag_provider_message %}
+<p class="text-sm {{ 'text-destructive' if error else 'text-primary' }}" role="{{ 'alert' if error else 'status' }}">{{ message }}</p>
+{% endblock %}
+
+{% block frag_provider_saved %}
+{% from "settings/provider_parts.html" import provider_list %}
+{% from "layouts/shell_parts.html" import panel_groups %}
+{% from "transactions/parts.html" import toast_region %}
+{{ provider_list(groups, oob=true) }}
+{{ panel_groups(panel, oob=true) }}
+{{ toast_region(message, batch_id, source="providers") }}
+{% endblock %}
+
+{# A sync's reply: the status region, the question form, and, when the job has ended or was refused
+   while idle, the sync buttons and the provider list, which show each provider's last sync. #}
+{% block frag_sync %}
+{% from "settings/sync_parts.html" import sync_region, sync_question, sync_all_control %}
+{% from "settings/provider_parts.html" import provider_list %}
+{{ sync_region(sync, notice, unlock_scope, unlock_message) }}
+{%- if include_question %}
+{{ sync_question(sync.question, oob=true) }}
+{%- endif %}
+{%- if groups is not none %}
+{{ sync_all_control(sync.running, oob=true) }}
+{{ provider_list(groups, oob=true) }}
+{%- endif %}
+{% endblock %}
+
+{% block frag_provider_undone %}
+{% from "settings/provider_parts.html" import provider_list %}
+{% from "layouts/shell_parts.html" import panel_groups %}
+{% from "transactions/parts.html" import toast %}
+{{ toast(message) }}
+{{ provider_list(groups, oob=true) }}
+{{ panel_groups(panel, oob=true) }}
+{% endblock %}

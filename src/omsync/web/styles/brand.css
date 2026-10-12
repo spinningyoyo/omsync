@@ -1,0 +1,135 @@
+/*
+ * Brand marks: the rotating wordmark and the pixel mascot (docs/features/design-system.md, Brand).
+ * Colours come from the design tokens. The motion is CSS only and stops under reduced motion.
+ *
+ * The mascot's body fill is --mascot-body. The outline and eye use currentColor, so they follow
+ * the text colour of the place the mascot sits.
+ */
+:root {
+  --mascot-body: #d3d7d9;
+  /* One word is on screen for --brand-word-duration, then the column slides to the next word. The
+     eye blinks during that slide, so the mascot and the wordmark share these two tokens and both
+     start when the page renders. */
+  --brand-word-duration: 2.5s;
+  --brand-word-count: 4;
+}
+
+[data-theme="dark"] {
+  --mascot-body: var(--color-gray-800);
+}
+
+.mascot-body {
+  fill: var(--mascot-body);
+}
+
+/* Wordmark. A column of four words slides up one word every --brand-word-duration. The fourth is
+   a copy of the first, so the loop is seamless. The track is clipped to one word. The slide takes
+   the last 12% of each word's time: 22% to 25% of the cycle is 88% to 100% of one word, the same
+   window in which the mascot's eye is closed. */
+.brand-wordmark {
+  display: inline-block;
+  overflow: hidden;
+  height: 1.4em;
+  line-height: 1.4em;
+  vertical-align: bottom;
+  color: var(--utility-text-primary);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.brand-wordmark__roll {
+  display: flex;
+  flex-direction: column;
+  animation: brand-wordmark-roll calc(var(--brand-word-duration) * var(--brand-word-count))
+    cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+.brand-wordmark__word {
+  display: block;
+  height: 1.4em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.brand-wordmark--lg {
+  font-size: 2.25rem;
+}
+
+.brand-wordmark--sm {
+  font-size: 1rem;
+}
+
+@keyframes brand-wordmark-roll {
+  0%,
+  22% {
+    transform: translateY(0);
+  }
+  25%,
+  47% {
+    transform: translateY(-25%);
+  }
+  50%,
+  72% {
+    transform: translateY(-50%);
+  }
+  75%,
+  97%,
+  100% {
+    transform: translateY(-75%);
+  }
+}
+
+/* Mascot. The eye is a one-cell block that closes into a thin line while each new word slides
+   in: once per --brand-word-duration, during the last 12% of it. The closed eye is hidden by its
+   opacity attribute until the animation runs. */
+.brand-mascot {
+  display: block;
+  overflow: visible;
+}
+
+.brand-mascot .mascot-eye {
+  animation: mascot-eye-open var(--brand-word-duration) step-end infinite;
+}
+
+.brand-mascot .mascot-eye-closed {
+  animation: mascot-eye-closed var(--brand-word-duration) step-end infinite;
+}
+
+@keyframes mascot-eye-open {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 0;
+  }
+}
+
+@keyframes mascot-eye-closed {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  88% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-wordmark__roll {
+    animation: none;
+  }
+
+  .brand-wordmark__word:not(:first-child) {
+    display: none;
+  }
+
+  .brand-mascot .mascot-eye,
+  .brand-mascot .mascot-eye-closed {
+    animation: none;
+  }
+
+  .brand-mascot .mascot-eye-closed {
+    display: none;
+  }
+}

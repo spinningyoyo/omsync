@@ -1,0 +1,22 @@
+{# The home dashboard: the header and period picker, then three sections in the saved order, or the
+   first-run state until there are transactions. D3 and the d3-sankey plugin are loaded here, in that
+   order, as the reports page loads D3. Adapted from Sure (we-promise/sure), AGPL-3.0; see
+   home/parts.html. #}
+{% extends "layouts/shell.html" %}
+{% from "home/parts.html" import home_header, sections, first_run %}
+
+{% block chart_scripts %}
+<script src="/static/vendor/d3.min.js" defer></script>
+<script src="/static/vendor/d3-sankey.min.js" defer></script>
+{% endblock %}
+
+{% block page %}
+<div class="flex flex-col gap-6">
+  {{ home_header(view) }}
+  {%- if view.has_transactions %}
+  {{ sections(view) }}
+  {%- else %}
+  {{ first_run() }}
+  {%- endif %}
+</div>
+{% endblock %}

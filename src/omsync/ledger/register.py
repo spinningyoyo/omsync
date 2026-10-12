@@ -1,0 +1,654 @@
+"""The transaction register: listing transactions, and editing them as batches.
+
+Each edit is one batch from omsync.core.batches, so it previews, applies once per idempotency
+key, and can be undone while nothing it changed has changed since. The web layer calls these
+functions and never writes the tables itself. This module never imports omsync.web.
+
+A split transaction has no category of its own. Splitting clears the transaction's category, and
+set_category refuses a split transaction. Clearing the splits leaves the transaction unsplit and
+uncategorized, so categorize may set it again. check_split_drafts and check_split_lines own the
+rules for a split's lines, for the editor's lines and for set_splits alike.
+
+Batch summaries carry "label" (for the undo toast), "transaction_id", and "field" (the cell that
+changed, so the web layer can focus it after an undo).
+
+This module also reads the Needs review queue: open import reviews, with the transactions each one
+might be the same as. Resolving a review is import.resolve_review, which the web layer calls.
+"""
+
+import hashlib
+import json
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from datetime import date
+
+from sqlalchemy import Select, func, select
+from sqlalchemy.orm import Session
+
+from omsync.core.batch_models import Batch
+from omsync.core.batches import (
+    Change,
+    applied_batch_for_key,
+    apply,
+    make_preview,
+    next_primary_key,
+    snapshot,
+)
+from omsync.core.money import format_cents, to_cents
+from omsync.ledger.categories import Category
+from omsync.ledger.filters import FilterSpec
+from omsync.ledger.filters import apply as apply_filter
+from omsync.ledger.sources import Account, account_digits
+from omsync.ledger.statements import StatementFile, StatementRow
+from omsync.ledger.transactions import (
+    CategoryOrigin,
+    ImportReview,
+    ReviewStatus,
+    Split,
+    Transaction,
+)
+
+SplitLine = tuple[int, int | None, str | None]  # amount_cents, category_id, memo
+
+
+@dataclass(frozen=True)
+class SplitRow:
+    """One split line of a transaction, as the register shows it."""
+
+    id: int
+    amount_cents: int
+    category_id: int | None
+    category: str | None
+    memo: str | None
+
+
+@dataclass(frozen=True)
+class RegisterRow:
+    """One transaction as the register shows it. Splits are in position order."""
+
+    id: int
+    posted_on: date
+    account_id: int
+    account_name: str
+    account_digits: str  # see account_digits; empty when the account has no last four
+    payee: str
+    category_id: int | None
+    category: str | None
+    category_origin: CategoryOrigin
+    amount_cents: int
+    memo: str | None
+    splits: list[SplitRow] = field(default_factory=list)
+
+    @property
+    def is_split(self) -> bool:
+        return bool(self.splits)
+
+
+# Listing
+
+
+def list_transactions(
+    session: Session,
+    *,
+    account_id: int | None = None,
+    spec: FilterSpec | None = None,
+    offset: int = 0,
+    limit: int = 100,
+) -> list[RegisterRow]:
+    """Return up to `limit` transactions after the first `offset`, ordered by (posted_on, id)
+    descending, so the newest come first and every transaction has one place in the order.
+
+    `account_id` and `spec` (see omsync.ledger.filters) both narrow the result.
+    """
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    if offset < 0:
+        raise ValueError("offset must not be negative")
+    query = _register_query()
+    if account_id is not None:
+        query = query.where(Transaction.account_id == account_id)
+    if spec is not None:
+        query = apply_filter(query, spec)
+    query = (
+        query.order_by(Transaction.posted_on.desc(), Transaction.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return _rows(session, session.execute(query).all())
+
+
+def get_transaction_row(session: Session, txn_id: int) -> RegisterRow:
+    """Return one transaction as the register shows it. Raises LookupError if it does not exist."""
+    found = session.execute(_register_query().where(Transaction.id == txn_id)).all()
+    if not found:
+        raise LookupError(f"there is no transaction {txn_id}")
+    return _rows(session, found)[0]
+
+
+def row_version(row: RegisterRow) -> str:
+    """A token for everything the register shows about one transaction and its splits.
+
+    An editor carries the token it was opened with. A save that carries an older token was made
+    from an older view, so the web layer refuses it rather than writing over a newer decision. The
+    batch engine's revision check cannot catch this: it only sees changes after the preview.
+    """
+    state = [
+        row.posted_on.isoformat(),
+        row.amount_cents,
+        row.payee,
+        row.category_id,
+        row.category_origin.value,
+        row.memo,
+        [[split.id, split.amount_cents, split.category, split.memo] for split in row.splits],
+    ]
+    return hashlib.sha256(json.dumps(state).encode()).hexdigest()[:20]
+
+
+def field_version(row: RegisterRow, field_name: str) -> str:
+    """A token for what the register shows in one editable field. A cell save carries the token it
+    was rendered with, so a change to that field made elsewhere refuses the save. Changes to the
+    other fields do not, so each cell in a row saves on its own."""
+    state = {
+        "memo": row.memo,
+        "category": [row.category_id, row.category_origin.value, row.is_split],
+    }[field_name]
+    return hashlib.sha256(json.dumps([field_name, state]).encode()).hexdigest()[:20]
+
+
+def categories(session: Session) -> list[tuple[int, str]]:
+    """Return (id, name) for every category that is not hidden, sorted by name."""
+    rows = session.execute(
+        select(Category.id, Category.name).where(Category.hidden.is_(False))
+    ).all()
+    return sorted(
+        ((int(category_id), name) for category_id, name in rows), key=lambda r: r[1].casefold()
+    )
+
+
+# Needs review
+
+
+@dataclass(frozen=True)
+class CandidateRow:
+    """A transaction an import review might be the same as."""
+
+    id: int
+    posted_on: date
+    amount_cents: int
+    payee: str
+
+
+@dataclass(frozen=True)
+class ReviewRow:
+    """One open import review: the statement row, why it is open, and its candidates."""
+
+    id: int
+    reason: str
+    posted_on: date
+    amount_cents: int
+    payee_raw: str
+    file_name: str
+    account_name: str | None
+    candidates: tuple[CandidateRow, ...]
+
+
+def open_reviews(session: Session) -> list[ReviewRow]:
+    """Every open import review, newest statement row first."""
+    found = session.execute(
+        select(ImportReview, StatementRow, StatementFile, Account)
+        .select_from(ImportReview)
+        .join(StatementRow, StatementRow.id == ImportReview.statement_row_id)
+        .join(StatementFile, StatementFile.id == StatementRow.statement_file_id)
+        .outerjoin(Account, Account.id == StatementFile.account_id)
+        .where(ImportReview.status == ReviewStatus.open)
+        .order_by(StatementRow.posted_on.desc(), ImportReview.id)
+    ).all()
+    candidate_ids = {cid for review, _, _, _ in found for cid in review.candidate_transaction_ids}
+    by_id: dict[int, Transaction] = {}
+    if candidate_ids:
+        by_id = {
+            txn.id: txn
+            for txn in session.scalars(
+                select(Transaction).where(Transaction.id.in_(sorted(candidate_ids)))
+            )
+        }
+    return [
+        ReviewRow(
+            id=review.id,
+            reason=review.reason,
+            posted_on=row.posted_on,
+            amount_cents=row.amount_cents,
+            payee_raw=row.payee_raw,
+            file_name=statement_file.original_name,
+            account_name=None if account is None else account.name,
+            candidates=tuple(
+                CandidateRow(txn.id, txn.posted_on, txn.amount_cents, txn.payee)
+                for txn_id in review.candidate_transaction_ids
+                if (txn := by_id.get(txn_id)) is not None
+            ),
+        )
+        for review, row, statement_file, account in found
+    ]
+
+
+def open_review_count(session: Session) -> int:
+    """How many import reviews are open. The Transactions badge and tab show this."""
+    return int(
+        session.scalar(
+            select(func.count(ImportReview.id)).where(ImportReview.status == ReviewStatus.open)
+        )
+        or 0
+    )
+
+
+# Edits. Each returns the batch it applied. A key that already applied returns that batch.
+
+
+def edit_memo(session: Session, txn_id: int, memo: str | None, *, idempotency_key: str) -> Batch:
+    """Set the memo. An empty memo is stored as None."""
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    current = _transaction_values(session, txn_id)
+    text = (memo or "").strip() or None
+    if text:
+        label = f"Set memo of {current['payee']} to {text}"
+    else:
+        label = f"Clear memo of {current['payee']}"
+    return _write(
+        session,
+        kind="register.memo",
+        txn_id=txn_id,
+        field="memo",
+        label=label,
+        changes=_field_changes(txn_id, {"memo": current["memo"]}, {"memo": text}),
+        idempotency_key=idempotency_key,
+    )
+
+
+def set_category(
+    session: Session, txn_id: int, category_id: int | None, *, idempotency_key: str
+) -> Batch:
+    """Set the category, with origin manual. Clearing it (None) gives origin none.
+
+    Raises ValueError for a split transaction, whose splits carry the categories, and for a
+    category that does not exist or is hidden.
+    """
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    current = _transaction_values(session, txn_id)
+    if _split_count(session, txn_id):
+        raise ValueError("This transaction is split. Change its split lines instead.")
+    if category_id is None:
+        origin = CategoryOrigin.none
+        label = f"Clear category of {current['payee']}"
+    else:
+        name = _usable_category(session, category_id)
+        origin = CategoryOrigin.manual
+        label = f"Set category of {current['payee']} to {name}"
+    before = {"category_id": current["category_id"], "category_origin": current["category_origin"]}
+    after = {"category_id": category_id, "category_origin": origin.value}
+    return _write(
+        session,
+        kind="register.category",
+        txn_id=txn_id,
+        field="category",
+        label=label,
+        changes=_field_changes(txn_id, before, after),
+        idempotency_key=idempotency_key,
+    )
+
+
+def set_splits(
+    session: Session,
+    txn_id: int,
+    lines: Sequence[SplitLine],
+    *,
+    idempotency_key: str,
+) -> Batch:
+    """Replace the splits with `lines`, each (amount_cents, category_id, memo).
+
+    One batch: the old split rows are deleted, the new ones are inserted with ids that no row
+    holds yet, and the transaction's own category is cleared. The lines must pass
+    check_split_lines. Each split's origin is manual. Raises ValueError otherwise.
+    """
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    current = _transaction_values(session, txn_id)
+    check = check_split_lines(session, current["amount_cents"], lines)
+    if check.lines is None:
+        raise ValueError(next((error for error in check.line_errors if error), check.message))
+    rows = check.lines
+
+    old_ids = _split_ids(session, txn_id)
+    changes = [
+        Change("split", str(split_id), snapshot(session, "split", split_id), None)
+        for split_id in old_ids
+    ]
+    next_id = next_primary_key(session, Split.__table__)
+    for position, (amount, category_id, memo) in enumerate(rows):
+        changes.append(
+            Change(
+                "split",
+                str(next_id),
+                None,
+                {
+                    "id": next_id,
+                    "transaction_id": txn_id,
+                    "position": position,
+                    "amount_cents": amount,
+                    "category_id": category_id,
+                    "category_origin": CategoryOrigin.manual.value,
+                    "memo": (memo or "").strip() or None,
+                },
+            )
+        )
+        next_id += 1
+    before = {"category_id": current["category_id"], "category_origin": current["category_origin"]}
+    after = {"category_id": None, "category_origin": CategoryOrigin.none.value}
+    changes += _field_changes(txn_id, before, after)
+
+    if old_ids:
+        label = f"Change split of {current['payee']} to {len(rows)} lines"
+    else:
+        label = f"Split {current['payee']} into {len(rows)} lines"
+    return _write(
+        session,
+        kind="register.split",
+        txn_id=txn_id,
+        field="split",
+        label=label,
+        changes=changes,
+        idempotency_key=idempotency_key,
+    )
+
+
+def clear_splits(session: Session, txn_id: int, *, idempotency_key: str) -> Batch:
+    """Delete every split, leaving the transaction unsplit and uncategorized.
+
+    Raises ValueError if the transaction is not split.
+    """
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    current = _transaction_values(session, txn_id)
+    split_ids = _split_ids(session, txn_id)
+    if not split_ids:
+        raise ValueError("This transaction is not split.")
+    changes = [
+        Change("split", str(split_id), snapshot(session, "split", split_id), None)
+        for split_id in split_ids
+    ]
+    before = {"category_id": current["category_id"], "category_origin": current["category_origin"]}
+    after = {"category_id": None, "category_origin": CategoryOrigin.none.value}
+    changes += _field_changes(txn_id, before, after)
+    return _write(
+        session,
+        kind="register.unsplit",
+        txn_id=txn_id,
+        field="split",
+        label=f"Remove split from {current['payee']}",
+        changes=changes,
+        idempotency_key=idempotency_key,
+    )
+
+
+# Split checking
+
+
+@dataclass(frozen=True)
+class SplitDraft:
+    """One split line as entered in the editor: the amount is text not yet read, and the category
+    is the one picked, if any."""
+
+    amount: str = ""
+    category_id: int | None = None
+    memo: str = ""
+
+
+@dataclass(frozen=True)
+class SplitBalance:
+    """How much of a transaction typed split amounts account for. `left_cents` is None when an
+    amount cannot be read, and `counted` is how many lines have an amount."""
+
+    left_cents: int | None
+    counted: int
+
+    @property
+    def can_save(self) -> bool:
+        return self.left_cents == 0 and self.counted >= 2
+
+
+@dataclass(frozen=True)
+class SplitCheck:
+    """What checking proposed split lines found.
+
+    `lines` holds the accepted lines, or is None when anything is wrong. `line_errors` has one
+    entry per proposed line, empty when the line is fine. `message` is the overall problem, empty
+    when `lines` is set.
+    """
+
+    lines: list[SplitLine] | None
+    line_errors: list[str]
+    message: str
+    balance: SplitBalance
+
+
+def split_balance(total_cents: int, amounts: Sequence[str]) -> SplitBalance:
+    """The amount left after the typed amounts. Blank amounts count as nothing."""
+    left = total_cents
+    counted = 0
+    for text in amounts:
+        cleaned = text.strip()
+        if not cleaned:
+            continue
+        try:
+            left -= to_cents(cleaned)
+        except ValueError:
+            return SplitBalance(None, counted)
+        counted += 1
+    return SplitBalance(left, counted)
+
+
+def check_split_drafts(
+    session: Session, total_cents: int, drafts: Sequence[SplitDraft]
+) -> SplitCheck:
+    """Check split lines as entered. Blank lines are ignored. Every other line needs an amount and
+    a category that exists and is not hidden, and the lines must satisfy the rules in
+    check_split_lines."""
+    errors: list[str] = []
+    lines: list[SplitLine] = []
+    for draft in drafts:
+        if not (draft.amount.strip() or draft.category_id is not None or draft.memo.strip()):
+            errors.append("")
+            continue
+        try:
+            cents = _read_amount(draft.amount, total_cents)
+            if draft.category_id is None:
+                raise ValueError("Pick a category.")
+            _usable_category(session, draft.category_id)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        errors.append("")
+        lines.append((cents, draft.category_id, draft.memo.strip() or None))
+    balance = split_balance(total_cents, [draft.amount for draft in drafts])
+    return _conclude_split_check(total_cents, errors, lines, balance)
+
+
+def check_split_lines(session: Session, total_cents: int, lines: Sequence[SplitLine]) -> SplitCheck:
+    """Check split lines whose amounts and categories are already known.
+
+    Each line needs a nonzero amount with the transaction's sign and a category that exists and
+    is not hidden. There must be at least two lines, and they must add up to the transaction
+    exactly.
+    """
+    errors: list[str] = []
+    for amount, category_id, _memo in lines:
+        try:
+            _check_amount(amount, total_cents)
+            if category_id is None:
+                raise ValueError("Pick a category.")
+            _usable_category(session, category_id)
+        except ValueError as exc:
+            errors.append(str(exc))
+        else:
+            errors.append("")
+    left = total_cents - sum(amount for amount, _, _ in lines)
+    return _conclude_split_check(total_cents, errors, list(lines), SplitBalance(left, len(lines)))
+
+
+def _conclude_split_check(
+    total_cents: int,
+    errors: list[str],
+    lines: list[SplitLine],
+    balance: SplitBalance,
+) -> SplitCheck:
+    """The whole-split rules, applied once every line is individually acceptable."""
+    if any(errors):
+        message = "Fix the lines marked in red."
+    elif len(lines) < 2:
+        message = "A split needs at least 2 lines."
+    elif (unplaced := total_cents - sum(amount for amount, _, _ in lines)) != 0:
+        message = (
+            f"Lines must add up to {format_cents(total_cents)} exactly. "
+            f"Amount left: {format_cents(unplaced)}."
+        )
+    else:
+        return SplitCheck(lines, errors, "", balance)
+    return SplitCheck(None, errors, message, balance)
+
+
+def _read_amount(text: str, total_cents: int) -> int:
+    cleaned = text.strip()
+    if not cleaned:
+        raise ValueError("Enter an amount.")
+    try:
+        cents = to_cents(cleaned)
+    except ValueError:
+        raise ValueError(f"{cleaned} is not an amount.") from None
+    _check_amount(cents, total_cents)
+    return cents
+
+
+def _check_amount(cents: int, total_cents: int) -> None:
+    if cents == 0:
+        raise ValueError("An amount cannot be zero.")
+    if (cents < 0) != (total_cents < 0):
+        raise ValueError(f"Amounts take the transaction's sign, like {format_cents(total_cents)}.")
+
+
+# Helpers
+
+
+def _register_query() -> Select:
+    return (
+        select(Transaction, Account, Category)
+        .select_from(Transaction)
+        .join(Account, Account.id == Transaction.account_id)
+        .outerjoin(Category, Category.id == Transaction.category_id)
+    )
+
+
+def _rows(
+    session: Session, found: Sequence[tuple[Transaction, Account, Category | None]]
+) -> list[RegisterRow]:
+    splits = _splits_for(session, [txn.id for txn, _, _ in found])
+    return [
+        RegisterRow(
+            id=txn.id,
+            posted_on=txn.posted_on,
+            account_id=account.id,
+            account_name=account.name,
+            account_digits=account_digits(account.last4, account.alias_last4),
+            payee=txn.payee,
+            category_id=txn.category_id,
+            category=None if category is None else category.name,
+            category_origin=txn.category_origin,
+            amount_cents=txn.amount_cents,
+            memo=txn.memo,
+            splits=splits.get(txn.id, []),
+        )
+        for txn, account, category in found
+    ]
+
+
+def _splits_for(session: Session, txn_ids: list[int]) -> dict[int, list[SplitRow]]:
+    if not txn_ids:
+        return {}
+    found = session.execute(
+        select(Split, Category.name)
+        .select_from(Split)
+        .outerjoin(Category, Category.id == Split.category_id)
+        .where(Split.transaction_id.in_(txn_ids))
+        .order_by(Split.transaction_id, Split.position)
+    ).all()
+    grouped: dict[int, list[SplitRow]] = {}
+    for split, category_name in found:
+        grouped.setdefault(split.transaction_id, []).append(
+            SplitRow(split.id, split.amount_cents, split.category_id, category_name, split.memo)
+        )
+    return grouped
+
+
+def _split_ids(session: Session, txn_id: int) -> list[int]:
+    return list(
+        session.scalars(
+            select(Split.id).where(Split.transaction_id == txn_id).order_by(Split.position)
+        ).all()
+    )
+
+
+def _split_count(session: Session, txn_id: int) -> int:
+    return int(
+        session.scalar(select(func.count(Split.id)).where(Split.transaction_id == txn_id)) or 0
+    )
+
+
+def _transaction_values(session: Session, txn_id: int) -> dict[str, object]:
+    values = snapshot(session, "transaction", txn_id)
+    if values is None:
+        raise LookupError(f"there is no transaction {txn_id}")
+    return values
+
+
+def _usable_category(session: Session, category_id: int) -> str:
+    """Return the category's name. Raises ValueError if it does not exist or is hidden."""
+    row = session.execute(
+        select(Category.name, Category.hidden).where(Category.id == category_id)
+    ).first()
+    if row is None:
+        raise ValueError(f"There is no category {category_id}.")
+    if row.hidden:
+        raise ValueError(f"{row.name} is hidden, so it cannot be used.")
+    return str(row.name)
+
+
+def _field_changes(
+    txn_id: int, before: dict[str, object], after: dict[str, object]
+) -> list[Change]:
+    """One change to the transaction's fields, or none when the values are already equal."""
+    if before == after:
+        return []
+    return [Change("transaction", str(txn_id), before, after)]
+
+
+def _write(
+    session: Session,
+    *,
+    kind: str,
+    txn_id: int,
+    field: str,
+    label: str,
+    changes: list[Change],
+    idempotency_key: str,
+) -> Batch:
+    preview = make_preview(
+        session,
+        kind,
+        changes,
+        summary={"label": label, "transaction_id": txn_id, "field": field},
+    )
+    return apply(session, preview, idempotency_key=idempotency_key)

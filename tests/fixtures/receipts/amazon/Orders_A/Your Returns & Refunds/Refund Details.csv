@@ -1,0 +1,6 @@
+Order ID,Refund Amount,Refund Date,Reversal Reason,Payment Status
+A-1001,11.96,2026-08-20T00:00:00Z,Item returned,Completed
+A-1002,8.50,2026-08-22T00:00:00Z,Damaged,Completed
+A-1002,8.50,2026-08-22T00:00:00Z,Damaged,Completed
+A-1003,5.00,2026-08-25T00:00:00Z,Not needed,Pending
+A-9999,7.00,2026-08-26T00:00:00Z,Not as described,Completed

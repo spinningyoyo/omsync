@@ -1,0 +1,10 @@
+{% extends "layouts/settings.html" %}
+{% from "layouts/shell_parts.html" import page_header %}
+{% from "settings/parts.html" import setup_step with context %}
+
+{% block settings_page %}
+{{ page_header(page_title, "Five steps: the provider and its bank, its vault login, its accounts, mapping its statement accounts, and the import.") }}
+<section class="flex max-w-2xl flex-col gap-6 rounded-xl bg-container p-6 shadow-border-xs">
+  {{ setup_step(state, connectors, form_key, message) }}
+</section>
+{% endblock %}

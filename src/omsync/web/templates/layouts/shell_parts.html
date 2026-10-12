@@ -1,0 +1,122 @@
+{# Parts of the app shell: rail items, the accounts panel, page headers and empty states.
+   Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/layouts/shared/_nav_item.html.erb,
+   _sidebar_resize_handle.html.erb, _page_header.html.erb and accounts/_account_sidebar_tabs.html.erb
+   (simplified: one list grouped by type, no tabs). The account rows follow Sure's accounts
+   sidebar, with the sparkline drawn on the server. #}
+{% from "components/icon.html" import icon with context %}
+{% from "components/institution_logo.html" import institution_logo with context %}
+{% from "components/pill.html" import pill with context %}
+{% from "components/segmented_control.html" import segmented_control %}
+
+{# badge is a count shown on the icon, or none for no badge. A count of 0 is rendered hidden, so an
+   out-of-band swap can show it later. Below lg the same item is a tab in the bottom bar: the
+   classes with the max-lg: prefix lay it out as a row of tabs there. #}
+{% macro nav_item(item, active, badge=none) -%}
+<a href="{{ item.href }}" class="group relative flex flex-col items-center gap-1 rounded-lg pb-1 focus-ring max-lg:flex-auto max-lg:px-1.5 max-lg:pt-1.5 max-lg:pb-1"{% if active %} aria-current="page"{% endif %}>
+  <span class="relative flex h-8 w-8 items-center justify-center rounded-lg{% if active %} bg-container text-primary shadow-xs{% else %} text-secondary group-hover:bg-surface-hover{% endif %}">
+    {{ icon(item.icon, 20) }}
+    {%- if badge is not none %}{{ count_badge(item.key, badge) }}{% endif %}
+  </span>
+  <span class="text-[11px] font-medium max-lg:whitespace-nowrap max-lg:text-[10px]{% if active %} text-primary{% else %} text-secondary{% endif %}">{{ item.label }}</span>
+  {%- if active %}
+  <span class="absolute left-0 top-1 bottom-1 w-1 rounded-r-sm bg-nav-indicator max-lg:bottom-auto max-lg:left-1/2 max-lg:top-0 max-lg:h-0.5 max-lg:w-6 max-lg:-translate-x-1/2 max-lg:rounded-b-sm max-lg:rounded-t-none" aria-hidden="true"></span>
+  {%- endif %}
+</a>
+{%- endmacro %}
+
+{# The count on a rail item. The id is what an out-of-band swap replaces. #}
+{% macro count_badge(key, count, oob=false) -%}
+<span id="nav-badge-{{ key }}" class="absolute -right-1.5 -top-1 min-w-4 rounded-full bg-warning px-1 text-center text-[10px] font-medium leading-4 text-inverse"{% if not count %} hidden{% endif %}{% if oob %} hx-swap-oob="true"{% endif %}>{{ count }}<span class="sr-only"> to review</span></span>
+{%- endmacro %}
+
+{# The accounts panel. Only the grouping control and the groups are re-rendered on a change, so the
+   resize handle and its state stay put. An out-of-band reply passes oob=true (see routes/accounts.py). #}
+{% macro accounts_panel(groups, grouping, active_account_id=none) -%}
+<aside id="accounts-panel" class="accounts-panel relative flex shrink-0 flex-col border-r border-divider py-4" aria-labelledby="accounts-panel-title" data-accounts-panel-target="panel">
+  <h2 id="accounts-panel-title" class="px-4 pb-3 text-sm font-medium text-primary">Accounts</h2>
+  {{ grouping_control(grouping, active_account_id) }}
+  {{ panel_groups(groups) }}
+  <div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize accounts panel" aria-valuemin="240" aria-valuemax="320" aria-valuenow="320" class="absolute inset-y-0 right-0 z-20 w-2 translate-x-1/2 cursor-col-resize focus-ring max-lg:hidden" data-accounts-panel-target="handle" data-action="pointerdown->accounts-panel#startResize pointermove->accounts-panel#resize pointerup->accounts-panel#endResize pointercancel->accounts-panel#endResize keydown->accounts-panel#resizeKey dblclick->accounts-panel#resetWidth"></div>
+</aside>
+{%- endmacro %}
+
+{# The choice of grouping: a two-option toggle. Each option posts to its own route, which saves the
+   choice and answers with this control and the groups out of band (routes/accounts.py). The page's
+   active account goes in the URL, so the reply keeps its highlight. #}
+{% macro grouping_control(grouping, active_account_id=none, oob=false) -%}
+{%- set query = "?active=" ~ active_account_id if active_account_id else "" -%}
+<div id="accounts-panel-grouping" class="px-4 pb-4"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {{ segmented_control([
+    {"label": "By type", "active": grouping == "type", "attrs": {"id": "accounts-grouping-type", "hx-post": "/accounts/panel/grouping/type" ~ query, "hx-swap": "none"}},
+    {"label": "By institution", "active": grouping == "institution", "attrs": {"id": "accounts-grouping-institution", "hx-post": "/accounts/panel/grouping/institution" ~ query, "hx-swap": "none"}},
+  ], label="Group accounts by", full_width=true) }}
+</div>
+{%- endmacro %}
+
+{% macro panel_groups(groups, oob=false) -%}
+<div id="accounts-panel-groups" class="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-6"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {%- for group in groups %}
+  <section class="flex flex-col gap-1" aria-labelledby="accounts-group-{{ group.key }}">
+    <h3 id="accounts-group-{{ group.key }}" class="flex items-baseline justify-between gap-2 text-xs font-medium text-secondary">
+      {%- if group.institution_key is not none %}
+      <span class="flex min-w-0 items-center gap-2 self-center">
+        {{ institution_logo(group.institution_key, group.label, 20) }}
+        <span>{{ group.label }}</span>
+      </span>
+      {%- else %}
+      <span>{{ group.label }}</span>
+      {%- endif %}
+      {%- if group.total is not none %}
+      <span class="tabular-nums">{{ group.total }}</span>
+      {%- endif %}
+    </h3>
+    <ul class="flex flex-col">
+      {%- for row in group.rows %}
+      <li class="relative flex items-center gap-2 rounded-lg px-2 py-1.5{% if row.active %} bg-container shadow-border-xs{% else %} hover:bg-surface-hover{% endif %}">
+        <div class="flex min-w-0 grow flex-col">
+          <a href="/accounts/{{ row.id }}" title="{{ row.name }}" class="truncate text-sm text-primary after:absolute after:inset-0 after:rounded-lg focus-ring"{% if row.active %} aria-current="page"{% endif %}>{{ row.name }}</a>
+          <span class="flex min-w-0 items-center gap-1.5 text-xs text-secondary">
+            {%- if row.digits %}<span class="whitespace-nowrap">{{ row.digits }}</span>{% endif %}
+            {%- if row.joint %}{{ pill("Joint", tone="blue", size="sm") }}{% endif %}
+            <a href="/transactions?account={{ row.id }}" class="relative shrink-0 underline-offset-2 hover:underline focus-ring rounded-sm">Transactions</a>
+          </span>
+        </div>
+        {%- if row.spark %}
+        <svg class="h-5 w-14 shrink-0" viewBox="0 0 56 20" aria-hidden="true" focusable="false">
+          <polyline points="{{ row.spark }}" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" style="stroke: {{ row.spark_color }}"></polyline>
+        </svg>
+        {%- endif %}
+        <span class="whitespace-nowrap text-sm tabular-nums text-primary">{{ row.balance }}</span>
+        {%- if row.warning %}
+        <span class="size-2 shrink-0 rounded-full bg-warning" title="Balance check has issues"><span class="sr-only">Balance check has issues</span></span>
+        {%- endif %}
+      </li>
+      {%- endfor %}
+    </ul>
+  </section>
+  {%- endfor %}
+  {%- if not groups %}
+  <p class="text-sm text-secondary">No accounts yet</p>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro page_header(title, subtitle=none) -%}
+<header class="flex flex-col gap-1">
+  <h1 class="text-2xl font-medium text-primary">{{ title }}</h1>
+  {%- if subtitle %}
+  <p class="text-sm text-secondary">{{ subtitle }}</p>
+  {%- endif %}
+</header>
+{%- endmacro %}
+
+{# mascot shows the pixel elephant above the title, for the states that are empty on purpose. #}
+{% macro empty_state(title, body, mascot=false) -%}
+<section class="flex max-w-xl flex-col gap-2 rounded-xl bg-container p-8 shadow-border-xs">
+  {%- if mascot %}
+  <div class="mb-2 text-primary">{{ mascot_svg(96) }}</div>
+  {%- endif %}
+  <h2 class="text-lg font-medium text-primary">{{ title }}</h2>
+  <p class="text-sm text-secondary">{{ body }}</p>
+</section>
+{%- endmacro %}

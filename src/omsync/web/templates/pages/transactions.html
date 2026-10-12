@@ -1,0 +1,52 @@
+{% extends "layouts/shell.html" %}
+{% from "transactions/parts.html" import register_state, register_tabs, table_body %}
+{% from "transactions/filters.html" import filter_chips, filter_search, saved_menu %}
+{% from "transactions/bulk.html" import bulk_form %}
+{% from "transactions/review.html" import review_list %}
+
+{# The register fills the window, so its table scrolls under the title and the filter bar. The review
+   list is short and scrolls with the page. #}
+{% set fill_viewport = view == "all" %}
+
+{% block page %}
+{# The register controller sits on this wrapper, so keys, clicks, and htmx settles inside the table
+   and the toast region all reach it. Cells carry no hx-* attributes; the controller builds each
+   request from data-txn-id and data-field. The filter and selection controllers handle the filter
+   bar and the bulk edit. Replies re-render regions out of band (transactions/regions.html). #}
+<div class="fill-chain flex flex-col gap-3" data-controller="register filter selection"{% if account %} data-account="{{ account.id }}"{% endif %} data-action="keydown->register#keydown click->register#click mousedown->register#pointer change->register#change focusout->register#leave submit->register#submit input->register#input htmx:afterSettle->register#settled htmx:afterSettle->selection#settled register-reset@window->selection#reset bulk-done@window->selection#bulkDone click@window->filter#clickOutside">
+  <header class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+    <div class="flex flex-col">
+      <h1 class="text-2xl font-medium text-primary">Transactions</h1>
+      {%- if account %}
+      <p class="text-sm text-secondary">Showing {{ account.name }}{% if account.last4 %} {{ account_digits(account.last4, account.alias_last4) }}{% endif %}. <a href="/transactions" class="underline focus-ring rounded-sm">Show all accounts</a></p>
+      {%- endif %}
+    </div>
+    {{ register_tabs(review_count, view, all_href) }}
+  </header>
+
+  {%- if message %}
+  <p class="rounded-lg border border-destructive-subtle bg-destructive/10 px-4 py-3 text-sm text-primary" role="alert">{{ message }}</p>
+  {%- endif %}
+
+  {%- if view == "review" %}
+  <div id="review-list" class="flex flex-col gap-3">{{ review_list(items) }}</div>
+  {%- else %}
+  {%- if not state.categories %}
+  <p class="text-sm text-secondary">Add categories on the Categories page.</p>
+  {%- endif %}
+
+  {{ register_state(state) }}
+  <div>
+    <div id="filter-bar" class="flex min-h-10 flex-wrap items-center gap-2" data-selection-target="toolbar">
+      {{ filter_search(state) }}
+      {{ filter_chips(state) }}
+      {{ saved_menu(state) }}
+    </div>
+    {{ bulk_form(state) }}
+  </div>
+  <div id="register-table" class="fill-chain flex flex-col gap-3">{{ table_body(state, rows) }}</div>
+  {%- endif %}
+
+  <div id="toast-region" aria-live="polite"></div>
+</div>
+{% endblock %}

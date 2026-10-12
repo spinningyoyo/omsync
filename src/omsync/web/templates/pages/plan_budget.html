@@ -1,0 +1,11 @@
+{% extends "layouts/shell.html" %}
+{% from "plan/parts.html" import budget_main %}
+
+{# The budget page. Every change re-renders its main block or one row, so the page holds only the
+   toast region outside it. #}
+{% block page %}
+<div class="flex flex-col gap-6">
+  {{ budget_main(page) }}
+  <div id="toast-region" aria-live="polite"></div>
+</div>
+{% endblock %}

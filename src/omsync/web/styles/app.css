@@ -1,0 +1,33 @@
+/*
+ * Tailwind v4 entry for omsync. Build with scripts/build-css.sh, which writes
+ * static/css/app.css. Tokens and components are ported from Sure (AGPL-3.0); see
+ * docs/features/design-system.md.
+ */
+@import "tailwindcss" source(none);
+
+/* Scan only the templates and client scripts. */
+@source "../templates";
+@source "../static/js";
+/* The outflows donut uses these colours from JavaScript and inline styles, which Tailwind cannot
+   see, so their theme variables are emitted here. */
+@source inline("bg-pink-500 bg-cyan-500 bg-orange-500");
+
+/* Dark mode follows the data-theme attribute on <html> (light or dark), as in Sure. */
+@custom-variant theme-dark (&:where([data-theme=dark], [data-theme=dark] *));
+@custom-variant pointer-coarse (@media (pointer: coarse));
+
+@import "./fonts.css";
+@import "./sure/tokens.css";
+@import "./sure/base.css";
+@import "./sure/components.css";
+@import "./shell.css";
+@import "./brand.css";
+@import "./privacy-mode.css";
+@import "./register.css";
+@import "./print-report.css";
+
+@layer base {
+  body {
+    @apply bg-surface text-primary;
+  }
+}

@@ -1,0 +1,18 @@
+{# The reports page's htmx reply (routes/reports.py). A period change or a toggle sends the controls,
+   the hidden state, and the report out of band, so the page's own elements, including the toggle
+   that was just changed, are not replaced. A block imports the macros it uses. #}
+
+{% block reply %}
+{% from "reports/parts.html" import period_controls, report_state, report_main, export_controls %}
+{{ period_controls(view, oob=true) }}
+{{ report_state(view, oob=true) }}
+{{ report_main(view, oob=true) }}
+{%- if export %}
+{{ export_controls(export, oob=true) }}
+{%- endif %}
+{% endblock %}
+
+{% block export_menu_reply %}
+{% from "reports/parts.html" import export_menu %}
+{{ export_menu(export) }}
+{% endblock %}

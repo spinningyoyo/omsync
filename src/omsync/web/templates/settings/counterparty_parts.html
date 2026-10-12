@@ -1,0 +1,184 @@
+{# The Counterparties parts: the list (one region every write replaces out of band), the create and
+   edit and delete dialogs, and the test box. The create dialog sits inside the list, so a saved
+   create re-renders it with a fresh idempotency key. Each dialog is a native <dialog> opened by the
+   page-dialogs controller. Macros import what they use, because a fragment block renders without
+   this file's top level. #}
+{% from "components/button.html" import button %}
+{% from "components/pill.html" import pill with context %}
+{% from "layouts/shell_parts.html" import empty_state %}
+
+{% macro cp_fields(row, prefix) -%}
+<label class="form-field">
+  <span class="form-field__label">Name</span>
+  <input type="text" name="name" value="{{ row.name if row else '' }}" maxlength="80" required class="form-field__input" data-autofocus>
+</label>
+<label class="form-field">
+  <span class="form-field__label">Kind</span>
+  <select name="kind" class="form-field__input">
+    <option value="business"{% if not row or row.kind == 'business' %} selected{% endif %}>Business</option>
+    <option value="person"{% if row and row.kind == 'person' %} selected{% endif %}>Person</option>
+  </select>
+</label>
+<label class="form-field">
+  <span class="form-field__label">Money out to them, one pattern per line</span>
+  <textarea name="out" rows="3" class="form-field__input" spellcheck="false">{{ row.out_text if row else '' }}</textarea>
+</label>
+<label class="form-field">
+  <span class="form-field__label">Money in from them, one pattern per line</span>
+  <textarea name="in" rows="3" class="form-field__input" spellcheck="false">{{ row.in_text if row else '' }}</textarea>
+</label>
+<p class="text-xs text-secondary">Case-insensitive regular expressions, matched against the payee text your bank shows. At least one pattern is needed, on either side. A pattern that matches everything is refused.</p>
+<label class="flex items-start gap-2 text-sm text-primary">
+  <input type="checkbox" class="checkbox mt-0.5" name="no_match_expected" value="1"{% if row and row.no_match_expected %} checked{% endif %}>
+  <span>No match expected. Reconcile does not list their payments as not matched, and proposes exactly as before.</span>
+</label>
+{%- endmacro %}
+
+{% macro cp_dialog(id, title, body) -%}
+<dialog id="{{ id }}" class="m-auto w-full max-w-lg bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="{{ id }}-title" data-action="close->page-dialogs#restoreFocus">
+  {{ body }}
+</dialog>
+{%- endmacro %}
+
+{% macro cp_create_dialog(create_key) -%}
+{% from "settings/counterparty_parts.html" import cp_fields %}
+<dialog id="cp-create-dialog" class="m-auto w-full max-w-lg bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="cp-create-dialog-title" data-action="close->page-dialogs#restoreFocus">
+  <form class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" hx-post="/settings/counterparties" hx-target="#cp-create-error" hx-swap="innerHTML">
+    <h2 id="cp-create-dialog-title" class="font-medium text-primary">New counterparty</h2>
+    <input type="hidden" name="idempotency_key" value="{{ create_key }}">
+    {{ cp_fields(none, "create") }}
+    <div id="cp-create-error" aria-live="assertive"></div>
+    <div class="flex justify-end gap-2">
+      {{ button("Cancel", variant="outline", attrs={"data-action": "page-dialogs#closeDialog"}) }}
+      {{ button("Save", variant="primary", type="submit") }}
+    </div>
+  </form>
+</dialog>
+{%- endmacro %}
+
+{% macro cp_row(row) -%}
+{% from "settings/counterparty_parts.html" import cp_fields, cp_dialog %}
+{% from "components/button.html" import button %}
+<article class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="cp-{{ row.id }}-name">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h3 id="cp-{{ row.id }}-name" class="font-medium text-primary">{{ row.name }}</h3>
+      <p class="flex flex-wrap items-center gap-2 text-xs text-secondary">{{ row.kind_label }}
+        {%- if row.no_match_expected %} {{ pill("No match expected", tone="gray", style="soft") }}{% endif %}</p>
+    </div>
+    <div class="flex gap-2">
+      {{ button("Edit", variant="outline", size="sm", attrs={"data-action": "page-dialogs#openDialog", "data-dialog-id": "cp-edit-" ~ row.id}) }}
+      {{ button("Delete", variant="outline", size="sm", attrs={"data-action": "page-dialogs#openDialog", "data-dialog-id": "cp-delete-" ~ row.id}) }}
+    </div>
+  </div>
+  <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+    <dt class="text-secondary">Money out</dt>
+    <dd class="flex flex-wrap gap-1">{% for p in row.out %}{{ pill(p, tone="gray", style="outline") }}{% endfor %}</dd>
+    <dt class="text-secondary">Money in</dt>
+    <dd class="flex flex-wrap gap-1">{% for p in row.inbound %}{{ pill(p, tone="gray", style="outline") }}{% endfor %}</dd>
+  </dl>
+  {{ cp_dialog("cp-edit-" ~ row.id, "Edit " ~ row.name, cp_edit_form(row)) }}
+  {{ cp_dialog("cp-delete-" ~ row.id, "Delete " ~ row.name, cp_delete_form(row)) }}
+</article>
+{%- endmacro %}
+
+{% macro cp_edit_form(row) -%}
+{% from "settings/counterparty_parts.html" import cp_fields %}
+{% from "components/button.html" import button %}
+<form class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" hx-post="/settings/counterparties/{{ row.id }}" hx-target="#cp-edit-error-{{ row.id }}" hx-swap="innerHTML">
+  <h2 id="cp-edit-{{ row.id }}-title" class="font-medium text-primary">Edit {{ row.name }}</h2>
+  <input type="hidden" name="idempotency_key" value="{{ row.edit_key }}">
+  {{ cp_fields(row, "edit") }}
+  <div id="cp-edit-error-{{ row.id }}" aria-live="assertive"></div>
+  <div class="flex justify-end gap-2">
+    {{ button("Cancel", variant="outline", attrs={"data-action": "page-dialogs#closeDialog"}) }}
+    {{ button("Save", variant="primary", type="submit") }}
+  </div>
+</form>
+{%- endmacro %}
+
+{% macro cp_delete_form(row) -%}
+{% from "components/button.html" import button %}
+<form class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" hx-post="/settings/counterparties/{{ row.id }}/delete" hx-target="#cp-delete-error-{{ row.id }}" hx-swap="innerHTML">
+  <h2 id="cp-delete-{{ row.id }}-title" class="font-medium text-primary">Delete {{ row.name }}?</h2>
+  <p class="text-sm text-secondary">Its patterns are removed. Links that already point at its payments stay as they are. Undo brings it back.</p>
+  <input type="hidden" name="idempotency_key" value="{{ row.delete_key }}">
+  <div id="cp-delete-error-{{ row.id }}" aria-live="assertive"></div>
+  <div class="flex justify-end gap-2">
+    {{ button("Cancel", variant="outline", attrs={"data-action": "page-dialogs#closeDialog"}) }}
+    {{ button("Delete", variant="destructive", type="submit") }}
+  </div>
+</form>
+{%- endmacro %}
+
+{# The list region. oob=true swaps it in place when a write or an undo is saved. #}
+{% macro cp_list(rows, create_key, oob=false) -%}
+{% from "settings/counterparty_parts.html" import cp_row, cp_create_dialog %}
+{% from "layouts/shell_parts.html" import empty_state %}
+<section id="counterparties-list" class="flex flex-col gap-4"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {{ cp_create_dialog(create_key) }}
+  {%- if rows %}
+  {%- for row in rows %}
+  {{ cp_row(row) }}
+  {%- endfor %}
+  {%- else %}
+  {{ empty_state("No counterparties yet", "Add the people or businesses your P2P payments go to or come from. Reconcile then proposes each payment with the money it settles.") }}
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{% macro cp_test_box(rows) -%}
+{% from "components/button.html" import button %}
+<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="cp-test-title">
+  <div>
+    <h2 id="cp-test-title" class="font-medium text-primary">Test the patterns</h2>
+    <p class="text-sm text-secondary">Shows up to 20 recent transactions that each pattern list matches: money out for the outgoing patterns, money in for the incoming ones.</p>
+  </div>
+  {%- if rows %}
+  <form class="flex flex-wrap items-end gap-3" hx-get="/settings/counterparties/test" hx-target="#cp-test-results" hx-swap="innerHTML">
+    <label class="form-field w-auto">
+      <span class="form-field__label">Counterparty</span>
+      <select name="counterparty" class="form-field__input">
+        {%- for row in rows %}
+        <option value="{{ row.id }}">{{ row.name }}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    {{ button("Test", variant="outline", type="submit") }}
+  </form>
+  {%- else %}
+  <p class="text-sm text-secondary">Add a counterparty to test its patterns.</p>
+  {%- endif %}
+  <div id="cp-test-results" aria-live="polite"></div>
+</section>
+{%- endmacro %}
+
+{% macro cp_test_results(matcher, out_rows, in_rows) -%}
+{% from "components/table.html" import table %}
+{%- if matcher is none %}
+<p class="text-sm text-secondary">Choose a counterparty to test.</p>
+{%- else %}
+<div class="grid gap-6 lg:grid-cols-2">
+  {{ match_list("Money out to " ~ matcher.name ~ " (" ~ out_rows|length ~ ")", out_rows, "No recent money out matches these patterns.") }}
+  {{ match_list("Money in from " ~ matcher.name ~ " (" ~ in_rows|length ~ ")", in_rows, "No recent money in matches these patterns.") }}
+</div>
+{%- endif %}
+{%- endmacro %}
+
+{% macro match_list(heading, rows, empty) -%}
+<div class="flex flex-col gap-2">
+  <h3 class="text-sm font-medium text-primary">{{ heading }}</h3>
+  {%- if rows %}
+  <ul class="flex flex-col divide-y divide-subdued text-sm">
+    {%- for row in rows %}
+    <li class="flex flex-col gap-0.5 py-2">
+      <span class="flex flex-wrap justify-between gap-2"><span class="text-primary">{{ row.on }} · {{ row.account }}</span><span class="tabular-nums text-primary">{{ row.amount }}</span></span>
+      <span class="break-all text-xs text-secondary">{{ row.payee }}</span>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="text-sm text-secondary">{{ empty }}</p>
+  {%- endif %}
+</div>
+{%- endmacro %}

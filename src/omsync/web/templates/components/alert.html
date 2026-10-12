@@ -1,0 +1,33 @@
+{# Adapted from Sure (we-promise/sure), AGPL-3.0: app/components/DS/alert.rb and alert.html.erb.
+   Variants: info, success, warning, error (destructive is the same as error). live is none,
+   status (polite) or alert (assertive). Import with context for the icon. #}
+{% from "components/icon.html" import icon with context %}
+
+{% set ALERT_VARIANTS = {
+  "info": {"box": "bg-info/10 border-info/20", "icon": "info", "color": "text-info", "label": "Info"},
+  "success": {"box": "bg-success/10 border-success/20", "icon": "circle-check", "color": "text-success", "label": "Success"},
+  "warning": {"box": "bg-warning/10 border-warning/20", "icon": "triangle-alert", "color": "text-warning", "label": "Warning"},
+  "error": {"box": "bg-destructive/10 border-destructive-subtle", "icon": "circle-x", "color": "text-destructive", "label": "Error"},
+  "destructive": {"box": "bg-destructive/10 border-destructive-subtle", "icon": "circle-x", "color": "text-destructive", "label": "Error"},
+} %}
+
+{% macro alert(message="", title=none, variant="info", live="none") -%}
+{%- set v = ALERT_VARIANTS.get(variant, ALERT_VARIANTS.info) -%}
+{%- set role = {"status": "status", "alert": "alert"}.get(live) -%}
+<div class="p-4 rounded-lg border {{ v.box }}"{% if role %} role="{{ role }}"{% endif %}>
+  {%- if title %}
+  <div class="flex items-center gap-3">
+    {{ icon(v.icon, 16, "shrink-0 -mt-0.5 " ~ v.color) }}
+    <p class="text-sm font-semibold text-primary flex-1 leading-5"><span class="sr-only">{{ v.label }}:</span> {{ title }}</p>
+  </div>
+  {%- if message %}
+  <div class="text-sm text-primary mt-2 pl-7 space-y-1">{{ message }}</div>
+  {%- endif %}
+  {%- else %}
+  <div class="flex items-center gap-3">
+    {{ icon(v.icon, 16, "shrink-0 -mt-0.5 " ~ v.color) }}
+    <p class="text-sm text-primary flex-1 leading-5"><span class="sr-only">{{ v.label }}:</span> {{ message }}</p>
+  </div>
+  {%- endif %}
+</div>
+{%- endmacro %}

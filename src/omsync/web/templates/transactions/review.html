@@ -1,0 +1,36 @@
+{# Needs review: open import reviews, each with the transactions it might be the same as. An action
+   resolves the item through import.resolve_review and re-renders the list. A blank transaction_id
+   means "add as a new transaction". #}
+{% from "components/button.html" import button %}
+
+{% macro review_list(items, message="", autofocus=false) -%}
+{%- if message %}
+<p class="rounded-lg border border-destructive-subtle bg-destructive/10 px-4 py-3 text-sm text-primary" role="alert">{{ message }}</p>
+{%- endif %}
+{%- if items %}
+<ul class="flex flex-col gap-3">
+  {%- for review, key in items %}
+  {%- set first_item = autofocus and loop.first %}
+  <li class="flex flex-col gap-2 rounded-xl bg-container p-4 shadow-border-xs" data-review-id="{{ review.id }}">
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <span class="font-medium text-primary">{{ review.payee_raw }}</span>
+      <span class="tabular-nums text-primary">{{ review.amount_cents | money }}</span>
+      <span class="text-sm text-secondary">{{ review.posted_on.isoformat() }}</span>
+    </div>
+    <p class="text-sm text-secondary">{{ review.reason | capitalize }}. From {{ review.file_name }}{% if review.account_name %}, {{ review.account_name }}{% endif %}.</p>
+    <form class="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="idempotency_key" value="{{ key }}">
+      {%- for candidate in review.candidates %}
+      {{ button("Same as " ~ candidate.payee ~ " (" ~ candidate.posted_on.isoformat() ~ ", " ~ (candidate.amount_cents | money_text) ~ ")", variant="outline", size="sm", attrs={"hx-post": "/transactions/review/" ~ review.id ~ "/resolve", "hx-vals": '{"transaction_id": "' ~ candidate.id ~ '"}', "hx-target": "#review-list", "hx-swap": "innerHTML", "data-autofocus": "" if first_item and loop.first else none}) }}
+      {%- endfor %}
+      {{ button("Add as new transaction", variant="secondary", size="sm", attrs={"hx-post": "/transactions/review/" ~ review.id ~ "/resolve", "hx-vals": '{"transaction_id": ""}', "hx-target": "#review-list", "hx-swap": "innerHTML", "data-autofocus": "" if first_item and not review.candidates else none}) }}
+    </form>
+  </li>
+  {%- endfor %}
+</ul>
+{%- else %}
+<section class="flex max-w-xl flex-col gap-2 rounded-xl bg-container p-8 shadow-border-xs">
+  <p class="text-sm text-secondary">Nothing needs review.</p>
+</section>
+{%- endif %}
+{%- endmacro %}

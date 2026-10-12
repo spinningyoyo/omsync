@@ -1,0 +1,12 @@
+{# Fragment block for the Rental properties replies (routes/settings_rental.py). The region is the
+   target. A saved change also sends the Saved toast out of band, with no undo, because these are
+   view settings and not batches. #}
+
+{% block frag_rental %}
+{% from "settings/rental_parts.html" import rental_region %}
+{% from "transactions/parts.html" import toast_region %}
+{{ rental_region(view) }}
+{%- if view.saved %}
+{{ toast_region("Saved") }}
+{%- endif %}
+{% endblock %}

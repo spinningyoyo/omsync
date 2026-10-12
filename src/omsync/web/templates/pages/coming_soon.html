@@ -1,0 +1,7 @@
+{% extends "layouts/shell.html" %}
+{% from "layouts/shell_parts.html" import page_header, empty_state %}
+
+{% block page %}
+{{ page_header(title) }}
+{{ empty_state("Coming soon", "This page is not built yet.") }}
+{% endblock %}

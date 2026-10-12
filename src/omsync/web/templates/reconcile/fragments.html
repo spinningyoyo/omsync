@@ -1,0 +1,60 @@
+{# Fragment blocks for the Reconcile replies (routes/reconcile.py and the shared undo route). A
+   block renders without this file's top level, so each one imports the macros it uses. The results
+   region is the target of every decision; the toast and the results travel out of band where a
+   reply needs both. #}
+
+{% block frag_results %}
+{% from "reconcile/parts.html" import results_region, toast_region %}
+{{ results_region(results, notice, start, end) }}
+{%- if toast %}{{ toast_region(toast.message, toast.batch_id, start, end) }}{% endif %}
+{% endblock %}
+
+{% block frag_stale %}
+{% from "reconcile/parts.html" import stale_region %}
+{{ stale_region(message, start, end) }}
+{% endblock %}
+
+{% block frag_notice %}
+{% from "reconcile/parts.html" import notice_region %}
+{{ notice_region(message) }}
+{% endblock %}
+
+{# The undo toast is the main content, and the re-run results go out of band. #}
+{% block frag_undo_reply %}
+{% from "reconcile/parts.html" import toast, results_region %}
+{{ toast(message) }}
+{{ results_region(results, none, start, end, oob=true) }}
+{% endblock %}
+
+{% block frag_link_dialog %}
+{% from "reconcile/parts.html" import link_body %}
+{{ link_body(source, source_remaining, source_remaining_text, candidates, amount, kinds, default_kind, start, end, idempotency_key, txn) }}
+{% endblock %}
+
+{% block frag_link_candidates %}
+{% from "reconcile/parts.html" import candidate_list, amount_field %}
+{{ candidate_list(candidates) }}
+{{ amount_field(amount, oob=true) }}
+{% endblock %}
+
+{% block frag_dialog_error %}
+{% from "reconcile/parts.html" import dialog_error %}
+{{ dialog_error(message) }}
+{% endblock %}
+
+{% block frag_ack_transaction %}
+{% from "reconcile/parts.html" import ack_transaction_body %}
+{{ ack_transaction_body(source, txn, start, end, idempotency_key) }}
+{% endblock %}
+
+{% block frag_ack_counterparty %}
+{% from "reconcile/parts.html" import ack_counterparty_body %}
+{{ ack_counterparty_body(source, txn, start, end, idempotency_key, choices, kinds) }}
+{% endblock %}
+
+{# A saved decision made in a dialog: it closes on the close-dialogs event, and the results re-run. #}
+{% block frag_dialog_done %}
+{% from "reconcile/parts.html" import results_region, toast_region %}
+{{ results_region(results, none, start, end, oob=true) }}
+{{ toast_region(toast.message, toast.batch_id, start, end) }}
+{% endblock %}

@@ -1,0 +1,13 @@
+{# Inline Lucide icon (ISC; see static/icons/ICONS.md). `icon_svg` is a Jinja global registered in
+   app.py, so this macro works with or without context:
+     {% from "components/icon.html" import icon %}
+   The Python helper is web/icons.py. #}
+{% macro icon(name, size=20, class_="") -%}
+{{ icon_svg(name, size, class_) }}
+{%- endmacro %}
+
+{# A category's icon, drawn small and muted beside its name. A category with none shows the default.
+   Only the Categories and Budget pages use it. #}
+{% macro category_icon(name, size=18) -%}
+<span class="inline-flex shrink-0 text-secondary" data-category-icon>{{ icon_svg(category_icon_name(name), size) }}</span>
+{%- endmacro %}

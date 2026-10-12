@@ -1,0 +1,52 @@
+{# Fragment blocks for the Recurring page. Each route renders one block (routes/recurring.py). A block
+   imports the macros it uses from parts.html, because it renders without this file's top level. A
+   reply that changes something carries its toast last and out of band. #}
+
+{% block frag_body %}
+{% from "recurring/parts.html" import body_region %}
+{{ body_region(body) }}
+{% endblock %}
+
+{% block frag_summary %}
+{% from "recurring/parts.html" import summary_region %}
+{{ summary_region(summary) }}
+{% endblock %}
+
+{% block frag_suggestions %}
+{% from "recurring/parts.html" import suggestions_region %}
+{{ suggestions_region(suggestions) }}
+{% endblock %}
+
+{# A write that applied, or was refused, in the toast region. Undo is in the toast when there is a batch. #}
+{% block frag_saved %}
+{% from "transactions/parts.html" import toast_region %}
+{{ toast_region(message, batch_id) }}
+{% endblock %}
+
+{% block frag_message %}
+{% from "components/alert.html" import alert with context %}
+{{ alert(message, variant="error", live="alert") }}
+{% endblock %}
+
+{% block frag_confirm_form %}
+{% from "recurring/parts.html" import confirm_form %}
+{{ confirm_form(form) }}
+{% endblock %}
+
+{% block frag_drawer %}
+{% from "recurring/parts.html" import drawer_body %}
+{{ drawer_body(drawer) }}
+{% endblock %}
+
+{# A saved edit: the drawer shows the series as it now is, and the toast follows out of band. #}
+{% block frag_drawer_saved %}
+{% from "recurring/parts.html" import drawer_body %}
+{% from "transactions/parts.html" import toast_region %}
+{{ drawer_body(drawer) }}
+{{ toast_region(message, batch_id) }}
+{% endblock %}
+
+{% block frag_series_edit %}
+{% from "recurring/parts.html" import edit_form %}
+{{ edit_form(form) }}
+{% endblock %}
