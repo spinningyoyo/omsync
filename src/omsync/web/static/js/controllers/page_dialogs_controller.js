@@ -1,10 +1,19 @@
-// Dialogs for the Reconcile page and the Settings pages: opening one by id, closing them when the
-// server asks, returning focus to the opener, and focusing the field a swap marks with
-// data-autofocus. Regions reload themselves, so this controller does no fetching. A dialog that
-// closes resets its form, so Cancel does not keep a half-typed entry.
+// Dialogs for the Reconcile page, the Settings pages, and the Recurring drawer: opening one by id,
+// opening one the page marks data-open-on-load when the page loads, closing them when the server asks,
+// returning focus to the opener, and focusing the field a swap marks with data-autofocus. Regions
+// reload themselves, so this controller does no fetching. A dialog that closes resets its form, so
+// Cancel does not keep a half-typed entry.
 import { Controller } from "/static/vendor/stimulus.js";
 
 export default class extends Controller {
+  // A dialog the server marks data-open-on-load opens when the page loads, such as a bill started from a
+  // transaction. Its content loads into it on its own.
+  connect() {
+    this.element.querySelectorAll("dialog[data-open-on-load]").forEach((dialog) => {
+      if (!dialog.open) dialog.showModal();
+    });
+  }
+
   // Opens the dialog whose id the trigger names. The trigger gets focus back when it closes.
   openDialog(event) {
     const dialog = document.getElementById(event.currentTarget.dataset.dialogId);

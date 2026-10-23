@@ -1,16 +1,20 @@
-{# The Recurring page's parts: the view switch, the summary strip, the suggestions, the four views, the
-   series tables, the drawer, and the forms. A region is a whole element with its own hx-get, so a
-   reload replaces the element and keeps its attributes. Each macro imports what it uses, because a
-   fragment block renders without this file's top level. #}
+{# The Recurring page's parts: the view switch, the body region with its three views (the Overview, the
+   calendar, and All bills), the review, bill, and add drawers, and the forms. A region is a whole element
+   with its own hx-get, so a reload replaces the element and keeps its attributes. Each macro imports
+   what it uses, because a fragment block renders without this file's top level. #}
 {% from "components/alert.html" import alert with context %}
 {% from "components/button.html" import button, link_button %}
 {% from "components/segmented_control.html" import segmented_control %}
 {% from "layouts/shell_parts.html" import empty_state %}
 
+{# A chip's style by what it says: the plain state, or a question or mark that replaces it. #}
 {% set CHIP_CLASSES = {
   "paid": "bg-success/10 text-success",
   "upcoming": "bg-surface-inset text-primary",
   "missed": "bg-destructive/10 text-destructive",
+  "paid_elsewhere": "bg-surface-inset text-secondary",
+  "new_amount": "bg-warning/10 text-warning",
+  "check": "bg-warning/10 text-warning",
 } %}
 {% set CADENCE_CHOICES = [
   ("weekly", "Weekly"),
@@ -28,10 +32,9 @@
 {# The view switch. Each view is its own page, so the URL names it and Back works. #}
 {% macro view_switcher(view) -%}
 {{ segmented_control([
-  {"label": "Upcoming", "active": view == "upcoming", "href": "/recurring"},
+  {"label": "Overview", "active": view == "overview", "href": "/recurring"},
   {"label": "Calendar", "active": view == "calendar", "href": "/recurring?view=calendar"},
-  {"label": "All series", "active": view == "all", "href": "/recurring?view=all"},
-  {"label": "History", "active": view == "history", "href": "/recurring?view=history"},
+  {"label": "All bills", "active": view == "all", "href": "/recurring?view=all"},
 ], label="Recurring views") }}
 {%- endmacro %}
 
@@ -42,27 +45,23 @@
 </div>
 {%- endmacro %}
 
-{# This month's totals. Paid, missed, and still due count the charges by their amounts, and the
-   count in brackets says how many occurrences there are. #}
-{% macro summary_region(view) -%}
-{% set s = view.summary %}
-<section id="recurring-summary" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="recurring-summary-title" hx-get="/recurring/summary" hx-trigger="recurring-changed from:body" hx-swap="outerHTML">
-  <h2 id="recurring-summary-title" class="text-sm font-medium text-secondary">This month: {{ view.month }}</h2>
-  <dl class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-5">
-    {{ stat("Expected out", s.outflows_cents) }}
-    {{ stat("Expected in", s.inflows_cents) }}
-    {{ stat("Paid so far", s.paid_cents) }}
-    {{ stat("Missed", s.missed_cents, s.missed_count) }}
-    {{ stat("Still due", s.due_cents, s.due_count) }}
-  </dl>
-</section>
-{%- endmacro %}
-
 {% macro state_chip(occ) -%}
-<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ CHIP_CLASSES[occ.state] }}">{{ occ.label }}</span>
+<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ CHIP_CLASSES[occ.chip_kind] }}">{{ occ.chip_label }}</span>
 {%- endmacro %}
 
-{# One occurrence, as a button that opens the series drawer. #}
+{# One write as a button in a form. Its hidden fields name the charge or due date, and its own key makes a
+   repeat one change. target is where the reply goes: the toast region, or the drawer for a drawer action. #}
+{% macro action_form(action, target="#toast-region") -%}
+<form hx-post="{{ action.url }}" hx-target="{{ target }}" hx-swap="innerHTML" class="inline">
+  {%- for name, value in action.values.items() %}
+  <input type="hidden" name="{{ name }}" value="{{ value }}">
+  {%- endfor %}
+  <input type="hidden" name="idempotency_key" value="{{ action.key }}">
+  {{ button(action.label, variant=action.variant, size="sm", type="submit") }}
+</form>
+{%- endmacro %}
+
+{# One occurrence, as a button that opens the bill's drawer. #}
 {% macro occurrence_button(occ) -%}
 <button type="button" class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-surface-hover focus-ring" hx-get="/recurring/series/{{ occ.series_id }}/drawer?due={{ occ.due_on.isoformat() }}" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">
   <span class="flex min-w-0 flex-col">
@@ -70,93 +69,102 @@
     <span class="text-xs text-secondary">{{ occ.due_text }}</span>
   </span>
   <span class="flex shrink-0 items-center gap-3">
+    {%- if occ.is_transfer %}
+    <span class="text-xs text-secondary">Not in totals</span>
+    {%- endif %}
     {{ state_chip(occ) }}
     <span class="text-sm tabular-nums text-primary">{{ occ.shown_text }}</span>
   </span>
 </button>
 {%- endmacro %}
 
-{# The suggestions. Nothing is saved until Confirm. Dismiss is a batch with its own undo. #}
-{% macro suggestions_region(suggestions) -%}
-<section id="recurring-suggestions" class="flex flex-col" hx-get="/recurring/suggestions" hx-trigger="recurring-changed from:body" hx-swap="outerHTML">
-  {%- if suggestions %}
-  <div class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="recurring-suggestions-title">
-    <header class="flex flex-col gap-1">
-      <h2 id="recurring-suggestions-title" class="font-medium text-primary">Suggested series ({{ suggestions|length }})</h2>
-      <p class="text-sm text-secondary">Found in your transactions. Nothing is saved until you confirm.</p>
-    </header>
-    <ul class="flex flex-col divide-y divide-subdued">
-      {%- for row in suggestions %}
-      <li class="flex flex-col gap-2 py-3" data-suggestion="{{ row.name }}">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div class="flex min-w-0 flex-col">
-            <p class="truncate font-medium text-primary">{{ row.name }}</p>
-            <p class="text-xs text-secondary">{{ row.cadence }} · {{ row.amount_text|sensitive }} ± {{ row.tolerance_text|sensitive }} · {{ row.transactions|length }} charges · {{ row.confidence_percent }}% confidence · {{ row.account }}</p>
-          </div>
-          <div class="flex shrink-0 items-center gap-2">
-            {{ button("Confirm", variant="primary", size="sm", attrs={"hx-get": "/recurring/suggestions/confirm?" ~ (row.identity|urlencode), "hx-target": "#recurring-confirm-body", "hx-swap": "innerHTML", "data-action": "page-dialogs#openDialog", "data-dialog-id": "recurring-confirm-dialog"}) }}
-            <form hx-post="/recurring/suggestions/dismiss" hx-target="#toast-region" class="inline">
-              {%- for name, value in row.identity.items() %}
-              <input type="hidden" name="{{ name }}" value="{{ value }}">
-              {%- endfor %}
-              <input type="hidden" name="idempotency_key" value="{{ row.key }}">
-              {{ button("Dismiss", variant="outline", size="sm", type="submit") }}
-            </form>
-          </div>
-        </div>
-        <details class="text-sm">
-          <summary class="cursor-pointer text-secondary">Matched transactions ({{ row.transactions|length }})</summary>
-          <ul class="mt-2 flex flex-col gap-1">
-            {%- for txn in row.transactions %}
-            <li class="flex items-center justify-between gap-3 text-xs text-secondary">
-              <span class="shrink-0">{{ txn.posted_on.strftime("%b %d, %Y") }}</span>
-              <span class="min-w-0 truncate">{{ txn.payee }}</span>
-              <span class="shrink-0 tabular-nums">{{ txn.amount_cents|money }}</span>
-            </li>
-            {%- endfor %}
-          </ul>
-        </details>
-      </li>
-      {%- endfor %}
-    </ul>
-  </div>
-  {%- endif %}
-</section>
-{%- endmacro %}
-
-{# The page's one region for the view. Its URL names the view and the month, so a reload shows the
-   same thing. #}
+{# The page's one region for the view. Its URL names the view, the month, and the All bills filter, so
+   a reload shows the same thing. #}
 {% macro body_region(body) -%}
-<div id="recurring-body" class="flex flex-col gap-4" hx-get="/recurring/body?view={{ body.view }}&amp;month={{ body.month_key }}" hx-trigger="recurring-changed from:body" hx-swap="outerHTML">
-  {%- if body.view == "upcoming" %}{{ upcoming_view(body) }}
+<div id="recurring-body" class="flex flex-col gap-4" hx-get="/recurring/body?view={{ body.view }}&amp;status={{ body.status }}&amp;month={{ body.month_key }}" hx-trigger="recurring-changed from:body" hx-swap="outerHTML">
+  {%- if body.view == "overview" %}{{ overview_view(body.overview) }}
   {%- elif body.view == "calendar" %}{{ calendar_view(body) }}
-  {%- elif body.view == "all" %}{{ all_view(body) }}
-  {%- else %}{{ history_view(body) }}
+  {%- else %}{{ all_view(body) }}
   {%- endif %}
 </div>
 {%- endmacro %}
 
-{% macro upcoming_view(body) -%}
-<section aria-labelledby="recurring-upcoming-title" class="flex flex-col gap-4">
-  <h2 id="recurring-upcoming-title" class="text-sm font-medium text-secondary">Next 45 days</h2>
-  {%- for week in body.upcoming %}
-  <div class="flex flex-col gap-2">
-    <h3 class="text-xs font-medium uppercase text-secondary">{{ week.label }}</h3>
-    <ul class="flex flex-col divide-y divide-subdued rounded-xl bg-container shadow-border-xs">
-      {%- for occ in week.occurrences %}
-      <li>{{ occurrence_button(occ) }}</li>
-      {%- endfor %}
-    </ul>
-  </div>
-  {%- else %}
-  {{ empty_state("Nothing due in the next 45 days.", "Confirm a suggestion, and its due dates appear here.") }}
-  {%- endfor %}
+{# The Overview, top to bottom: this month's totals, the review prompt, Needs attention, what is due this
+   month, and each bill's first charge next month. With no bills, nothing to review, and nothing to attend
+   to, it is one empty state. #}
+{% macro overview_view(o) -%}
+{%- if o.empty %}
+{{ empty_state("No bills yet.", "Possible bills appear here once your transactions repeat on a schedule.") }}
+{%- else %}
+<section aria-labelledby="recurring-totals-title" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs">
+  <h2 id="recurring-totals-title" class="text-sm font-medium text-secondary">{{ o.month }}</h2>
+  <dl class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
+    {{ stat("Left to pay", o.totals.left_to_pay_cents, o.totals.left_to_pay_count) }}
+    {{ stat("Paid", o.totals.paid_cents) }}
+    {{ stat("Income expected", o.totals.income_expected_cents) }}
+  </dl>
 </section>
+{%- if o.review_count %}
+<div class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-container px-5 py-3 shadow-border-xs">
+  <p class="text-sm text-secondary">{{ o.review_count }} possible bill{{ "s" if o.review_count != 1 else "" }} found. Not counted yet.</p>
+  {{ button("Review", variant="outline", size="sm", attrs={"hx-get": "/recurring/review?index=0", "hx-target": "#recurring-drawer-body", "hx-swap": "innerHTML", "data-action": "page-dialogs#openDialog", "data-dialog-id": "recurring-drawer"}) }}
+</div>
+{%- endif %}
+{%- if o.attention %}
+<section aria-labelledby="recurring-attention-title" class="flex flex-col gap-2">
+  <h2 id="recurring-attention-title" class="text-sm font-medium text-secondary">Needs attention</h2>
+  <ul class="flex flex-col divide-y divide-subdued rounded-xl bg-container shadow-border-xs">
+    {%- for row in o.attention %}
+    <li class="flex flex-col gap-2 px-4 py-3">
+      <button type="button" class="w-fit text-left text-sm text-primary hover:underline focus-ring rounded-sm" hx-get="{{ row.drawer_href }}" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.text }}</button>
+      {%- for charge in row.charges %}
+      <div class="flex flex-wrap items-center justify-between gap-2 border-l-2 border-subdued pl-3 text-sm">
+        <span class="text-secondary">{{ charge.text }}</span>
+        {{ action_form(charge.action) }}
+      </div>
+      {%- endfor %}
+      {%- if row.actions %}
+      <div class="flex flex-wrap gap-2">
+        {%- for action in row.actions %}
+        {{ action_form(action) }}
+        {%- endfor %}
+      </div>
+      {%- endif %}
+    </li>
+    {%- endfor %}
+  </ul>
+</section>
+{%- endif %}
+<section aria-labelledby="recurring-this-month-title" class="flex flex-col gap-2">
+  <h2 id="recurring-this-month-title" class="text-sm font-medium text-secondary">This month</h2>
+  {%- if o.this_month %}
+  <ul class="flex flex-col divide-y divide-subdued rounded-xl bg-container shadow-border-xs">
+    {%- for occ in o.this_month %}
+    <li>{{ occurrence_button(occ) }}</li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="text-sm text-secondary">Nothing else due this month.</p>
+  {%- endif %}
+</section>
+<section aria-labelledby="recurring-next-month-title" class="flex flex-col gap-2">
+  <h2 id="recurring-next-month-title" class="text-sm font-medium text-secondary">Next month</h2>
+  {%- if o.next_month %}
+  <ul class="flex flex-col divide-y divide-subdued rounded-xl bg-container shadow-border-xs">
+    {%- for occ in o.next_month %}
+    <li>{{ occurrence_button(occ) }}</li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="text-sm text-secondary">Nothing scheduled for next month yet.</p>
+  {%- endif %}
+</section>
+{%- endif %}
 {%- endmacro %}
 
 {% macro calendar_chip(occ) -%}
-<button type="button" class="block w-full truncate rounded px-1.5 py-0.5 text-left text-xs hover:opacity-80 focus-ring {{ CHIP_CLASSES[occ.state] }}" title="{{ occ.name }}, {{ occ.label }}, {{ occ.shown_text }}" hx-get="/recurring/series/{{ occ.series_id }}/drawer?due={{ occ.due_on.isoformat() }}" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">
-  <span class="sr-only">{{ occ.label }}:</span> {{ occ.name }} <span class="tabular-nums">{{ occ.shown_text }}</span>
+<button type="button" class="block w-full truncate rounded px-1.5 py-0.5 text-left text-xs hover:opacity-80 focus-ring {{ CHIP_CLASSES[occ.chip_kind] }}" title="{{ occ.name }}, {{ occ.chip_label }}, {{ occ.shown_text }}{% if occ.is_transfer %}, Not in totals{% endif %}" hx-get="/recurring/series/{{ occ.series_id }}/drawer?due={{ occ.due_on.isoformat() }}" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">
+  <span class="sr-only">{{ occ.chip_label }}:</span> {{ occ.name }} <span class="tabular-nums">{{ occ.shown_text }}</span>{% if occ.is_transfer %} <span class="opacity-75">Not in totals</span>{% endif %}
 </button>
 {%- endmacro %}
 
@@ -194,23 +202,40 @@
 </section>
 {%- endmacro %}
 
+{# All bills. The status filter is a set of links that also reload this region, so the URL names the
+   filter and the region matches it. Active bills are confirmed, ended ones can be resumed, and dismissed
+   ones can be restored. Add bill opens the drawer with the add form. #}
 {% macro all_view(body) -%}
-<section aria-labelledby="recurring-all-title" class="flex flex-col gap-4">
+<section aria-label="All bills" class="flex flex-col gap-4">
   <div class="flex flex-wrap items-center justify-between gap-3">
-    <h2 id="recurring-all-title" class="text-sm font-medium text-secondary">Confirmed series ({{ body.confirmed|length }})</h2>
-    <form hx-post="/recurring/refresh" hx-target="#toast-region" class="inline">
-      {{ button("Refresh", variant="outline", size="sm", type="submit") }}
-    </form>
+    {{ segmented_control([
+      {"label": "Active", "active": body.status == "active", "href": "/recurring?view=all", "attrs": {"hx-get": "/recurring/body?view=all&status=active", "hx-target": "#recurring-body", "hx-swap": "outerHTML", "hx-push-url": "/recurring?view=all"}},
+      {"label": "Ended", "active": body.status == "ended", "href": "/recurring?view=all&status=ended", "attrs": {"hx-get": "/recurring/body?view=all&status=ended", "hx-target": "#recurring-body", "hx-swap": "outerHTML", "hx-push-url": "/recurring?view=all&status=ended"}},
+      {"label": "Dismissed", "active": body.status == "dismissed", "href": "/recurring?view=all&status=dismissed", "attrs": {"hx-get": "/recurring/body?view=all&status=dismissed", "hx-target": "#recurring-body", "hx-swap": "outerHTML", "hx-push-url": "/recurring?view=all&status=dismissed"}},
+    ], label="Bill status") }}
+    {{ button("Add bill", variant="primary", size="sm", attrs={"hx-get": "/recurring/bills/new", "hx-target": "#recurring-drawer-body", "hx-swap": "innerHTML", "data-action": "page-dialogs#openDialog", "data-dialog-id": "recurring-drawer"}) }}
   </div>
-  {%- if body.confirmed %}
-  {{ all_table(body.confirmed) }}
+  {%- if not body.series %}
+  {%- if body.status == "dismissed" %}
+  {{ empty_state("Nothing dismissed.", "A possible bill you mark Not recurring waits here, and you can restore it.") }}
+  {%- elif body.status == "ended" %}
+  {{ empty_state("Nothing ended.", "A bill you end waits here with the day it stopped, and you can resume it.") }}
   {%- else %}
-  {{ empty_state("No confirmed series yet.", "Confirm a suggestion, and it appears here with its schedule.") }}
+  {{ empty_state("No bills yet.", "Review a possible bill from the Overview, or add one with Add bill.") }}
+  {%- endif %}
+  {%- elif body.status == "dismissed" %}
+  {{ dismissed_table(body.series) }}
+  {%- elif body.status == "ended" %}
+  {{ ended_table(body.series) }}
+  {%- else %}
+  {{ bills_table(body) }}
   {%- endif %}
 </section>
 {%- endmacro %}
 
-{% macro all_table(rows) -%}
+{# The active bills, largest monthly cost first. A bill that is not monthly shows its monthly equivalent
+   under its amount. A transfer is marked Not in totals, and the footer leaves it out. #}
+{% macro bills_table(body) -%}
 <div class="overflow-x-auto rounded-xl bg-container shadow-border-xs">
   <table class="w-full border-separate border-spacing-0 text-sm text-primary">
     <thead>
@@ -219,10 +244,63 @@
         <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
         <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
         <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Next due</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Last seen</th>
         <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Category</th>
         <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
         <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary"><span class="sr-only">Transactions</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {%- for row in body.series %}
+      {%- set rule = "" if loop.first else " border-t border-subdued" %}
+      <tr>
+        <td class="px-4 py-3{{ rule }}">
+          <button type="button" class="whitespace-nowrap text-left font-medium text-primary hover:underline focus-ring rounded-sm" hx-get="/recurring/series/{{ row.id }}/drawer" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.name }}</button>
+          {%- if row.transfer %}
+          <span class="block text-xs text-secondary">Not in totals</span>
+          {%- endif %}
+        </td>
+        <td class="px-4 py-3{{ rule }}">{{ row.cadence }}</td>
+        <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap{{ rule }}">
+          {{ row.amount_text|sensitive }}
+          {%- if row.monthly_text %}
+          <span class="block text-xs text-secondary">≈ {{ row.monthly_text|sensitive }}/mo</span>
+          {%- endif %}
+        </td>
+        <td class="px-4 py-3 whitespace-nowrap{{ rule }}">{{ row.next_due_text }}</td>
+        <td class="px-4 py-3{{ rule }}">{{ row.category }}</td>
+        <td class="px-4 py-3{{ rule }}">{{ row.account }}</td>
+        <td class="px-4 py-3{{ rule }}"><a href="{{ row.link }}" class="text-link underline-offset-2 hover:underline focus-ring rounded-sm">Transactions</a></td>
+      </tr>
+      {%- endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <th scope="row" colspan="2" class="border-t border-divider px-4 py-3 text-left font-medium text-secondary">Bills per month</th>
+        <td class="border-t border-divider px-4 py-3 text-right tabular-nums font-medium text-primary">{{ body.monthly_cents|money }}</td>
+        <td colspan="4" class="border-t border-divider"></td>
+      </tr>
+      <tr>
+        <th scope="row" colspan="2" class="px-4 py-3 text-left font-medium text-secondary">Bills per year</th>
+        <td class="px-4 py-3 text-right tabular-nums font-medium text-primary">{{ body.yearly_cents|money }}</td>
+        <td colspan="4"></td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+{%- endmacro %}
+
+{# The ended bills, with the day each stopped. Resume makes one active again. #}
+{% macro ended_table(rows) -%}
+<div class="overflow-x-auto rounded-xl bg-container shadow-border-xs">
+  <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+    <thead>
+      <tr>
+        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
+        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
+        <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
+        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Ended</th>
+        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
+        <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary"><span class="sr-only">Actions</span></th>
       </tr>
     </thead>
     <tbody>
@@ -231,12 +309,15 @@
       <tr>
         <td class="px-4 py-3{{ rule }}"><button type="button" class="whitespace-nowrap text-left font-medium text-primary hover:underline focus-ring rounded-sm" hx-get="/recurring/series/{{ row.id }}/drawer" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.name }}</button></td>
         <td class="px-4 py-3{{ rule }}">{{ row.cadence }}</td>
-        <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap{{ rule }}">{{ row.amount_text|sensitive }}</td>
-        <td class="px-4 py-3 whitespace-nowrap{{ rule }}">{{ row.next_due_text }}</td>
-        <td class="px-4 py-3 whitespace-nowrap{{ rule }}">{{ row.last_seen_text }}</td>
-        <td class="px-4 py-3{{ rule }}">{{ row.category }}</td>
+        <td class="px-4 py-3 text-right tabular-nums{{ rule }}">{{ row.amount_text|sensitive }}</td>
+        <td class="px-4 py-3 whitespace-nowrap{{ rule }}">{{ row.ended_text }}</td>
         <td class="px-4 py-3{{ rule }}">{{ row.account }}</td>
-        <td class="px-4 py-3{{ rule }}"><a href="{{ row.link }}" class="text-link underline-offset-2 hover:underline focus-ring rounded-sm">Transactions</a></td>
+        <td class="px-4 py-3 text-right{{ rule }}">
+          <form hx-post="/recurring/series/{{ row.id }}/resume" hx-target="#toast-region" class="inline">
+            <input type="hidden" name="idempotency_key" value="{{ row.key }}">
+            {{ button("Resume", variant="outline", size="sm", type="submit") }}
+          </form>
+        </td>
       </tr>
       {%- endfor %}
     </tbody>
@@ -244,48 +325,42 @@
 </div>
 {%- endmacro %}
 
-{% macro history_view(body) -%}
-<section aria-labelledby="recurring-history-title" class="flex flex-col gap-4">
-  <h2 id="recurring-history-title" class="text-sm font-medium text-secondary">Dismissed ({{ body.dismissed|length }})</h2>
-  {%- if body.dismissed %}
-  <div class="overflow-x-auto rounded-xl bg-container shadow-border-xs">
-    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
-      <thead>
-        <tr>
-          <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
-          <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
-          <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
-          <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
-          <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary"><span class="sr-only">Actions</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        {%- for row in body.dismissed %}
-        {%- set rule = "" if loop.first else " border-t border-subdued" %}
-        <tr>
-          <td class="px-4 py-3{{ rule }}">{{ row.name }}</td>
-          <td class="px-4 py-3{{ rule }}">{{ row.cadence }}</td>
-          <td class="px-4 py-3 text-right tabular-nums{{ rule }}">{{ row.amount_text|sensitive }}</td>
-          <td class="px-4 py-3{{ rule }}">{{ row.account }}</td>
-          <td class="px-4 py-3 text-right{{ rule }}">
-            <form hx-post="/recurring/series/{{ row.id }}/restore" hx-target="#toast-region" class="inline">
-              <input type="hidden" name="idempotency_key" value="{{ row.key }}">
-              {{ button("Restore", variant="outline", size="sm", type="submit") }}
-            </form>
-          </td>
-        </tr>
-        {%- endfor %}
-      </tbody>
-    </table>
-  </div>
-  {%- else %}
-  {{ empty_state("Nothing dismissed.", "A suggestion you dismiss waits here, and you can restore it.") }}
-  {%- endif %}
-</section>
+{% macro dismissed_table(rows) -%}
+<div class="overflow-x-auto rounded-xl bg-container shadow-border-xs">
+  <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+    <thead>
+      <tr>
+        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
+        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
+        <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
+        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
+        <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary"><span class="sr-only">Actions</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {%- for row in rows %}
+      {%- set rule = "" if loop.first else " border-t border-subdued" %}
+      <tr>
+        <td class="px-4 py-3{{ rule }}">{{ row.name }}</td>
+        <td class="px-4 py-3{{ rule }}">{{ row.cadence }}</td>
+        <td class="px-4 py-3 text-right tabular-nums{{ rule }}">{{ row.amount_text|sensitive }}</td>
+        <td class="px-4 py-3{{ rule }}">{{ row.account }}</td>
+        <td class="px-4 py-3 text-right{{ rule }}">
+          <form hx-post="/recurring/series/{{ row.id }}/restore" hx-target="#toast-region" class="inline">
+            <input type="hidden" name="idempotency_key" value="{{ row.key }}">
+            {{ button("Restore", variant="outline", size="sm", type="submit") }}
+          </form>
+        </td>
+      </tr>
+      {%- endfor %}
+    </tbody>
+  </table>
+</div>
 {%- endmacro %}
 
-{# The drawer body: one series, its schedule, the occurrence it was opened from, its last matched
-   charges, and Edit and Delete. #}
+{# The bill drawer body: one bill or income, its schedule, its amount history when it has changed, the
+   occurrence it was opened from, its last matched charges, and its actions. Actions reply with this
+   drawer again, and Edit opens the edit form. #}
 {% macro drawer_body(d) -%}
 <div class="flex flex-col gap-4">
   <header class="flex flex-col gap-1">
@@ -303,8 +378,24 @@
     <div class="flex flex-col gap-0.5"><dt class="text-xs text-secondary">Amount</dt><dd class="tabular-nums text-primary">{{ d.amount_text }}</dd></div>
     <div class="flex flex-col gap-0.5"><dt class="text-xs text-secondary">Next due</dt><dd class="text-primary">{{ d.next_due_text }}</dd></div>
     <div class="flex flex-col gap-0.5"><dt class="text-xs text-secondary">Last seen</dt><dd class="text-primary">{{ d.last_seen_text }}</dd></div>
+    {%- if d.ended_text %}
+    <div class="flex flex-col gap-0.5"><dt class="text-xs text-secondary">Ended</dt><dd class="text-primary">{{ d.ended_text }}</dd></div>
+    {%- endif %}
     <div class="flex flex-col gap-0.5"><dt class="text-xs text-secondary">Matched charges</dt><dd class="text-primary">{{ d.matched_total }}</dd></div>
   </dl>
+  {%- if d.history %}
+  <section aria-labelledby="recurring-drawer-history" class="flex flex-col gap-2">
+    <h3 id="recurring-drawer-history" class="text-xs font-medium uppercase text-secondary">Amount history</h3>
+    <ul class="flex flex-col divide-y divide-subdued rounded-lg border border-subdued">
+      {%- for when, amount in d.history %}
+      <li class="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+        <span class="text-secondary">{{ when }}</span>
+        <span class="tabular-nums text-primary">{{ amount }}</span>
+      </li>
+      {%- endfor %}
+    </ul>
+  </section>
+  {%- endif %}
   <section aria-labelledby="recurring-drawer-matched" class="flex flex-col gap-2">
     <h3 id="recurring-drawer-matched" class="text-xs font-medium uppercase text-secondary">Last matched transactions</h3>
     {%- if d.matched %}
@@ -327,15 +418,22 @@
       <input type="hidden" name="idempotency_key" value="{{ d.key }}">
       {{ button("Delete", variant="outline", size="sm", type="submit") }}
     </form>
-    {{ button("Edit", variant="outline", size="sm", attrs={"hx-get": "/recurring/series/" ~ d.series.id ~ "/edit", "hx-target": "#recurring-drawer-body", "hx-swap": "innerHTML"}) }}
+    <div class="flex flex-wrap items-center gap-2">
+      {%- for action in d.actions %}
+      {{ action_form(action, target="#recurring-drawer-body") }}
+      {%- endfor %}
+      {{ button("Edit", variant="outline", size="sm", attrs={"hx-get": "/recurring/series/" ~ d.series.id ~ "/edit", "hx-target": "#recurring-drawer-body", "hx-swap": "innerHTML"}) }}
+    </div>
   </footer>
 </div>
 {%- endmacro %}
 
-{# The edit form, in the drawer. Save applies one batch, and the drawer shows the series again. #}
+{# The edit form, in the drawer. Save applies one batch, and the drawer shows the bill again. A bill with
+   accepted new amounts shows its current amount and posts none. Fixed or Varies sets the one tolerance;
+   an exact tolerance under Advanced replaces it. #}
 {% macro edit_form(f) -%}
 <form hx-post="/recurring/series/{{ f.series_id }}" hx-target="#recurring-drawer-body" hx-swap="innerHTML" class="flex flex-col gap-4">
-  <h2 id="recurring-drawer-title" class="text-lg font-medium text-primary">Edit series</h2>
+  <h2 id="recurring-drawer-title" class="text-lg font-medium text-primary">Edit {{ f.noun }}</h2>
   {%- if f.error %}
   {{ alert(f.error, variant="error", live="alert") }}
   {%- endif %}
@@ -346,8 +444,28 @@
     <option value="{{ value }}"{% if value == f.cadence %} selected{% endif %}>{{ label }}</option>
     {%- endfor %}
   </select>{% endcall %}
+  {%- if f.has_prices %}
+  <div class="flex flex-col gap-1">
+    <p class="text-xs text-secondary">Amount</p>
+    <p class="tabular-nums text-primary">{{ f.current }}</p>
+    <p class="text-xs text-secondary">Changed by accepted new amounts</p>
+  </div>
+  {%- else %}
   {% call field("Amount (dollars)") %}<input name="amount" value="{{ f.amount }}" inputmode="decimal" autocomplete="off" class="form-field__input">{% endcall %}
-  {% call field("Tolerance (dollars)") %}<input name="tolerance" value="{{ f.tolerance }}" inputmode="decimal" autocomplete="off" class="form-field__input">{% endcall %}
+  {%- endif %}
+  <fieldset class="flex flex-col gap-2">
+    <legend class="text-xs font-medium text-secondary">Amount is</legend>
+    <div class="flex flex-wrap gap-6 text-sm text-primary">
+      <label class="flex items-center gap-2"><input type="radio" name="amount_mode" value="fixed"{% if f.mode == "fixed" %} checked{% endif %}> Fixed</label>
+      <label class="flex items-center gap-2"><input type="radio" name="amount_mode" value="varies"{% if f.mode == "varies" %} checked{% endif %}> Varies</label>
+    </div>
+    <p class="text-xs text-secondary">Fixed allows a small margin around the amount. Varies allows the spread the charges have shown.</p>
+  </fieldset>
+  <details class="flex flex-col gap-3 text-sm"{% if f.tolerance %} open{% endif %}>
+    <summary class="w-fit cursor-pointer text-secondary hover:text-primary focus-ring rounded-sm">Advanced</summary>
+    {% call field("Exact tolerance (dollars)") %}<input name="tolerance" value="{{ f.tolerance }}" inputmode="decimal" autocomplete="off" class="form-field__input">{% endcall %}
+    <p class="text-xs text-secondary">Now ± {{ f.tolerance_text }}. An exact tolerance replaces Fixed or Varies.</p>
+  </details>
   {% call field("Category") %}<select name="category_id" class="form-field__input">
     <option value="">None</option>
     {%- for category_id, label in f.choices %}
@@ -361,30 +479,102 @@
 </form>
 {%- endmacro %}
 
-{# The confirm form, in its own dialog. The name, category, and tolerance can be changed first. #}
-{% macro confirm_form(f) -%}
-<form hx-post="/recurring/suggestions/confirm" hx-target="#recurring-confirm-body" hx-swap="innerHTML" class="flex flex-col gap-4">
-  <h2 id="recurring-confirm-title" class="text-lg font-medium text-primary">Confirm series</h2>
-  <p class="text-sm text-secondary">{{ f.summary }}</p>
+{# The add form, in the drawer: a bill typed in by hand, or started from a transaction. Add bill confirms it at
+   once. This is income makes the amount positive; a bill's amount is negative. #}
+{% macro add_form(f) -%}
+<form hx-post="/recurring/bills" hx-target="#recurring-drawer-body" hx-swap="innerHTML" class="flex flex-col gap-4">
+  <h2 id="recurring-drawer-title" class="text-lg font-medium text-primary">Add bill</h2>
   {%- if f.error %}
   {{ alert(f.error, variant="error", live="alert") }}
   {%- endif %}
-  {%- for name, value in f.identity.items() %}
-  <input type="hidden" name="{{ name }}" value="{{ value }}">
-  {%- endfor %}
   <input type="hidden" name="idempotency_key" value="{{ f.key }}">
   {% call field("Name") %}<input name="name" value="{{ f.name }}" required autocomplete="off" class="form-field__input" data-autofocus>{% endcall %}
+  {% call field("Payee, as it appears on statements") %}<input name="payee" value="{{ f.payee }}" required autocomplete="off" class="form-field__input">{% endcall %}
+  {% call field("Account") %}<select name="account_id" class="form-field__input">
+    <option value="">Any account</option>
+    {%- for account_id, label in f.accounts %}
+    <option value="{{ account_id }}"{% if account_id == f.account_id %} selected{% endif %}>{{ label }}</option>
+    {%- endfor %}
+  </select>{% endcall %}
+  {% call field("Cadence") %}<select name="cadence" class="form-field__input">
+    {%- for value, label in CADENCE_CHOICES %}
+    <option value="{{ value }}"{% if value == f.cadence %} selected{% endif %}>{{ label }}</option>
+    {%- endfor %}
+  </select>{% endcall %}
+  {% call field("Amount (dollars)") %}<input name="amount" value="{{ f.amount }}" inputmode="decimal" autocomplete="off" class="form-field__input">{% endcall %}
+  <label class="flex items-center gap-2 text-sm text-primary"><input type="checkbox" name="income" value="1"{% if f.income %} checked{% endif %}> This is income</label>
+  {% call field("First due date") %}<input type="date" name="starts_on" value="{{ f.starts_on }}" required class="form-field__input">{% endcall %}
   {% call field("Category") %}<select name="category_id" class="form-field__input">
     <option value="">None</option>
     {%- for category_id, label in f.choices %}
     <option value="{{ category_id }}"{% if category_id|string == f.category_id %} selected{% endif %}>{{ label }}</option>
     {%- endfor %}
   </select>{% endcall %}
-  {% call field("Amount tolerance (dollars)") %}<input name="tolerance" value="{{ f.tolerance }}" inputmode="decimal" autocomplete="off" class="form-field__input">{% endcall %}
-  <p class="text-xs text-secondary">A charge within this much of the typical amount counts toward the series.</p>
   <div class="flex justify-end gap-2">
     {{ button("Cancel", variant="outline", attrs={"data-action": "page-dialogs#closeDialog"}) }}
-    {{ button("Confirm", variant="primary", type="submit") }}
+    {{ button("Add bill", variant="primary", type="submit") }}
   </div>
 </form>
+{%- endmacro %}
+
+{# One decision on the review card. The suggestion's identity and its place in the queue go back with
+   the decision's own key. #}
+{% macro review_post(r, action, key, label, variant, autofocus=false) -%}
+<form hx-post="{{ action }}" hx-target="#recurring-drawer-body" hx-swap="innerHTML" class="inline">
+  {%- for name, value in r.identity.items() %}
+  <input type="hidden" name="{{ name }}" value="{{ value }}">
+  {%- endfor %}
+  <input type="hidden" name="index" value="{{ r.index }}">
+  <input type="hidden" name="idempotency_key" value="{{ key }}">
+  {{ button(label, variant=variant, size="sm", type="submit", attrs={"data-autofocus": ""} if autofocus else none) }}
+</form>
+{%- endmacro %}
+
+{# The review drawer: one possible bill from the queue, with the charges it was found in. Add bill and
+   Not recurring answer with the suggestion now at the same place, since the one decided has left the
+   queue. Skip shows the next one; nothing is stored. Past the end, it says so. #}
+{% macro review_card(r, error="") -%}
+<div class="flex flex-col gap-4">
+  {%- if error %}
+  {{ alert(error, variant="error", live="alert") }}
+  {%- endif %}
+  {%- if r is none %}
+  <header class="flex flex-col gap-1">
+    <h2 id="recurring-drawer-title" class="text-lg font-medium text-primary">Nothing left to review.</h2>
+    <p class="text-sm text-secondary">Possible bills appear here when your transactions repeat on a schedule.</p>
+  </header>
+  <div class="flex justify-end">
+    {{ button("Close", variant="outline", size="sm", attrs={"data-action": "page-dialogs#closeDialog"}) }}
+  </div>
+  {%- else %}
+  <header class="flex flex-col gap-1">
+    <p class="text-xs text-secondary">{{ r.position }}</p>
+    <h2 id="recurring-drawer-title" class="text-lg font-medium text-primary">{{ r.suggestion.name }}</h2>
+    <p class="text-xs text-secondary">{{ r.cadence }} · {{ r.account }}</p>
+  </header>
+  <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+    <div class="flex flex-col gap-0.5"><dt class="text-xs text-secondary">Amount</dt><dd class="tabular-nums text-primary">{{ r.amount_text|sensitive }} ± {{ r.tolerance_text|sensitive }}</dd></div>
+    <div class="flex flex-col gap-0.5"><dt class="text-xs text-secondary">Matched charges</dt><dd class="text-primary">{{ r.suggestion.occurrences|length }}</dd></div>
+  </dl>
+  <section aria-labelledby="recurring-review-evidence" class="flex flex-col gap-2">
+    <h3 id="recurring-review-evidence" class="text-xs font-medium uppercase text-secondary">Last matched charges</h3>
+    <ul class="flex flex-col divide-y divide-subdued rounded-lg border border-subdued">
+      {%- for txn in r.transactions %}
+      <li class="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+        <span class="shrink-0 text-secondary">{{ txn.posted_on.strftime("%b %d, %Y") }}</span>
+        <span class="min-w-0 flex-1 truncate text-primary">{{ txn.payee }}</span>
+        <span class="shrink-0 tabular-nums text-primary">{{ txn.amount_cents|money }}</span>
+      </li>
+      {%- endfor %}
+    </ul>
+  </section>
+  <footer class="flex flex-wrap items-center justify-between gap-2 border-t border-divider pt-4">
+    {{ button("Skip", variant="ghost", size="sm", attrs={"hx-get": "/recurring/review?index=" ~ (r.index + 1), "hx-target": "#recurring-drawer-body", "hx-swap": "innerHTML"}) }}
+    <div class="flex flex-wrap items-center gap-2">
+      {{ review_post(r, "/recurring/suggestions/dismiss", r.dismiss_key, "Not recurring", "outline") }}
+      {{ review_post(r, "/recurring/suggestions/confirm", r.confirm_key, "Add bill", "primary", autofocus=true) }}
+    </div>
+  </footer>
+  {%- endif %}
+</div>
 {%- endmacro %}

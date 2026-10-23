@@ -303,7 +303,7 @@ def upcoming_expected(session: Session, *, today: date) -> Upcoming:
     items = tuple(
         UpcomingItem(item.series_id, item.series_name, item.due_on, item.expected_cents)
         for item in upcoming(session, start=today, end=end, today=today)
-        if item.status is OccurrenceStatus.upcoming
+        if item.status is OccurrenceStatus.upcoming and not item.is_transfer
     )
     return Upcoming(
         start=today,

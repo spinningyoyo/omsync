@@ -9,6 +9,7 @@
 {% from "components/button.html" import button %}
 {% from "components/segmented_control.html" import segmented_control %}
 {% from "components/brand.html" import mascot %}
+{% from "components/menu.html" import menu, menu_item with context %}
 
 {# The text a memo cell shows, or a split's category cell, which shows "Split" because its lines
    hold the categories. #}
@@ -86,8 +87,9 @@
 </thead>
 {%- endmacro %}
 
-{# One transaction: its row, its split lines, and the split editor when it is open. The tbody id
-   is what out-of-band swaps and the controller look up. #}
+{# One transaction: its row, with its actions menu (which links to Mark as recurring) and split button, its
+   split lines, and the split editor when it is open. The tbody id is what out-of-band swaps and the
+   controller look up. #}
 {% macro txn_group(row, show_account, categories, focus_field=none, oob=false, editor=none, key="", clear_key="", version="") -%}
 <tbody id="txn-{{ row.id }}" class="txn-group" data-txn-group data-txn-id="{{ row.id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
 <tr class="txn-row">
@@ -100,7 +102,11 @@
   {{ cell_input(row, "memo", categories, autofocus=focus_field == "memo") }}
   {{ cell_input(row, "category", categories, autofocus=focus_field == "category") }}
   <td class="amount {{ 'outflow' if row.amount_cents < 0 else 'inflow' }}">{{ row.amount_cents|money }}</td>
-  <td class="actions"><button type="button" class="split-btn" data-action="click->register#openSplitFromButton" data-txn-id="{{ row.id }}" aria-label="Split {{ row.payee }}" title="Split"><span class="split-glyph" aria-hidden="true"></span></button></td>
+  <td class="actions">
+    {%- call menu("txn-menu-" ~ row.id, "Actions for " ~ row.payee) %}
+    {{ menu_item("Mark as recurring", icon_name="repeat", href="/recurring?view=all&add_from=" ~ row.id) }}
+    {%- endcall %}
+    <button type="button" class="split-btn" data-action="click->register#openSplitFromButton" data-txn-id="{{ row.id }}" aria-label="Split {{ row.payee }}" title="Split"><span class="split-glyph" aria-hidden="true"></span></button></td>
 </tr>
 {%- for line in row.splits %}
 <tr class="split-row">

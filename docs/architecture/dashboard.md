@@ -37,7 +37,8 @@ cash flow.
 - **Needs attention** lists the items below. A kind with nothing to show is hidden, and
   when everything is clear the section says so.
 - **Upcoming** lists confirmed [recurring](recurring.md) occurrences due in the next 14
-  days, today included, that have not been paid, with the totals expected in and out. They
+  days, today included, that are not yet paid, with the totals expected in and out. A date
+  marked paid elsewhere counts as paid, and transfer series are left out of the totals. They
   are expectations, not ledger money, so they are labelled as expected and never added to
   period figures.
 - **Budget** and **Goals** are the cards of the [Plan hub](budgets.md) for the month that
@@ -59,15 +60,15 @@ number and the list drift apart, so none exists.
 | Import reviews | Open [import reviews](import.md): unresolved statement rows | Register, Needs review |
 | Reconciliation to resolve | What a [reconciliation](reconciliation.md) run over the last 90 days, the range Reconcile opens with, leaves for a decision: review and manual proposals plus not-matched transactions. Automatic proposals, acknowledged and forwarded transactions are not counted | Reconcile, with that range in the link |
 | Uncategorized transactions | Transactions matching the register filter "category is empty": no category of their own and no categorized split, on any date | Register, with that filter |
-| Missed recurring payments | Confirmed-series occurrences this calendar month whose window closed unpaid, as in [recurring](recurring.md) | Recurring, whose month summary shows the same Missed count |
+| Recurring needing attention | The items in the Recurring Overview's Needs attention list for this calendar month: missed occurrences and open recurring questions, as in [recurring](recurring.md) | Recurring Overview, whose Needs attention list shows the same items |
 | Balance check failures | Each open account whose [balance check](accounts.md) reports an issue, listed by name | That account's page |
 | Sync problems | Each provider whose newest [sync](sync.md) run failed or needs user action, listed by name | Bank sync settings |
 
 Reconciliation items are computed by a run, not stored, so Home runs the same engine the Reconcile
 page does. For that reason the rail has no Reconcile badge: a badge appears on every
-page and must stay a cheap count. Missed occurrences are limited to the current month
-because the Recurring page shows missed occurrences only in its month summary; a longer
-lookback would count items that page does not list.
+page and must stay a cheap count. Recurring items are limited to the current month because
+the Recurring Overview's Needs attention list covers the current month; a longer lookback
+would count items that list does not show.
 
 ## Flow and layout
 

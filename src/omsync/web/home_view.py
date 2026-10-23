@@ -280,13 +280,13 @@ def _attention_view(found: Attention, today: date) -> AttentionView:
                 found.uncategorized,
             )
         )
-    if found.missed_occurrences:
+    if found.recurring_attention:
         rows.append(
             AttentionRow(
-                "Missed recurring payments",
-                f"Due this month, {today.strftime('%B')}",
+                "Recurring needing attention",
+                f"Missed or open in {today:%B}",
                 "/recurring",
-                found.missed_occurrences,
+                found.recurring_attention,
             )
         )
     rows.extend(

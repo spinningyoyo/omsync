@@ -4,8 +4,9 @@ Each item is counted by the query that the view it links to is built from, so th
 list behind it cannot disagree: import reviews by open_review_count, uncategorized transactions by
 count_matching over UNCATEGORIZED (the filter the register opens with), reconciliation proposals
 by the run the Reconcile page makes for the same range (what waits for a decision, not the
-proposals applied on their own), missed occurrences by plan.recurring, and
-balance failures by the balance check. The web layer turns the plain data into links.
+proposals applied on their own), missed occurrences by the Needs attention list of plan.recurring,
+which the Recurring Overview shows, and balance failures by the balance check. The web layer turns
+the plain data into links.
 
 Everything here reads and writes nothing, and nothing here imports omsync.web.
 """
@@ -21,7 +22,7 @@ from omsync.ledger.bulk import count_matching
 from omsync.ledger.filters import Condition, FilterSpec
 from omsync.ledger.models import Account, Institution, Provider, SyncRun, SyncStatus
 from omsync.ledger.register import open_review_count
-from omsync.plan.recurring import OccurrenceStatus, summarize, upcoming
+from omsync.plan.recurring import needs_attention
 from omsync.reconcile.engine import run as run_reconciliation
 
 # Transactions with no category of their own and no category on any split. The register opens with
@@ -56,7 +57,7 @@ class Attention:
     open_reviews: int
     open_reconciliation: int
     uncategorized: int
-    missed_occurrences: int
+    recurring_attention: int
     accounts: tuple[AccountIssue, ...]
     providers: tuple[ProviderIssue, ...]
 
@@ -66,7 +67,7 @@ class Attention:
             self.open_reviews
             or self.open_reconciliation
             or self.uncategorized
-            or self.missed_occurrences
+            or self.recurring_attention
             or self.accounts
             or self.providers
         )
@@ -76,27 +77,25 @@ def attention(session: Session, *, today: date, proposal_range: tuple[date, date
     """The counts as of `today`. Reconciliation items are not stored, so they are what a run over
     `proposal_range` finds waiting for a decision: review and manual proposals plus the transactions
     that are not matched, as the Reconcile page shows for that range. Automatic proposals are
-    applied after each import, and acknowledged or forwarded transactions need nothing. Missed
-    occurrences are the confirmed series' occurrences this calendar month whose window has closed
-    unpaid, which is the Missed figure at the top of the Recurring page."""
+    applied after each import, and acknowledged or forwarded transactions need nothing. Recurring
+    items are the Needs attention list on the Recurring Overview: this calendar month's missed
+    occurrences and open questions."""
     return Attention(
         open_reviews=open_review_count(session),
         open_reconciliation=run_reconciliation(
             session, start=proposal_range[0], end=proposal_range[1]
         ).needs_you,
         uncategorized=count_matching(session, UNCATEGORIZED),
-        missed_occurrences=missed_this_month(session, today=today),
+        recurring_attention=recurring_attention_this_month(session, today=today),
         accounts=failing_accounts(session),
         providers=problem_providers(session),
     )
 
 
-def missed_this_month(session: Session, *, today: date) -> int:
-    month = today.replace(day=1)
-    occurrences = upcoming(session, start=month, end=today, today=today)
-    return summarize(
-        item for item in occurrences if item.status is OccurrenceStatus.missed
-    ).missed_count
+def recurring_attention_this_month(session: Session, *, today: date) -> int:
+    """The count of the Recurring Overview's Needs attention list: missed bills and open questions.
+    Home and that list agree because both count the same items."""
+    return len(needs_attention(session, today=today))
 
 
 def failing_accounts(session: Session) -> tuple[AccountIssue, ...]:
@@ -137,6 +136,6 @@ __all__ = [
     "ProviderIssue",
     "attention",
     "failing_accounts",
-    "missed_this_month",
+    "recurring_attention_this_month",
     "problem_providers",
 ]

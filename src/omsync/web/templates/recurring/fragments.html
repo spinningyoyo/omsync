@@ -7,14 +7,17 @@
 {{ body_region(body) }}
 {% endblock %}
 
-{% block frag_summary %}
-{% from "recurring/parts.html" import summary_region %}
-{{ summary_region(summary) }}
+{% block frag_review %}
+{% from "recurring/parts.html" import review_card %}
+{{ review_card(review, error) }}
 {% endblock %}
 
-{% block frag_suggestions %}
-{% from "recurring/parts.html" import suggestions_region %}
-{{ suggestions_region(suggestions) }}
+{# A decision that applied: the card at the same place follows, then the toast out of band. #}
+{% block frag_review_saved %}
+{% from "recurring/parts.html" import review_card %}
+{% from "transactions/parts.html" import toast_region %}
+{{ review_card(review) }}
+{{ toast_region(message, batch_id) }}
 {% endblock %}
 
 {# A write that applied, or was refused, in the toast region. Undo is in the toast when there is a batch. #}
@@ -23,22 +26,12 @@
 {{ toast_region(message, batch_id) }}
 {% endblock %}
 
-{% block frag_message %}
-{% from "components/alert.html" import alert with context %}
-{{ alert(message, variant="error", live="alert") }}
-{% endblock %}
-
-{% block frag_confirm_form %}
-{% from "recurring/parts.html" import confirm_form %}
-{{ confirm_form(form) }}
-{% endblock %}
-
 {% block frag_drawer %}
 {% from "recurring/parts.html" import drawer_body %}
 {{ drawer_body(drawer) }}
 {% endblock %}
 
-{# A saved edit: the drawer shows the series as it now is, and the toast follows out of band. #}
+{# A saved edit or drawer action: the drawer shows the bill as it now is, and the toast follows out of band. #}
 {% block frag_drawer_saved %}
 {% from "recurring/parts.html" import drawer_body %}
 {% from "transactions/parts.html" import toast_region %}
@@ -49,4 +42,9 @@
 {% block frag_series_edit %}
 {% from "recurring/parts.html" import edit_form %}
 {{ edit_form(form) }}
+{% endblock %}
+
+{% block frag_add_form %}
+{% from "recurring/parts.html" import add_form %}
+{{ add_form(form) }}
 {% endblock %}
