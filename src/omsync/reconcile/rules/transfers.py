@@ -274,7 +274,8 @@ def rule_1d(pool: Pool, emit: Emitter) -> None:
 
     The named account must hold an equal, opposite amount within four days. Both directions must
     be unique, so two fitting partners leave a manual proposal. A side that names a different
-    tracked account than its partner's does not fit.
+    tracked account than its partner's does not fit. Of several fitting credits, the only one that
+    reads as money from your own accounts is the debit's partner.
     """
     named = {
         txn.id: emit.accounts_by_digits(txn.description, exclude=txn.account_id) for txn in pool
@@ -306,6 +307,7 @@ def rule_1d(pool: Pool, emit: Emitter) -> None:
         debits=[txn for txn in relevant if txn.amount_cents < 0],
         credits=[txn for txn in relevant if txn.amount_cents > 0],
         fits=fits,
+        prefer=lambda credit: is_own_inflow(credit, emit),
     )
 
 
@@ -414,6 +416,27 @@ def is_transfer_like(txn: TxnView, emit: Emitter) -> bool:
                 emit.patterns.self_zelle,
                 CC_DEBIT_RE,
                 CB_DEBIT_RE,
+            )
+        )
+        or emit.accounts_by_digits(txn.description, exclude=txn.account_id)
+    )
+
+
+def is_own_inflow(txn: TxnView, emit: Emitter) -> bool:
+    """True when a credit reads as money from one of your own accounts.
+
+    That is a card-payment credit, a transfer wording, a credit-balance refund, a Zelle payment
+    from one of your own names, or a description that names another tracked account.
+    """
+    return bool(
+        any(
+            pattern.search(txn.description)
+            for pattern in (
+                CC_CREDIT_RE,
+                emit.patterns.transfer_with_conf,
+                emit.patterns.cb_credit,
+                emit.patterns.generic,
+                emit.patterns.self_inflow,
             )
         )
         or emit.accounts_by_digits(txn.description, exclude=txn.account_id)

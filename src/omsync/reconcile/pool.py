@@ -29,10 +29,11 @@ class Pool:
 
     evidence() holds every transaction the range loaded, at its full amount, whether or not links
     explain it. A rule reads it as evidence, such as a bill that its own payment already settled,
-    but links only from the open pool. settled_bill_ids are the bills that an approved joint
-    settlement names. parked() holds the recorded partner contributions: no rule sees them, but
-    you still see them as unmatched. partner_ids() holds the partner inflows the joint rule took
-    out of the pool this run, which a proposal labels or a settlement already recorded.
+    but links only from the open pool. settled_outflows maps each bill that an approved joint
+    settlement names to the outflows those settlements link. parked() holds the recorded partner
+    contributions: no rule sees them, but you still see them as unmatched. partner_ids() holds
+    the partner inflows the joint rule took out of the pool this run, which a proposal labels or a
+    settlement already recorded.
     """
 
     def __init__(
@@ -42,14 +43,14 @@ class Pool:
         *,
         evidence: Iterable[TxnView] = (),
         parked: Iterable[TxnView] = (),
-        settled_bill_ids: frozenset[int] = frozenset(),
+        settled_outflows: Mapping[int, tuple[int, ...]] | None = None,
     ) -> None:
         self._txns: dict[int, TxnView] = {txn.id: txn for txn in txns}
         self._linked_cents: dict[int, int] = dict(linked_cents)
         self._evidence: tuple[TxnView, ...] = tuple(evidence)
         self._parked: tuple[TxnView, ...] = tuple(parked)
         self._partners: set[int] = set()
-        self.settled_bill_ids = settled_bill_ids
+        self.settled_outflows: dict[int, tuple[int, ...]] = dict(settled_outflows or {})
 
     def __contains__(self, txn_id: object) -> bool:
         return txn_id in self._txns
@@ -81,6 +82,10 @@ class Pool:
     def partner_ids(self) -> frozenset[int]:
         return frozenset(self._partners)
 
+    @property
+    def settled_bill_ids(self) -> frozenset[int]:
+        return frozenset(self.settled_outflows)
+
     def linked_cents(self, txn_id: int) -> int:
         return self._linked_cents.get(txn_id, 0)
 
@@ -108,7 +113,7 @@ def load_pool(
         raise ValueError("end is before start")
 
     rows = session.execute(
-        select(Transaction, Account, Category.name)
+        select(Transaction, Account, Category.name, Category.type)
         .join(Account, Account.id == Transaction.account_id)
         .outerjoin(Category, Category.id == Transaction.category_id)
         .where(
@@ -121,13 +126,13 @@ def load_pool(
     ).all()
 
     coverage = _linked_cents(session, start, end)
-    partner_ids, settled_bill_ids = _joint_settlement_evidence(session)
-    sources = source_texts(session, [txn.id for txn, _, _ in rows])
+    partner_ids, settled_outflows = _joint_settlement_evidence(session)
+    sources = source_texts(session, [txn.id for txn, _, _, _ in rows])
     everything: list[TxnView] = []
     views: list[TxnView] = []
     parked: list[TxnView] = []
     linked: dict[int, int] = {}
-    for txn, account, category_name in rows:
+    for txn, account, category_name, category_type in rows:
         covered = coverage.get(txn.id, 0)
         if covered:
             linked[txn.id] = covered
@@ -151,6 +156,7 @@ def load_pool(
             payee=txn.payee,
             memo=txn.memo,
             category_name=category_name,
+            category_type=category_type,
         )
         everything.append(full)
         if txn.id in partner_ids:
@@ -168,7 +174,7 @@ def load_pool(
         linked,
         evidence=everything,
         parked=parked,
-        settled_bill_ids=settled_bill_ids,
+        settled_outflows=settled_outflows,
     )
 
 
@@ -178,21 +184,30 @@ def transaction_description(session: Session, txn: Transaction) -> str:
     return next((view.description for view in day.evidence() if view.id == txn.id), txn.payee_raw)
 
 
-def _joint_settlement_evidence(session: Session) -> tuple[frozenset[int], frozenset[int]]:
-    """Return the partner-contribution IDs and the bill IDs that approved joint settlements record.
+def _joint_settlement_evidence(
+    session: Session,
+) -> tuple[frozenset[int], dict[int, tuple[int, ...]]]:
+    """Return the partner-contribution IDs that approved joint settlements record, and for each
+    bill they name, the outflows they link.
 
-    Read from the link evidence, never from memo text, which you may edit. Undoing a settlement
-    removes its link, so its partners and bill return to the ordinary rules.
+    Read from the links and their evidence, never from memo text, which you may edit. Undoing a
+    settlement removes its link, so its partners and bill return to the ordinary rules.
     """
     partners: set[int] = set()
-    bills: set[int] = set()
-    evidences = session.scalars(select(Link.evidence).where(Link.kind == LinkKind.joint_settlement))
-    for evidence in evidences:
+    outflows: dict[int, list[int]] = defaultdict(list)
+    rows = session.execute(
+        select(Link.from_transaction_id, Link.evidence)
+        .where(Link.kind == LinkKind.joint_settlement)
+        .order_by(Link.id)
+    )
+    for outflow_id, evidence in rows:
         if evidence.get("bill_txn_id") is not None:
-            bills.add(int(evidence["bill_txn_id"]))
+            bill_outflows = outflows[int(evidence["bill_txn_id"])]
+            if outflow_id is not None:
+                bill_outflows.append(outflow_id)
         for note in evidence.get("partner_contributions", []):
             partners.add(int(note["txn_id"]))
-    return frozenset(partners), frozenset(bills)
+    return frozenset(partners), {bill: tuple(ids) for bill, ids in outflows.items()}
 
 
 def _linked_cents(session: Session, start: date, end: date) -> dict[int, int]:

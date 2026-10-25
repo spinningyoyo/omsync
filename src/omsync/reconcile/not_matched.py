@@ -1,7 +1,8 @@
 """Transactions that should have a counterpart and do not, and the ones you need not look at.
 
-A transaction is expected to have a counterpart when its description reads as a transfer, a
-card payment, or a P2P payment from someone, or names another tracked account. It is Not matched
+A transaction is expected to have a counterpart when its description reads as a transfer or a
+card payment, names another tracked account, or is a Zelle payment from someone that you filed
+as money that does not count. It is Not matched
 when no link covers all of it and no proposal of the run involves it. Reconciled stays what links
 cover; nothing here changes it. Three things take a transaction out of Not matched without a
 link, and each is shown as Explained with its reason: your acknowledgment of the transaction,
@@ -20,6 +21,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from omsync.ledger.categories import CategoryType
 from omsync.ledger.counterparties import CounterpartyMatcher, load_matchers
 from omsync.ledger.links import Acknowledgment
 from omsync.ledger.transactions import Transaction
@@ -28,7 +30,7 @@ from omsync.reconcile.model import Draft, Explained, ExplainedBy, NotMatched, Tx
 from omsync.reconcile.pool import Pool, transaction_description
 from omsync.reconcile.rules.base import Emitter
 from omsync.reconcile.rules.p2p import P2P_INFLOW_RE
-from omsync.reconcile.rules.transfers import CC_CREDIT_RE, is_transfer_like
+from omsync.reconcile.rules.transfers import ZELLE_PREFIX_RE, is_own_inflow, is_transfer_like
 
 _NAME_WORD = re.compile(r"[A-Z][A-Za-z'.-]*$")
 _FALLBACK_WORDS = 3
@@ -38,28 +40,27 @@ PARTNER_REASON = "Partner contribution to a joint card bill"
 def counterpart_expected(txn: TxnView, emit: Emitter) -> bool:
     """True when the description reads as one half of a pair, so its other half should exist.
 
-    Money out: the wording the P2P rule treats as a transfer between your own accounts (transfer
-    and card-payment wordings, a Zelle payment to one of your own names, a named tracked account).
-    Money in: a payment from someone by Zelle, Venmo, or PayPal; a card-payment credit; a transfer
-    wording; or a named tracked account. A payment to someone else is not one half of anything in
-    this ledger, so it is not expected to match.
+    Money out: a transfer between your own accounts (transfer and card-payment wordings, a Zelle
+    payment to one of your own names, a named tracked account). Money in: a card-payment credit, a
+    transfer wording, a Zelle payment from one of your own names, or a named tracked account. A
+    payment to someone else is not one half of anything in this ledger, so it is not expected to
+    match. Neither is money in whose category is Income, such as a settlement paid by Zelle.
+
+    A Zelle payment from someone else is expected to match only while it has no category or one
+    of the Excluded type: a spending category already says what it paid for. A Venmo or PayPal
+    payment never is, because its sender writes what they like and nothing in the ledger can match
+    it.
     """
     if txn.amount_cents < 0:
         return is_transfer_like(txn, emit)
+    if txn.category_type is CategoryType.income:
+        return False
+    if is_own_inflow(txn, emit):
+        return True
     text = txn.description
-    return bool(
-        any(
-            pattern.search(text)
-            for pattern in (
-                P2P_INFLOW_RE,
-                CC_CREDIT_RE,
-                emit.patterns.transfer_with_conf,
-                emit.patterns.cb_credit,
-                emit.patterns.generic,
-            )
-        )
-        or emit.accounts_by_digits(text, exclude=txn.account_id)
-    )
+    if not P2P_INFLOW_RE.search(text) or not ZELLE_PREFIX_RE.search(text):
+        return False
+    return txn.category_type in (None, CategoryType.excluded)
 
 
 def assess(

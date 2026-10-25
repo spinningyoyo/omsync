@@ -56,7 +56,7 @@ def seed(app: FastAPI) -> Callable[..., dict[str, int]]:
                 for key, (name, kind, last4, joint) in ACCOUNTS.items()
             }
             db.add_all(accounts.values())
-            categories = {name: Category(name=name) for name in ("Family_Joint", "Transfer")}
+            categories = {name: Category(name=name) for name in ("Transfer",)}
             db.add_all(categories.values())
             db.flush()
             ids: dict[str, int] = {}

@@ -23,6 +23,7 @@ class Patterns:
     cb_credit: re.Pattern[str]
     generic: re.Pattern[str]
     self_zelle: re.Pattern[str]
+    self_inflow: re.Pattern[str]
 
 
 _NEVER = re.compile(r"(?!)")
@@ -32,7 +33,8 @@ def build_patterns(self_names: Iterable[str]) -> Patterns:
     """Compile the name-dependent patterns, adding one alternative per name.
 
     Names are matched literally, not as regular expressions, and case-insensitively. Blank names
-    are ignored. self_zelle matches a Zelle payment sent to one of your own names.
+    are ignored. self_zelle matches a Zelle payment sent to one of your own names. self_inflow
+    matches a Zelle payment received from one of your own names.
     """
     names = [name.strip() for name in self_names if name and name.strip()]
     if not names:
@@ -41,6 +43,7 @@ def build_patterns(self_names: Iterable[str]) -> Patterns:
             cb_credit=_compile(_CB_CREDIT_BASE),
             generic=_compile(_GENERIC_BASE),
             self_zelle=_NEVER,
+            self_inflow=_NEVER,
         )
     alternation = "|".join(re.escape(name) for name in names)
     return Patterns(
@@ -52,6 +55,12 @@ def build_patterns(self_names: Iterable[str]) -> Patterns:
         self_zelle=_compile(
             (
                 r"Zelle\s+(?:payment|Transfer|Recurring payment|Scheduled payment)\s+to\s+"
+                rf"(?:{alternation})(?![A-Za-z])",
+            )
+        ),
+        self_inflow=_compile(
+            (
+                r"Zelle\s+(?:payment|Transfer|Recurring payment|Scheduled payment)\s+from\s+"
                 rf"(?:{alternation})(?![A-Za-z])",
             )
         ),

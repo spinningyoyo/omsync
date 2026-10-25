@@ -72,7 +72,6 @@ def accounts(session: Session) -> dict[str, Account]:
         [
             Category(name="Shopping"),
             Category(name="Dining"),
-            Category(name="Family_Joint"),
             Category(name="Transfer"),
         ]
     )

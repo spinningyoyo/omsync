@@ -11,6 +11,7 @@ from omsync.reconcile.patterns import DEFAULT_PATTERNS, Patterns
 from omsync.reconcile.pool import Pool
 
 DESCRIPTIONS: dict[str, str] = {
+    "rv": "Reversal: Same-Account",
     "2a": "Joint: Card Bill Settlement",
     "1a": "Transfer: Conf# Hash Match",
     "1b": "Transfer: Zelle Conf# Match",
@@ -21,12 +22,14 @@ DESCRIPTIONS: dict[str, str] = {
     "3": "Transfer: Generic (No Conf#)",
     "7a": "Merchant: Same-Account Return",
     "7c": "Merchant: Same-Account PayPal Return (±$0.01)",
+    "rt": "P2P: Round Trip",
+    "ru": "Return: Round Trip via Untracked Account",
     "cp": "P2P: Named Counterparty",
-    "p2p": "P2P: General Reimbursement",
-    # Proposed by earlier versions. Links made from those proposals keep this name.
-    "p2p_solo": "P2P: Solo Inflow (No Debit Match)",
     "7b": "Merchant: Cross-Account Return",
     "7d": "Merchant: Cross-Account Return (Brand Match)",
+    # Proposed by earlier versions. Links made from those proposals keep these names.
+    "p2p": "P2P: General Reimbursement",
+    "p2p_solo": "P2P: Solo Inflow (No Debit Match)",
 }
 
 CONFIDENCE_BY_QUEUE: dict[Queue, float] = {
@@ -202,11 +205,14 @@ def pair_unambiguously(
     fits: Callable[[TxnView, TxnView], bool],
     queue: Queue = Queue.auto_approve,
     extra: Mapping[str, Any] | None = None,
+    prefer: Callable[[TxnView], bool] | None = None,
 ) -> None:
     """Pair each debit with its one credit, when neither side has another possible partner.
 
     A debit with several credits, or a credit with several debits, becomes a manual proposal of
     the first candidate. Manual proposals drain nothing, so the other candidates stay available.
+    prefer settles a debit with several credits when exactly one of them passes it: that one is
+    the debit's only candidate.
     """
     for debit in debits:
         if debit.id not in pool:
@@ -214,6 +220,12 @@ def pair_unambiguously(
         candidates = [
             c for c in credits if c.id in pool and fits(debit, c) and emit.allowed(debit, c)
         ]
+        notes = None
+        if len(candidates) > 1 and prefer is not None:
+            preferred = [c for c in candidates if prefer(c)]
+            if len(preferred) == 1:
+                notes = f"preferred over {len(candidates) - 1} other credit(s)"
+                candidates = preferred
         if not candidates:
             continue
         if len(candidates) > 1:
@@ -247,7 +259,15 @@ def pair_unambiguously(
             )
             continue
         claim(
-            pool, emit, rule=rule, kind=kind, first=debit, second=credit, queue=queue, extra=extra
+            pool,
+            emit,
+            rule=rule,
+            kind=kind,
+            first=debit,
+            second=credit,
+            queue=queue,
+            notes=notes,
+            extra=extra,
         )
 
 

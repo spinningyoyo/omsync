@@ -9,6 +9,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Any
 
+from omsync.ledger.categories import CategoryType
 from omsync.ledger.links import LinkKind
 from omsync.ledger.sources import AccountType
 
@@ -50,6 +51,7 @@ class TxnView:
     payee: str
     memo: str | None
     category_name: str | None
+    category_type: CategoryType | None
 
 
 @dataclass(frozen=True)
@@ -58,12 +60,13 @@ class AccountRef:
 
     labels are the names people write (the account name, with and without its institution).
     digits are the last four of the account number and of its current statement ID, which differ
-    once a card is reissued.
+    once a card is reissued. joint marks an account shared with your partner.
     """
 
     id: int
     labels: tuple[str, ...]
     digits: frozenset[str]
+    joint: bool = False
 
 
 @dataclass(frozen=True)

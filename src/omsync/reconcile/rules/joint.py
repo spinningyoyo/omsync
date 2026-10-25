@@ -1,5 +1,6 @@
 """Joint-card settlement proposals anchored by reported bill payments."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from omsync.ledger.links import LinkKind
@@ -12,9 +13,6 @@ from omsync.reconcile.rules.transfers import CC_CREDIT_RE, ZELLE_RE, extract_zel
 BILL_WINDOW_DAYS = 45
 # Your outflow may leave any personal account that holds cash. Cards and brokerage do not qualify.
 PERSONAL_OUTFLOW_TYPES = frozenset({AccountType.checking, AccountType.savings})
-PARTNER_CATEGORIES = frozenset({"Family_Joint", "Transfer"})
-# A payment from you to the card is never your own contribution when it lands in this category.
-OWN_EXCLUDED_CATEGORY = "Family_Joint"
 AUTO_CONFIDENCE = 0.90
 OUTFLOW_ONLY_CONFIDENCE = 0.60
 # How far a contribution may be from half the bill. A payment that names the joint card selects
@@ -59,27 +57,31 @@ def rule_joint_settlement(pool: Pool, emit: Emitter) -> None:
     ]
     card_ids = frozenset(t.account_id for t in anchors)
     outflows = [t for t in pool if _is_outflow(t, emit)]
+    fits = {t.id: _fit_for(emit, t, card_ids) for t in outflows}
     inflows = [
         t
         for t in pool
         if t.account_joint and t.account_type is AccountType.checking and t.amount_cents > 0
     ]
+    loaded = {t.id: t for t in pool.evidence()}
 
     for bill in anchors:
-        if bill.id in pool.settled_bill_ids:
-            fit = _settled_fit(pool, emit, bill, anchors, card_ids)
-            _take_partner_inflows(pool, bill, anchors, inflows, fit)
+        if bill.id in pool.settled_outflows:
+            settled_outflow, fit = _settled_fit(
+                emit, pool.settled_outflows[bill.id], loaded, card_ids
+            )
+            _take_partner_inflows(pool, emit, bill, anchors, inflows, settled_outflow, fit)
             continue
-        mine: list[tuple[TxnView, _Fit]] = []
-        for t in outflows:
-            fit = _fit_for(emit, t, card_ids)
-            if t.id in pool and _matches_bill(t, bill, anchors, fit):
-                mine.append((t, fit))
+        mine = [
+            (t, fits[t.id])
+            for t in outflows
+            if t.id in pool and _matches_bill(t, bill, anchors, fits[t.id])
+        ]
         if len(mine) != 1:
             continue
         my_outflow, fit = mine[0]
         month = _month(bill)
-        my_inflow = _own_inflow(pool, my_outflow, bill, inflows, anchors, fit)
+        my_inflow = _own_inflow(pool, emit, my_outflow, bill, inflows, anchors, fit)
         if my_inflow is None:
             _propose_outflow_only(pool, emit, my_outflow, bill, month)
             continue
@@ -89,7 +91,7 @@ def rule_joint_settlement(pool: Pool, emit: Emitter) -> None:
             for t in inflows
             if t.id in pool
             and t.id != my_inflow.id
-            and t.category_name in PARTNER_CATEGORIES
+            and not _is_yours(emit, t, my_outflow)
             and _matches_bill(t, bill, anchors, fit)
         ]
         extra: dict[str, object] = {"bill_txn_id": bill.id, "bill_month": month}
@@ -147,22 +149,38 @@ def _fit_for(emit: Emitter, outflow: TxnView, card_ids: frozenset[int]) -> _Fit:
 
 
 def _settled_fit(
-    pool: Pool, emit: Emitter, bill: TxnView, anchors: list[TxnView], card_ids: frozenset[int]
-) -> _Fit:
-    """The fit of a bill already settled: the loose one when its approved payment named the card.
+    emit: Emitter,
+    outflow_ids: tuple[int, ...],
+    loaded: Mapping[int, TxnView],
+    card_ids: frozenset[int],
+) -> tuple[TxnView | None, _Fit]:
+    """The approved payment of a bill already settled, and the fit it earns.
 
-    The payment is linked, so it is read from the evidence rather than the pool.
+    The payment is the outflow the settlement links, read from the loaded transactions because it
+    is linked. The fit is the loose one when that payment named the card; of several settlements
+    of one bill, one that named the card wins. It is None when the payment is outside the range.
     """
-    for txn in pool.evidence():
-        if _is_outflow(txn, emit):
-            fit = _fit_for(emit, txn, card_ids)
-            if fit.card_named and _matches_bill(txn, bill, anchors, fit):
-                return fit
-    return _TIGHT
+    settled: tuple[TxnView | None, _Fit] = (None, _TIGHT)
+    for outflow_id in outflow_ids:
+        txn = loaded.get(outflow_id)
+        if txn is None:
+            continue
+        fit = _fit_for(emit, txn, card_ids)
+        if fit.card_named:
+            return txn, fit
+        if settled[0] is None:
+            settled = (txn, fit)
+    return settled
 
 
 def _take_partner_inflows(
-    pool: Pool, bill: TxnView, anchors: list[TxnView], inflows: list[TxnView], fit: _Fit
+    pool: Pool,
+    emit: Emitter,
+    bill: TxnView,
+    anchors: list[TxnView],
+    inflows: list[TxnView],
+    outflow: TxnView | None,
+    fit: _Fit,
 ) -> None:
     """Take the partner inflows of a bill whose settlement is already approved, out of the pool.
 
@@ -172,10 +190,26 @@ def _take_partner_inflows(
     for candidate in inflows:
         if (
             candidate.id in pool
-            and candidate.category_name in PARTNER_CATEGORIES
+            and not _is_yours(emit, candidate, outflow)
             and _matches_bill(candidate, bill, anchors, fit)
         ):
             pool.take_partner(candidate.id)
+
+
+def _is_yours(emit: Emitter, inflow: TxnView, outflow: TxnView | None) -> bool:
+    """True when a joint-checking inflow is your own contribution rather than your partner's.
+
+    It is yours when it repeats the Zelle confirmation of your outflow, names one of your tracked
+    personal accounts by its last four digits, or carries one of your own names. Any other
+    inflow to joint checking is a partner contribution.
+    """
+    confirmation = extract_zelle_conf(outflow.description) if outflow is not None else None
+    if confirmation and extract_zelle_conf(inflow.description) == confirmation:
+        return True
+    personal = {account.id for account in emit.accounts if not account.joint}
+    if emit.accounts_by_digits(inflow.description, exclude=inflow.account_id) & personal:
+        return True
+    return emit.patterns.self_inflow.search(inflow.description) is not None
 
 
 def _half_within_window(txn: TxnView, bill: TxnView, slack_cents: int) -> bool:
@@ -193,7 +227,9 @@ def _matches_bill(txn: TxnView, bill: TxnView, anchors: list[TxnView], fit: _Fit
     A payment that named its card competes only with that card's bills.
     """
     eligible = [b for b in anchors if fit.cards is None or b.account_id in fit.cards]
-    if bill not in eligible or not _half_within_window(txn, bill, fit.slack_cents):
+    if (fit.cards is not None and bill.account_id not in fit.cards) or not _half_within_window(
+        txn, bill, fit.slack_cents
+    ):
         return False
     fitting = [b for b in eligible if _half_within_window(txn, b, fit.slack_cents)]
     nearest = min(abs((txn.posted_on - b.posted_on).days) for b in fitting)
@@ -202,6 +238,7 @@ def _matches_bill(txn: TxnView, bill: TxnView, anchors: list[TxnView], fit: _Fit
 
 def _own_inflow(
     pool: Pool,
+    emit: Emitter,
     outflow: TxnView,
     bill: TxnView,
     inflows: list[TxnView],
@@ -210,14 +247,15 @@ def _own_inflow(
 ) -> TxnView | None:
     """Your joint-checking inflow: the one with the same Zelle confirmation, else the only fit.
 
-    With extra slack from half the bill, the inflow must also match the outflow to the cent, so
-    the pair explains your payment and not a nearby amount.
+    Only inflows that are yours count (see _is_yours). With extra slack from half the bill, the
+    inflow must also match the outflow to the cent, so the pair explains your payment and not a
+    nearby amount.
     """
     candidates = [
         t
         for t in inflows
         if t.id in pool
-        and t.category_name != OWN_EXCLUDED_CATEGORY
+        and _is_yours(emit, t, outflow)
         and _matches_bill(t, bill, anchors, fit)
         and (not fit.card_named or abs(t.amount_cents - abs(outflow.amount_cents)) <= 1)
     ]

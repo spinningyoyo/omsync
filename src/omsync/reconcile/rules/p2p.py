@@ -1,14 +1,12 @@
-"""General P2P reimbursement proposals and evidence scoring."""
+"""P2P round trips, and the wordings of payments to and from people."""
 
-import math
 import re
+from dataclasses import replace
 
 from omsync.ledger.links import LinkKind
-from omsync.receipts.vendors import BUILT_IN_VENDORS
 from omsync.reconcile.model import Queue, TxnView
 from omsync.reconcile.pool import Pool
-from omsync.reconcile.rules.base import Emitter, claim, days_after
-from omsync.reconcile.rules.merchant_returns import MERCHANT_EXCLUDED_CATEGORIES
+from omsync.reconcile.rules.base import Emitter, claim, days_gap
 from omsync.reconcile.rules.transfers import is_transfer_like
 
 # Zelle, Venmo, and PayPal credits that say they came from someone.
@@ -21,35 +19,16 @@ P2P_INFLOW_RE = re.compile(
     re.IGNORECASE,
 )
 
-P2P_EXCLUDED_CATEGORIES = MERCHANT_EXCLUDED_CATEGORIES
-
-STRONG_EVIDENCE_KEYWORDS = frozenset(
-    {
-        "costco",
-        "home depot",
-        "homedepot",
-        "target",
-        "walmart",
-        "amazon",
-        "lowes",
-        "best buy",
-        "bestbuy",
-        "ikea",
-        "trader joe",
-        "whole foods",
-        "safeway",
-        "kroger",
-        "publix",
-        "cvs",
-        "walgreens",
-        "rite aid",
-        "dicks sporting",
-        "dicksportinggoods",
-        "rei",
-        "nordstrom",
-        "macys",
-    }
-)
+_ZELLE_PERSON_RES = {
+    direction: re.compile(
+        r"Zelle\s+(?:payment|Transfer|Recurring payment|Scheduled payment)\s+"
+        rf"{direction}\s+(?P<rest>.*)",
+        re.IGNORECASE,
+    )
+    for direction in ("to", "from")
+}
+_NAME_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'.-]*")
+_MEMO_RE = re.compile(r"\s+for\b", re.IGNORECASE)
 
 # Words every P2P description shares, which say how the money moved and not what it was for.
 GENERIC_WORDS = frozenset(
@@ -85,164 +64,91 @@ GENERIC_WORDS = frozenset(
     }
 )
 
-WEAK_EVIDENCE_KEYWORDS = frozenset(
-    {
-        "groceries",
-        "grocery",
-        "food",
-        "gas",
-        "dinner",
-        "lunch",
-        "drinks",
-        "shopping",
-        "store",
-        "supplies",
-        "stuff",
-        "trip",
-        "travel",
-    }
-)
-
-BASE_P2P_CONFIDENCE = 0.60
-P2P_CONFIDENCE_CAP = 0.90
-AMOUNT_BOOST_THRESHOLD = 100.0  # dollars
-AMOUNT_BOOST_MULTIPLIER = 0.088  # 0.15 / (log10(5000) - log10(100))
-REVIEW_THRESHOLD = 0.90
-WINDOW_DAYS = 30
-
-_AMAZON = next(vendor for vendor in BUILT_IN_VENDORS if vendor.key == "amazon")
+ROUND_TRIP_WINDOW_DAYS = 30
 
 
-def rounding_penalty(debit: TxnView, credit: TxnView) -> float:
-    """-0.05 when the two amounts differ by one cent, else nothing."""
-    diff = abs(abs(debit.amount_cents) - abs(credit.amount_cents))
-    return -0.05 if 0 < diff <= 1 else 0.0
+def rule_round_trip(pool: Pool, emit: Emitter) -> None:
+    """Round trip: a Zelle payment to a person and the same amount from them, in either order.
 
-
-def evidence_boost(memo: str, debit_payee: str) -> float:
-    """Relationship evidence between the inflow's text and the debit's payee: 0.15, 0.07, or 0.
-
-    Keywords match whole words, so "rei" is not found in "reimbursement". Words every P2P
-    description shares do not count as the payee's name.
+    The first two name tokens must agree, where a one-letter second token matches a second token
+    that starts with it. The amounts are equal and the dates at most 30 days apart. Every pair is
+    automatic: payments to one person of one amount are interchangeable, so of several, the
+    nearest pairs are linked first, by date gap and then IDs. Your own names, accounts you name,
+    saved counterparties (their own rule proposes those, and may expect no match), and anything an
+    earlier rule proposed are left out. The memo after "for" never decides a match.
     """
-    memo_words = _words(memo)
+    proposed = {t for d in emit.drafts for t in (d.out_txn_id, d.in_txn_id)}
+    people = {t.id: _person(t, emit) for t in pool if t.id not in proposed}
+    outflows = [t for t in pool if people.get(t.id) and t.amount_cents < 0]
+    inflows = [t for t in pool if people.get(t.id) and t.amount_cents > 0]
 
-    # Strong: Amazon on both sides, under any of its spellings.
-    if _AMAZON.is_vendor_payee(memo or "") and _AMAZON.is_vendor_payee(debit_payee or ""):
-        return 0.15
+    def fits(out: TxnView, inn: TxnView) -> bool:
+        return (
+            _same_person(people[out.id], people[inn.id])
+            and abs(out.amount_cents) == inn.amount_cents
+            and days_gap(out, inn) <= ROUND_TRIP_WINDOW_DAYS
+            and emit.allowed(out, inn)
+        )
 
-    # Strong: a specific merchant name appears in both.
-    payee_words = _words(debit_payee)
-    for keyword in STRONG_EVIDENCE_KEYWORDS:
-        if _has_phrase(memo_words, keyword) and _has_phrase(payee_words, keyword):
-            return 0.15
-
-    # Strong: the memo contains the payee's first distinctive word, when it is 4 letters or more.
-    payee_first = next((w for w in payee_words.split() if w not in GENERIC_WORDS), "")
-    if len(payee_first) >= 4 and payee_first.isalpha() and _has_phrase(memo_words, payee_first):
-        return 0.15
-
-    # Weak: a generic spending word in the memo.
-    for keyword in WEAK_EVIDENCE_KEYWORDS:
-        if _has_phrase(memo_words, keyword):
-            return 0.07
-    return 0.0
-
-
-def _words(text: str | None) -> str:
-    """Lowercase words of the text, single-spaced, with punctuation as the separator."""
-    return " ".join(re.findall(r"[a-z0-9]+", (text or "").lower()))
-
-
-def _has_phrase(words: str, phrase: str) -> bool:
-    return f" {_words(phrase)} " in f" {words} "
-
-
-def amount_boost(amount_dollars: float) -> float:
-    """Up to 0.15 for large amounts, which are rarer and so stronger evidence."""
-    if amount_dollars < AMOUNT_BOOST_THRESHOLD:
-        return 0.0
-    log_boost = (math.log10(amount_dollars) - 2.0) * AMOUNT_BOOST_MULTIPLIER
-    return min(0.15, max(0.0, log_boost))
-
-
-def compute_p2p_confidence(debit: TxnView, inflow: TxnView, memo: str) -> float:
-    """Score a debit against an inflow: 0.60, plus or minus the boosts, capped at 0.90."""
-    score = BASE_P2P_CONFIDENCE
-    score += rounding_penalty(debit, inflow)
-    score += evidence_boost(memo, debit.description)
-    score += amount_boost(abs(debit.amount_cents) / 100)
-    return min(P2P_CONFIDENCE_CAP, max(0.0, score))
-
-
-def rule_p2p(pool: Pool, emit: Emitter) -> None:
-    """Match each P2P inflow to the one debit that fits, or to the best of several.
-
-    One candidate: review at 0.90 or more, otherwise manual. Several: the highest-scoring debit,
-    as manual. None: nothing is proposed, because a payment from a person has no second side to
-    link. The inflow still leaves the pool, so a merchant-return rule never reads it as a refund;
-    it is listed as Not matched instead. Matched pairs are reserved even for manual proposals so
-    later rules do not offer competing explanations in the same run.
-    """
-    inflows = [t for t in pool if t.amount_cents > 0 and P2P_INFLOW_RE.search(t.description)]
-    debits = [
-        t
-        for t in pool
-        if t.amount_cents < 0
-        and (t.category_name or "") not in P2P_EXCLUDED_CATEGORIES
-        and not is_transfer_like(t, emit)
-    ]
-
-    for inflow in inflows:
-        if inflow.id not in pool:
+    partners = {out.id: [i for i in inflows if fits(out, i)] for out in outflows}
+    senders = {i.id: [o for o in outflows if fits(o, i)] for i in inflows}
+    pairs = sorted(
+        ((out, inn) for out in outflows for inn in partners[out.id]),
+        key=lambda pair: (days_gap(*pair), pair[0].id, pair[1].id),
+    )
+    for out, inn in pairs:
+        if out.id not in pool or inn.id not in pool:
             continue
-        candidates = [
-            d
-            for d in debits
-            if d.id in pool
-            and abs(abs(d.amount_cents) - inflow.amount_cents) <= 1
-            and 0 <= days_after(inflow, d) <= WINDOW_DAYS
-            and emit.allowed(d, inflow)
-        ]
-        memo = _inflow_text(inflow)
-
-        if len(candidates) == 1:
-            debit = candidates[0]
-            conf = compute_p2p_confidence(debit, inflow, memo)
-            claim(
-                pool,
-                emit,
-                rule="p2p",
-                kind=LinkKind.p2p,
-                first=debit,
-                second=inflow,
-                queue=Queue.review if conf >= REVIEW_THRESHOLD else Queue.manual,
-                confidence=conf,
-                drain=True,
-                notes=f"conf={conf:.2f}",
-            )
-        elif len(candidates) > 1:
-            scored = sorted(
-                ((d, compute_p2p_confidence(d, inflow, memo)) for d in candidates),
-                key=lambda pair: -pair[1],
-            )
-            best, best_conf = scored[0]
-            claim(
-                pool,
-                emit,
-                rule="p2p",
-                kind=LinkKind.p2p,
-                first=best,
-                second=inflow,
-                queue=Queue.manual,
-                confidence=best_conf,
-                drain=True,
-                notes=f"ambiguous: {len(candidates)} debits, top conf={best_conf:.2f}",
-            )
-        else:
-            pool.take(inflow.id)
+        unique = len(partners[out.id]) == 1 and len(senders[inn.id]) == 1
+        claim(
+            pool,
+            emit,
+            rule="rt",
+            kind=LinkKind.p2p,
+            first=out,
+            second=inn,
+            queue=Queue.auto_approve,
+            notes=None
+            if unique
+            else f"nearest of {len(partners[out.id])} inflows, {len(senders[inn.id])} outflows",
+            extra={"person": " ".join(people[out.id] or ())},
+        )
 
 
-def _inflow_text(inflow: TxnView) -> str:
-    """The text that explains an inflow: its source description, then your own memo."""
-    return " ".join(part for part in (inflow.description, inflow.memo) if part)
+def _person(txn: TxnView, emit: Emitter) -> tuple[str, str] | None:
+    """Return the first two name tokens of a Zelle payment to or from someone, lowercased.
+
+    None when the description is not such a payment, names fewer than two tokens, is your own
+    money (your name or a tracked account), or belongs to a saved counterparty.
+    """
+    direction = "to" if txn.amount_cents < 0 else "from"
+    match = _ZELLE_PERSON_RES[direction].search(txn.description)
+    if match is None:
+        return None
+    tokens: list[str] = []
+    for word in match.group("rest").split():
+        if not _NAME_TOKEN_RE.fullmatch(word) or word.lower() in ("for", "conf"):
+            break
+        tokens.append(word.lower())
+        if len(tokens) == 2:
+            break
+    if len(tokens) < 2:
+        return None
+    # The memo after "for" must not decide whether the payment is your own money.
+    core = replace(txn, description=_MEMO_RE.split(txn.description, maxsplit=1)[0])
+    own = (
+        is_transfer_like(core, emit)
+        if txn.amount_cents < 0
+        else emit.patterns.self_inflow.search(core.description)
+        or emit.accounts_by_digits(core.description, exclude=txn.account_id)
+    )
+    saved = any(m.matches(txn.description, txn.amount_cents) for m in emit.counterparties)
+    return None if own or saved else (tokens[0], tokens[1])
+
+
+def _same_person(first: tuple[str, str] | None, second: tuple[str, str] | None) -> bool:
+    """True when the first tokens agree and the second tokens agree or one is an initial."""
+    if first is None or second is None or first[0] != second[0]:
+        return False
+    short, long = sorted((first[1], second[1]), key=len)
+    return short == long or (len(short) == 1 and long.startswith(short))

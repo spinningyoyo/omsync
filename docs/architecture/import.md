@@ -20,6 +20,12 @@ account, and previews three outcomes for each row:
 - **Review** when the row may describe an existing transaction but the evidence is ambiguous
   or contradictory.
 
+Venmo and PayPal statements are not imported, and omsync does not ask for them. A sender types
+whatever they like into a Venmo or PayPal payment, so its text cannot be read for meaning, and
+nothing else in the ledger could be matched against it. The bank side of that money, a cash-out
+or a PayPal transfer, is imported like any other bank row. [Reconciliation](reconciliation.md)
+does not expect it to have a counterpart.
+
 Source rows retain their reported fields, file identity, and position. Joined rows do not
 overwrite user edits. Import itself does not categorize; the [automatic reconciliation](reconciliation.md) after it
 categorizes first, and `omsync categorize` runs the same step on demand.

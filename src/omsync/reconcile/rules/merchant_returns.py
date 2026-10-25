@@ -3,6 +3,7 @@
 import re
 from collections import defaultdict
 
+from omsync.ledger.categories import CategoryType
 from omsync.ledger.links import LinkKind
 from omsync.receipts.vendors import BUILT_IN_VENDORS
 from omsync.reconcile.model import Queue, TxnView
@@ -10,24 +11,15 @@ from omsync.reconcile.pool import Pool
 from omsync.reconcile.rules.base import Emitter, claim, days_after
 from omsync.reconcile.text import is_generic_paypal_transfer, merchant_brand_similarity
 
-MERCHANT_EXCLUDED_CATEGORIES = frozenset(
-    {
-        "Transfer",
-        "Transfer_External",
-        "Loan",
-        "Income_Salary",
-        "Income_Rental",
-        "Income_Other",
-        "Income_Tax",
-        "Investment",
-        "Suspense",
-        "Uncategorized",
-    }
-)
-"""Category names that never take part in merchant returns.
+NON_SPENDING_TYPES = frozenset({CategoryType.excluded, CategoryType.income})
+"""Category types that never take part in merchant returns: money that is not spending, such as
+transfers, loans, investments, and income."""
 
-These match the category names this user keeps, so a renamed category must be renamed here too.
-"""
+
+def is_spending(txn: TxnView) -> bool:
+    """True unless the transaction's category is of a type that is not spending."""
+    return txn.category_type not in NON_SPENDING_TYPES
+
 
 MERCHANT_RETURN_WINDOW_DAYS = 30
 BRAND_SIMILARITY_THRESHOLD = 0.85
@@ -36,11 +28,24 @@ ONE_CENT = 1
 # PayPal processor prefix, used by rule 7c to keep same-account returns to PayPal payees.
 PAYPAL_RE = re.compile(r"\bPAYPAL\b", re.IGNORECASE)
 
+# Money sent to or received from a person: a Zelle payment, anything through Venmo, or a PayPal
+# transfer. A payment from a person is never a store's refund, even when the amounts agree.
+_PERSON_PAYMENT_RE = re.compile(
+    r"^\s*Zelle\b"
+    r"|\bVENMO\b"
+    r"|PAYPAL\s+(?:TRANSFER|INST\s*XFER|DES:)"
+    r"|PayPal\s+(?:transfer|payment)\s+(?:from|to)\b",
+    re.IGNORECASE,
+)
+
 
 def rule_7a(pool: Pool, emit: Emitter) -> None:
     """Same-account merchant return: an exact-amount refund 1 to 30 days after a purchase.
 
-    A refund that fits several purchases is proposed for manual review and drains nothing.
+    It is automatic when the two share a brand, and a review proposal otherwise. Purchases with the
+    same description are interchangeable, so a refund that fits several of only those takes the
+    latest, then the highest ID. A refund that fits several different purchases is proposed for
+    manual review and drains nothing.
     """
     by_account_and_amount: dict[tuple[int, int], list[TxnView]] = defaultdict(list)
     for txn in _merchant_candidates(pool):
@@ -57,16 +62,22 @@ def rule_7a(pool: Pool, emit: Emitter) -> None:
                 for p in purchases
                 if p.id in pool and _is_return_window(p, refund) and emit.allowed(p, refund)
             ]
+            identical_note = None
+            if len(candidates) > 1 and len({p.description for p in candidates}) == 1:
+                identical_note = f"latest of {len(candidates)} identical purchases"
+                candidates = [max(candidates, key=lambda p: (p.posted_on, p.id))]
+            same_brand = len(candidates) == 1 and _same_brand(candidates[0], refund)
             _settle_return(
                 pool,
                 emit,
                 rule="7a",
                 refund=refund,
                 candidates=candidates,
-                queue=Queue.auto_approve,
+                queue=Queue.auto_approve if same_brand else Queue.review,
                 ambiguous_note=(
                     f"ambiguous: {len(candidates)} purchases match; manual review required"
                 ),
+                match_notes=identical_note,
             )
 
 
@@ -78,7 +89,8 @@ def rule_7c(pool: Pool, emit: Emitter) -> None:
     paypal = [
         t
         for t in pool
-        if (t.category_name or "") not in MERCHANT_EXCLUDED_CATEGORIES
+        if is_spending(t)
+        and not _is_person_payment(t)
         and PAYPAL_RE.search(t.payee_raw)
         and not is_generic_paypal_transfer(t.payee_raw)
     ]
@@ -95,8 +107,7 @@ def rule_7c(pool: Pool, emit: Emitter) -> None:
             and p.account_id == refund.account_id
             and _within_one_cent(p, refund)
             and _is_return_window(p, refund)
-            and merchant_brand_similarity(p.payee_raw, refund.payee_raw)
-            >= BRAND_SIMILARITY_THRESHOLD
+            and _same_brand(p, refund)
             and emit.allowed(p, refund)
         ]
         _settle_return(
@@ -159,8 +170,7 @@ def rule_7d(pool: Pool, emit: Emitter) -> None:
             and p.account_id != refund.account_id
             and _within_one_cent(p, refund)
             and _is_return_window(p, refund)
-            and merchant_brand_similarity(p.payee_raw, refund.payee_raw)
-            >= BRAND_SIMILARITY_THRESHOLD
+            and _same_brand(p, refund)
             and emit.allowed(p, refund)
         ]
         match_notes = None
@@ -186,12 +196,24 @@ def is_pipeline_merchant(payee: str | None) -> bool:
 
 
 def _merchant_candidates(pool: Pool) -> list[TxnView]:
+    """Spending that a store could refund: not a payment to or from a person, and not a purchase
+    that receipt matching owns."""
     return [
         t
         for t in pool
-        if (t.category_name or "") not in MERCHANT_EXCLUDED_CATEGORIES
-        and not is_pipeline_merchant(t.payee_raw)
+        if is_spending(t) and not _is_person_payment(t) and not is_pipeline_merchant(t.payee_raw)
     ]
+
+
+def _is_person_payment(txn: TxnView) -> bool:
+    return _PERSON_PAYMENT_RE.search(txn.description) is not None
+
+
+def _same_brand(purchase: TxnView, refund: TxnView) -> bool:
+    return (
+        merchant_brand_similarity(purchase.payee_raw, refund.payee_raw)
+        >= BRAND_SIMILARITY_THRESHOLD
+    )
 
 
 def _settle_return(

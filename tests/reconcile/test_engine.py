@@ -23,7 +23,7 @@ def _row_counts(session: Session) -> dict[str, int]:
     }
 
 
-def test_a_run_with_joint_counterparty_and_p2p_rules_writes_nothing(add_txn, session):
+def test_a_run_with_joint_and_counterparty_rules_writes_nothing(add_txn, session):
     create_counterparty(
         session,
         name="Sample Sibling",
@@ -39,10 +39,6 @@ def test_a_run_with_joint_counterparty_and_p2p_rules_writes_nothing(add_txn, ses
     add_txn("joint", date(2026, 3, 8), "500.00", f"Zelle payment from Pat; Conf# {CONF}")
     add_txn("checking", ON, "-40.00", "Zelle payment to Sample Sibling")
     add_txn("savings", ON + timedelta(days=3), "40.00", "Zelle payment from Sample Sibling")
-    add_txn("card", ON, "-6000.00", "COSTCO WHSE 123", category="Dining")
-    add_txn(
-        "savings", ON + timedelta(days=1), "6000.00", "Zelle payment from Pat", memo="costco run"
-    )
     current_revision(session)
     session.commit()
     counts_before = _row_counts(session)
@@ -50,7 +46,7 @@ def test_a_run_with_joint_counterparty_and_p2p_rules_writes_nothing(add_txn, ses
 
     result = run(session, start=START, end=END)
 
-    assert {draft.rule_key for draft in result.drafts} >= {"2a", "cp", "p2p"}
+    assert {draft.rule_key for draft in result.drafts} >= {"2a", "cp"}
     assert _row_counts(session) == counts_before
     assert current_revision(session) == revision_before
     assert not session.new and not session.dirty

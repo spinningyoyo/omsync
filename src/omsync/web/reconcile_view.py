@@ -63,8 +63,8 @@ _SECTION_TITLES: dict[str, str] = {
     "p2p": "P2P payments",
 }
 _P2P_SUBTITLES: dict[str, str] = {
+    "rt": "Round trip",
     "cp": "Named counterparty",
-    "p2p": "General",
 }
 
 
@@ -281,7 +281,7 @@ def build_groups(session: Session, drafts: Iterable[Draft]) -> tuple[ProposalGro
         key, title = _group_of(draft)
         titles[key] = title
         buckets.setdefault(key, []).append(_row(draft, sides))
-    order = ("joint", "transfers", "returns", "p2p-cp", "p2p-p2p")
+    order = ("joint", "transfers", "returns", "p2p-rt", "p2p-cp", "p2p-p2p")
     return tuple(
         ProposalGroup(
             key=key,

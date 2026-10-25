@@ -10,8 +10,13 @@ WINDOW_AFTER_DAYS = 30
 
 
 def rule_counterparties(pool: Pool, emit: Emitter) -> None:
-    """Pair outflows to each counterparty with its inflows, one counterparty at a time."""
+    """Pair outflows to each counterparty with its inflows, one counterparty at a time.
+
+    A counterparty you said no match is expected from proposes nothing: its payments are Explained.
+    """
     for matcher in emit.counterparties:
+        if matcher.no_match_expected:
+            continue
         debits = [t for t in pool if t.amount_cents < 0 and matcher.is_paid_to(t.description)]
         credits = [t for t in pool if t.amount_cents > 0 and matcher.is_paid_by(t.description)]
         pair_unambiguously(
