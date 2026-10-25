@@ -4,16 +4,24 @@ Batch tables are imported too: ledger foreign keys point at `batch`, so the meta
 """
 
 from omsync.core.batch_models import Batch, BatchChange, BatchState, DataRevision
-from omsync.ledger.categories import AmountRule, Category, CategoryType, Keyword, SavedFilter
-from omsync.ledger.links import (
-    Acknowledgment,
-    Counterparty,
-    CounterpartyKind,
-    Link,
-    LinkKind,
-    RejectedProposal,
-    RejectionReason,
+from omsync.ledger.categories import (
+    Category,
+    CategoryRule,
+    CategoryType,
+    Keyword,
+    RuleOtherSide,
+    SavedFilter,
 )
+from omsync.ledger.contacts import (
+    AccountNickname,
+    Contact,
+    ContactAccount,
+    ContactKind,
+    ContactName,
+    ContactPattern,
+    ContactRole,
+)
+from omsync.ledger.links import Link, LinkKind, RejectedProposal, RejectionReason
 from omsync.ledger.plan_models import (
     BudgetKind,
     BudgetLine,
@@ -38,6 +46,7 @@ from omsync.ledger.statements import BalanceKind, StatementBalance, StatementFil
 from omsync.ledger.sync_models import SyncRun, SyncStatus
 from omsync.ledger.transactions import (
     CategoryOrigin,
+    ContactOrigin,
     ImportReview,
     MatchKind,
     ReviewStatus,
@@ -47,11 +56,10 @@ from omsync.ledger.transactions import (
 )
 
 __all__ = [
-    "Acknowledgment",
     "Account",
     "AccountAlias",
+    "AccountNickname",
     "AccountType",
-    "AmountRule",
     "Batch",
     "BatchChange",
     "BatchState",
@@ -60,10 +68,16 @@ __all__ = [
     "BudgetLine",
     "Cadence",
     "Category",
+    "CategoryRule",
     "CategoryType",
     "CategoryOrigin",
-    "Counterparty",
-    "CounterpartyKind",
+    "Contact",
+    "ContactAccount",
+    "ContactKind",
+    "ContactName",
+    "ContactOrigin",
+    "ContactPattern",
+    "ContactRole",
     "DataRevision",
     "Goal",
     "ImportReview",
@@ -82,6 +96,7 @@ __all__ = [
     "RejectedProposal",
     "RejectionReason",
     "ReviewStatus",
+    "RuleOtherSide",
     "SavedFilter",
     "SeriesStatus",
     "Split",

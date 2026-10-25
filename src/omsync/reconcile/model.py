@@ -10,6 +10,7 @@ from enum import StrEnum
 from typing import Any
 
 from omsync.ledger.categories import CategoryType
+from omsync.ledger.contacts import ContactRole
 from omsync.ledger.links import LinkKind
 from omsync.ledger.sources import AccountType
 
@@ -37,6 +38,9 @@ class TxnView:
     description is the text rules match: the statement row's description, as import reads it. It
     comes from the statement row, never from Transaction.memo, which you and omsync edit.
     payee_raw is the transaction's raw payee, which the payee and the receipt checks read.
+
+    contact_id, contact_account_id, and contact_role are the other side stored on the transaction
+    (see omsync.ledger.other_side), and the contact's role.
     """
 
     id: int
@@ -52,6 +56,14 @@ class TxnView:
     memo: str | None
     category_name: str | None
     category_type: CategoryType | None
+    contact_id: int | None = None
+    contact_account_id: int | None = None
+    contact_role: ContactRole | None = None
+
+    @property
+    def with_household(self) -> bool:
+        """True when the stored other side is the owner or the co-owner of the joint accounts."""
+        return self.contact_role in (ContactRole.owner, ContactRole.co_owner)
 
 
 @dataclass(frozen=True)
@@ -101,47 +113,34 @@ class Draft:
 class ExplainedBy(StrEnum):
     """Why a transaction that is expected to have a counterpart needs no decision from you.
 
-    acknowledged: you said no counterpart is expected for it.
-    counterparty: you said none is expected from its counterparty.
-    forwarded: the money went on to a joint account.
-    partner: a joint settlement recorded it as a partner's contribution.
-    None of these is a link, so none of them reconciles the transaction.
+    contact: its other side is a stored contact, recognized or chosen.
+    named: it is a payment naming a person you have no contact for; the name is the other side.
+    Neither is a link, so neither reconciles the transaction.
     """
 
-    acknowledged = "acknowledged"
-    counterparty = "counterparty"
-    forwarded = "forwarded"
-    partner = "partner"
+    contact = "contact"
+    named = "named"
 
 
 @dataclass(frozen=True)
 class NotMatched:
-    """A transaction expected to have a counterpart that no link or proposal accounts for.
-
-    txn carries the amount no link explains yet. hint says why an explanation was not made for
-    you, such as several outflows that could be the forward of a payment.
-    """
+    """A transaction expected to have a counterpart that no link or proposal accounts for, and
+    whose other side is unknown. txn carries the amount no link explains yet."""
 
     txn: TxnView
-    hint: str | None = None
 
 
 @dataclass(frozen=True)
 class Explained:
     """A transaction that would be Not matched, with the reason it needs nothing from you.
 
-    acknowledgment_id and counterparty_id say which decision of yours is the reason. For a
-    forward, forwarded_ids are the outflows along the way, the first on the transaction's own
-    account, and shared_words are the words both descriptions use.
+    contact_id is the stored contact, for an explanation by contact.
     """
 
     txn: TxnView
     by: ExplainedBy
     reason: str
-    acknowledgment_id: int | None = None
-    counterparty_id: int | None = None
-    forwarded_ids: tuple[int, ...] = ()
-    shared_words: tuple[str, ...] = ()
+    contact_id: int | None = None
 
 
 def pair_signature(first_id: int | None, second_id: int | None, amount_cents: int) -> str:

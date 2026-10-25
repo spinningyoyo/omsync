@@ -39,8 +39,8 @@ the chip or menu that asked for it. On large screens the title and these control
 while the table scrolls under them with its header row fixed and the pager below it; on small
 screens the whole page scrolls.
 
-The split editor shows the amount left. Each part has a category and a nonzero amount with
-the transaction's sign. Save requires exact conservation of the parent amount. User splits
+The split editor shows the amount left. Each part has a category and a nonzero amount, which may
+be positive or negative. Save requires exact conservation of the parent amount. User splits
 have manual origin and clear the parent category. Removing the splits leaves the transaction
 uncategorized rather than inventing a replacement category.
 
@@ -49,6 +49,18 @@ moves down to the same field of the next row. Up and Down arrows move between ro
 category list that is open, where they choose an option. Letters always type into the focused field
 or jump within the category list; a split opens only from the row's Split button. A refused save
 keeps the entered value and says why, and navigation does not treat a failed save as success.
+
+## Transaction detail
+
+A transaction's detail page, opened from the row's actions menu, shows the transaction and who is on
+the other side of it: the contact and the contact's account, or one of the owner's accounts outside
+the ledger, and whether omsync recognized it or you set it (see [contacts](contacts.md)). It sets the
+other side to a contact or account, or clears it, as a batch with the usual undo. A split transaction
+lists its parts, each with an other side of its own that the transaction's other side stands in for
+when empty. The register itself does not edit the other side.
+
+The detail also says which rule set the transaction's category, as "Set by rule" with the rule's
+sentence. A transaction whose category a rule set, but that no rule holds for now, says so instead.
 
 ## Edit flow
 

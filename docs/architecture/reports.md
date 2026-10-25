@@ -15,7 +15,7 @@ Transfer and joint-settlement links exclude the amounts they explain, not necess
 whole transaction. A $100 outflow with $40 explained by such a link still contributes $60.
 Refund, P2P, and receipt links do not exclude amounts merely because they exist.
 
-Lines in an excluded category are excluded. Uncategorized lines appear separately as
+Lines in an excluded or owed category are excluded. Uncategorized lines appear separately as
 net outflow, rather than being misrepresented as classified income or expenses. Income is
 the signed sum of income-category lines. Expenses are the negated sum of spending-category
 lines: refunds reduce expenses, and income reversals reduce income. Net is income minus
@@ -47,6 +47,8 @@ category trends, and budget performance. Category drill-down opens the register 
 category and period, where source transactions remain full amounts rather than altered
 personal shares. Joint-share selection is a presentation preference shared with the
 dashboard and budgeting. A printable report uses the same accounting interpretation.
+[Contact balances](contacts.md#balances) count joint-account amounts the same way, with the same
+preference, but ignore links.
 
 The Plan summary describes the current month's budget; it is distinct from the selected
 historical transaction period. The interface must make that context clear.

@@ -52,7 +52,7 @@
   {{ empty_state("No proposals in this range", "The rules found no links to propose. Transactions that should have a counterpart and do not are listed under Not matched.", mascot=true) }}
   {%- endif %}
 
-  {{ not_matched_card(results.not_matched, start, end) }}
+  {{ not_matched_card(results.not_matched, start, end, results.side_choices) }}
 
   {%- for vendor in results.vendors %}
   {{ receipts_card(vendor, start, end) }}
@@ -206,18 +206,51 @@
 </section>
 {%- endmacro %}
 
-{# Transactions whose wording says a counterpart should exist, with no link or proposal for them. #}
-{% macro not_matched_card(rows, start, end) -%}
+{# Transactions whose wording says a counterpart should exist, with no link or proposal for them
+   and no known other side. #}
+{% macro not_matched_card(rows, start, end, choices) -%}
 <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="not-matched-title">
   <div>
     <h2 id="not-matched-title" class="font-medium text-primary">Not matched <span class="text-sm text-secondary">({{ rows|length }})</span></h2>
-    <p class="text-sm text-secondary">Transfers, card payments, and payments from people whose other side is not linked or proposed. Link one by hand, or say that none is expected.</p>
+    <p class="text-sm text-secondary">Transfers, card payments, and payments from people whose other side is not linked or proposed and not known. Link one by hand, or choose rows and say what is on the other side.</p>
   </div>
   {%- if rows %}
+  <form id="other-side-form" class="flex flex-wrap items-end gap-3" hx-post="/reconcile/other-side">
+    <input type="hidden" name="start" value="{{ start }}">
+    <input type="hidden" name="end" value="{{ end }}">
+    <input type="hidden" name="idempotency_key" value="{{ new_key() }}">
+    <label class="form-field w-auto min-w-[16rem]">
+      <span class="form-field__label">What is on the other side of the selected rows?</span>
+      <select name="target" class="form-field__input" required>
+        <option value="">Choose…</option>
+        {%- for group in choices %}
+        <optgroup label="{{ group.label }}">
+          {%- for choice in group.choices %}
+          <option value="{{ choice.value }}">{{ choice.label }}</option>
+          {%- endfor %}
+        </optgroup>
+        {%- endfor %}
+        <option value="new">A new contact…</option>
+      </select>
+    </label>
+    <label class="form-field w-auto min-w-[12rem]">
+      <span class="form-field__label">New contact's name</span>
+      <input type="text" name="new_name" maxlength="80" class="form-field__input" placeholder="Only for a new contact">
+    </label>
+    <label class="form-field w-auto min-w-[8rem]">
+      <span class="form-field__label">Kind</span>
+      <select name="new_kind" class="form-field__input">
+        <option value="person">Person</option>
+        <option value="business">Business</option>
+      </select>
+    </label>
+    {{ button("Set other side", variant="primary", type="submit") }}
+  </form>
   <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Not matched transactions">
     <table class="w-full border-separate border-spacing-0 text-sm text-primary">
       <thead>
         <tr>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Select</span></th>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Account</th>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Description</th>
@@ -229,13 +262,13 @@
       <tbody>
         {%- for row in rows %}
         <tr>
+          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+            <input type="checkbox" class="checkbox" name="txn" value="{{ row.txn_id }}" form="other-side-form" aria-label="Select {{ row.description }}">
+          </td>
           <td class="px-3 py-3 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.on }}</td>
           <td class="px-3 py-3 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.account }}</td>
           <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
             <span class="break-words">{{ row.description }}</span>
-            {%- if row.hint %}
-            <p class="mt-1 text-xs text-secondary">{{ row.hint }}</p>
-            {%- endif %}
           </td>
           <td class="px-3 py-3 align-top text-secondary{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.category }}</td>
           <td class="px-3 py-3 align-top text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.amount }}</td>
@@ -247,20 +280,6 @@
                 "hx-swap": "innerHTML",
                 "data-action": "page-dialogs#openDialog",
                 "data-dialog-id": "reconcile-link-dialog",
-              }) }}
-              {{ button("No match expected…", variant="outline", size="sm", attrs={
-                "hx-get": "/reconcile/acknowledge?scope=transaction&txn=" ~ row.txn_id ~ "&start=" ~ start ~ "&end=" ~ end,
-                "hx-target": "#reconcile-ack-body",
-                "hx-swap": "innerHTML",
-                "data-action": "page-dialogs#openDialog",
-                "data-dialog-id": "reconcile-ack-dialog",
-              }) }}
-              {{ button("None expected from this counterparty…", variant="outline", size="sm", attrs={
-                "hx-get": "/reconcile/acknowledge?scope=counterparty&txn=" ~ row.txn_id ~ "&start=" ~ start ~ "&end=" ~ end,
-                "hx-target": "#reconcile-ack-body",
-                "hx-swap": "innerHTML",
-                "data-action": "page-dialogs#openDialog",
-                "data-dialog-id": "reconcile-ack-dialog",
               }) }}
             </div>
           </td>
@@ -275,12 +294,12 @@
 </section>
 {%- endmacro %}
 
-{# What would be Not matched, with the reason it needs nothing from you. None of it is a link. #}
+{# What would be Not matched, with the other side that explains it. None of it is a link. #}
 {% macro explained_card(rows, start, end) -%}
 <details class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs">
   <summary class="cursor-pointer font-medium text-primary">Explained ({{ rows|length }})</summary>
   {%- if rows %}
-  <p class="text-sm text-secondary">Expected to have a counterpart, but you or the ledger have explained why not. These are not reconciled: only links reconcile a transaction.</p>
+  <p class="text-sm text-secondary">Expected to have a counterpart, but its other side is known: a contact, or one of your accounts outside omsync. These are not reconciled: only links reconcile a transaction.</p>
   <div class="table-scroll rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Explained transactions">
     <table class="w-full border-separate border-spacing-0 text-sm text-primary">
       <thead>
@@ -289,8 +308,7 @@
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Account</th>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Description</th>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Why</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Actions</span></th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Other side</th>
         </tr>
       </thead>
       <tbody>
@@ -301,26 +319,8 @@
           <td class="px-3 py-2 align-top break-words{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.description }}</td>
           <td class="px-3 py-2 align-top text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.amount }}</td>
           <td class="px-3 py-2 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
-            <span>{{ row.reason }}</span>
-            {%- if row.shared_words %}
-            <p class="mt-1 text-xs text-secondary">Shared words: {{ row.shared_words }}</p>
-            {%- endif %}
-          </td>
-          <td class="px-3 py-2 align-top text-right{% if not loop.first %} border-t border-subdued{% endif %}">
-            {%- if row.by == "acknowledged" %}
-            {{ button("Remove", variant="outline", size="sm", attrs={
-              "hx-post": "/reconcile/acknowledgments/" ~ row.acknowledgment_id ~ "/remove",
-              "hx-vals": {"start": start, "end": end, "idempotency_key": row.remove_key}|tojson|forceescape,
-            }) }}
-            {%- elif row.by == "counterparty" %}
-            <div class="flex flex-col items-end gap-2">
-              {{ button("Expect matches again", variant="outline", size="sm", attrs={
-                "hx-post": "/reconcile/counterparties/" ~ row.counterparty_id ~ "/expect-match",
-                "hx-vals": {"start": start, "end": end, "idempotency_key": row.remove_key}|tojson|forceescape,
-              }) }}
-              {{ link_button("Counterparties", href="/settings/counterparties", variant="outline", size="sm") }}
-            </div>
-            {%- endif %}
+            {%- if row.contact_id %}<a href="/settings/contacts/{{ row.contact_id }}" class="underline-offset-2 hover:underline focus-ring">{{ row.reason }}</a>{% else %}{{ row.reason }}{% endif %}
+            <a href="/transactions/{{ row.txn_id }}/detail" class="ml-2 text-xs text-secondary underline-offset-2 hover:underline focus-ring">Change</a>
           </td>
         </tr>
         {%- endfor %}
@@ -516,76 +516,6 @@
 
 {% macro amount_field(amount, oob=false) -%}
 <input id="reconcile-link-amount" name="amount" type="text" inputmode="decimal" class="form-field__input" value="{{ amount }}"{% if oob %} hx-swap-oob="true"{% endif %}>
-{%- endmacro %}
-
-{# The dialog bodies for a transaction's acknowledgment. Both name the transaction and post to
-   the Reconcile routes with the range, so the results re-run when the dialog closes. #}
-{% macro ack_transaction_body(source, txn, start, end, idempotency_key) -%}
-<div class="flex flex-col gap-1">
-  <h2 id="reconcile-ack-title" class="font-medium text-primary">No match expected</h2>
-  <p class="text-sm text-secondary">{{ source.on }} · {{ source.account }} · {{ source.payee }} · {{ source.amount }}. This does not link or reconcile it; it only moves it out of Not matched. Remove it from Explained to undo.</p>
-</div>
-<form class="flex flex-col gap-4" hx-post="/reconcile/acknowledge" hx-target="#reconcile-ack-error" hx-swap="innerHTML">
-  <input type="hidden" name="txn" value="{{ txn }}">
-  <input type="hidden" name="start" value="{{ start }}">
-  <input type="hidden" name="end" value="{{ end }}">
-  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
-  <label class="form-field">
-    <span class="form-field__label">Note (optional)</span>
-    <input type="text" name="note" maxlength="200" class="form-field__input" data-autofocus placeholder="Paid back in cash">
-  </label>
-  <div id="reconcile-ack-error" aria-live="assertive"></div>
-  <div class="flex justify-end gap-2">
-    {{ button("Cancel", variant="outline", attrs={"data-action": "page-dialogs#closeDialog"}) }}
-    {{ button("No match expected", variant="primary", type="submit") }}
-  </div>
-</form>
-{%- endmacro %}
-
-{% macro ack_counterparty_body(source, txn, start, end, idempotency_key, choices, kinds) -%}
-<div class="flex flex-col gap-1">
-  <h2 id="reconcile-ack-title" class="font-medium text-primary">No match expected from this counterparty</h2>
-  <p class="text-sm text-secondary">{{ source.on }} · {{ source.account }} · {{ choices.description }} · {{ source.amount }}. Every transaction whose payee text matches the counterparty's patterns, now and later, moves out of Not matched. Proposals are unchanged. You can review this under Settings, Counterparties.</p>
-</div>
-<form class="flex flex-col gap-4" hx-post="/reconcile/acknowledge/counterparty" hx-target="#reconcile-ack-error" hx-swap="innerHTML">
-  <input type="hidden" name="txn" value="{{ txn }}">
-  <input type="hidden" name="start" value="{{ start }}">
-  <input type="hidden" name="end" value="{{ end }}">
-  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
-  <label class="form-field">
-    <span class="form-field__label">Counterparty</span>
-    <select name="counterparty" class="form-field__input" data-autofocus>
-      {%- for matcher in choices.matching %}
-      <option value="{{ matcher.id }}"{% if matcher.no_match_expected %} disabled{% endif %}>{{ matcher.name }}{% if matcher.no_match_expected %} (already marked){% endif %}</option>
-      {%- endfor %}
-      <option value=""{% if not choices.matching %} selected{% endif %}>New counterparty</option>
-    </select>
-  </label>
-  <fieldset class="flex flex-col gap-3">
-    <legend class="text-xs text-secondary">For a new counterparty</legend>
-    <label class="form-field">
-      <span class="form-field__label">Name</span>
-      <input type="text" name="name" maxlength="80" class="form-field__input">
-    </label>
-    <label class="form-field">
-      <span class="form-field__label">Kind</span>
-      <select name="kind" class="form-field__input">
-        {%- for value, label in kinds %}
-        <option value="{{ value }}"{% if value == "person" %} selected{% endif %}>{{ label }}</option>
-        {%- endfor %}
-      </select>
-    </label>
-    <label class="form-field">
-      <span class="form-field__label">Payee pattern, a regular expression</span>
-      <input type="text" name="pattern" value="{{ choices.suggested_pattern }}" class="form-field__input" spellcheck="false">
-    </label>
-  </fieldset>
-  <div id="reconcile-ack-error" aria-live="assertive"></div>
-  <div class="flex justify-end gap-2">
-    {{ button("Cancel", variant="outline", attrs={"data-action": "page-dialogs#closeDialog"}) }}
-    {{ button("None expected from them", variant="primary", type="submit") }}
-  </div>
-</form>
 {%- endmacro %}
 
 {% macro dialog_error(message) -%}

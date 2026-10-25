@@ -369,7 +369,7 @@
       <div class="flex min-w-0 flex-col gap-0.5">
         <span class="truncate text-sm font-medium text-primary">{{ row.name }}</span>
         {%- if row.needs_type %}
-        <a href="/categories" class="w-fit rounded-sm text-xs text-secondary underline-offset-2 hover:underline focus-ring">Set type</a>
+        <a href="/settings/categories" class="w-fit rounded-sm text-xs text-secondary underline-offset-2 hover:underline focus-ring">Set type</a>
         {%- endif %}
         {%- if row.error %}<p class="text-xs text-destructive" role="alert">{{ row.error }}</p>{% endif %}
       </div>

@@ -1,0 +1,11 @@
+{% extends "layouts/shell.html" %}
+{% from "layouts/shell_parts.html" import page_header %}
+{% from "transactions/detail_parts.html" import detail_region %}
+
+{% block page %}
+<div class="flex flex-col gap-6">
+  {{ page_header("Transaction", "What this payment is, and who is on the other side of it.") }}
+  <div id="toast-region" aria-live="polite"></div>
+  {{ detail_region(detail) }}
+</div>
+{% endblock %}

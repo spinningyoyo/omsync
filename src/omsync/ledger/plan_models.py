@@ -166,9 +166,8 @@ class RecurringRejection(Base):
     """A charge the user said is not this bill. It never matches its series, so the occurrence it
     would have paid is judged without it.
 
-    transaction_id is a foreign key, as Acknowledgment's is. Undoing the import that created the
-    charge is refused while a rejection names it, so a rejection never outlives its charge. Undo the
-    rejection first.
+    transaction_id is a foreign key. Undoing the import that created the charge is refused while a
+    rejection names it, so a rejection never outlives its charge. Undo the rejection first.
     """
 
     __tablename__ = "recurring_rejection"

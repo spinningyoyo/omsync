@@ -1,7 +1,9 @@
 """Transactions, their splits, the statement rows they came from, and ambiguous imports.
 
 A transaction keeps its permanent ID for life, however many statement rows describe it.
-Its splits always add up to its amount, to the cent.
+Its splits always add up to its amount, to the cent. The other side of the money, a contact and
+optionally one of its accounts, is stored on a transaction or a split with an origin, as a category
+is.
 """
 
 from datetime import date, datetime
@@ -19,6 +21,7 @@ class CategoryOrigin(StrEnum):
 
     none = "none"
     keyword = "keyword"
+    rule = "rule"
     receipt = "receipt"
     manual = "manual"
 
@@ -27,7 +30,7 @@ class CategoryOrigin(StrEnum):
         match self:
             case CategoryOrigin.none:
                 return 0
-            case CategoryOrigin.keyword:
+            case CategoryOrigin.keyword | CategoryOrigin.rule:
                 return 1
             case CategoryOrigin.receipt:
                 return 2
@@ -49,13 +52,40 @@ def may_replace(new: CategoryOrigin, current: CategoryOrigin) -> bool:
     overwriting your choices:
 
     - manual ("you") is never replaced by a receipt or a keyword;
-    - a receipt is never replaced by a keyword;
-    - a keyword may replace a keyword, so categorize can rerun;
+    - a receipt is never replaced by a keyword or a rule;
+    - a keyword or a rule may replace the other, so categorize can rerun;
     - anything may replace none, which means unset.
 
     A manual choice may still replace a manual one, because that is you changing your mind.
     """
     return outranks(new, current)
+
+
+class ContactOrigin(StrEnum):
+    """What set the other side of a transaction or split. Higher rank means a stronger claim."""
+
+    none = "none"
+    recognized = "recognized"
+    manual = "manual"
+
+    @property
+    def rank(self) -> int:
+        match self:
+            case ContactOrigin.none:
+                return 0
+            case ContactOrigin.recognized:
+                return 1
+            case ContactOrigin.manual:
+                return 2
+
+
+def may_replace_contact(new: ContactOrigin, current: ContactOrigin) -> bool:
+    """Return True when an other side set by origin `new` may overwrite one set by `current`.
+
+    Recognition never replaces your choice, may replace an earlier recognition so it can rerun,
+    and may replace none. A manual choice may replace any, because that is you changing your mind.
+    """
+    return new.rank >= current.rank
 
 
 class Transaction(Base):
@@ -77,6 +107,13 @@ class Transaction(Base):
         string_enum(CategoryOrigin),
         default=CategoryOrigin.none,
         server_default=CategoryOrigin.none.value,
+    )
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contact.id"), index=True)
+    contact_account_id: Mapped[int | None] = mapped_column(ForeignKey("contact_account.id"))
+    contact_origin: Mapped[ContactOrigin] = mapped_column(
+        string_enum(ContactOrigin),
+        default=ContactOrigin.none,
+        server_default=ContactOrigin.none.value,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -128,6 +165,13 @@ class Split(Base):
         server_default=CategoryOrigin.none.value,
     )
     memo: Mapped[str | None]
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contact.id"), index=True)
+    contact_account_id: Mapped[int | None] = mapped_column(ForeignKey("contact_account.id"))
+    contact_origin: Mapped[ContactOrigin] = mapped_column(
+        string_enum(ContactOrigin),
+        default=ContactOrigin.none,
+        server_default=ContactOrigin.none.value,
+    )
 
     transaction: Mapped[Transaction] = relationship(back_populates="splits")
 

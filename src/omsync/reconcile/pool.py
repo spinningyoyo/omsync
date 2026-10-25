@@ -14,9 +14,10 @@ from sqlalchemy.orm import Session
 
 from omsync.ingest.formats.registry import statement_description
 from omsync.ledger.categories import Category
+from omsync.ledger.contacts import Contact
 from omsync.ledger.links import Link, LinkKind
 from omsync.ledger.sources import Account
-from omsync.ledger.statements import source_texts
+from omsync.ledger.statements import SourceText, source_texts
 from omsync.ledger.transactions import Transaction
 from omsync.reconcile.model import TxnView
 
@@ -32,8 +33,8 @@ class Pool:
     but links only from the open pool. settled_outflows maps each bill that an approved joint
     settlement names to the outflows those settlements link. parked() holds the recorded partner
     contributions: no rule sees them, but you still see them as unmatched. partner_ids() holds
-    the partner inflows the joint rule took out of the pool this run, which a proposal labels or a
-    settlement already recorded.
+    the partner inflows the joint rule took out of the pool this run, because a proposal names
+    them or a settlement already recorded them.
     """
 
     def __init__(
@@ -67,7 +68,8 @@ class Pool:
         return self._evidence
 
     def parked(self) -> tuple[TxnView, ...]:
-        """Recorded partner contributions. Outside every rule; shown only as unmatched."""
+        """Recorded partner contributions. Outside every rule; assessed for Not matched like the
+        rest, and shown as unmatched."""
         return self._parked
 
     def take(self, txn_id: int) -> TxnView:
@@ -101,21 +103,22 @@ def load_pool(
 
     Left out, always: split parents (their splits carry the amounts), zero-amount transactions
     (they explain nothing), and partner contributions that an approved joint settlement recorded
-    (labeled, never linked). Left out unless include_linked: transactions that links fully
+    (never linked; they are parked). Left out unless include_linked: transactions that links fully
     explain. A partly linked transaction stays, with only its unlinked remainder as its amount.
     With include_linked, every transaction keeps its full amount, and linked_cents tells you what
     already explains it. evidence() always holds every loaded transaction at full amount.
 
-    A view's description is the statement row's description, read through the same function as
-    import. It never comes from Transaction.memo, which you and omsync edit.
+    A view's description is the statement row's description (see statement_text). It never comes
+    from Transaction.memo, which you and omsync edit.
     """
     if end < start:
         raise ValueError("end is before start")
 
     rows = session.execute(
-        select(Transaction, Account, Category.name, Category.type)
+        select(Transaction, Account, Category.name, Category.type, Contact.role)
         .join(Account, Account.id == Transaction.account_id)
         .outerjoin(Category, Category.id == Transaction.category_id)
+        .outerjoin(Contact, Contact.id == Transaction.contact_id)
         .where(
             Transaction.posted_on >= start,
             Transaction.posted_on <= end,
@@ -127,12 +130,12 @@ def load_pool(
 
     coverage = _linked_cents(session, start, end)
     partner_ids, settled_outflows = _joint_settlement_evidence(session)
-    sources = source_texts(session, [txn.id for txn, _, _, _ in rows])
+    sources = source_texts(session, [row[0].id for row in rows])
     everything: list[TxnView] = []
     views: list[TxnView] = []
     parked: list[TxnView] = []
     linked: dict[int, int] = {}
-    for txn, account, category_name, category_type in rows:
+    for txn, account, category_name, category_type, contact_role in rows:
         covered = coverage.get(txn.id, 0)
         if covered:
             linked[txn.id] = covered
@@ -146,17 +149,14 @@ def load_pool(
             posted_on=txn.posted_on,
             amount_cents=txn.amount_cents,
             payee_raw=txn.payee_raw,
-            description=(
-                txn.payee_raw
-                if source is None
-                else statement_description(
-                    source.institution_key, source.format_key, source.name, source.memo
-                ).strip()
-            ),
+            description=statement_text(txn.payee_raw, source),
             payee=txn.payee,
             memo=txn.memo,
             category_name=category_name,
             category_type=category_type,
+            contact_id=txn.contact_id,
+            contact_account_id=txn.contact_account_id,
+            contact_role=contact_role,
         )
         everything.append(full)
         if txn.id in partner_ids:
@@ -178,10 +178,14 @@ def load_pool(
     )
 
 
-def transaction_description(session: Session, txn: Transaction) -> str:
-    """The text the rules read for one transaction: its statement row's description."""
-    day = load_pool(session, start=txn.posted_on, end=txn.posted_on, include_linked=True)
-    return next((view.description for view in day.evidence() if view.id == txn.id), txn.payee_raw)
+def statement_text(payee_raw: str, source: SourceText | None) -> str:
+    """The text rules read for a transaction: its statement row's description, read through the
+    same function as import, or its raw payee when no statement row describes it."""
+    if source is None:
+        return payee_raw
+    return statement_description(
+        source.institution_key, source.format_key, source.name, source.memo
+    ).strip()
 
 
 def _joint_settlement_evidence(

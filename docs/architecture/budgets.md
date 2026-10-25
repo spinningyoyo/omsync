@@ -7,7 +7,7 @@ flex-budget concept inspires a choice between one flexible spending number and i
 category budgets. Switching presentation must not erase the user's budget data.
 
 A **budget mode** selects flex or category budgeting. A category's **type** classifies an
-expense as fixed, non-monthly, or flexible; income and excluded categories cannot be budgeted. A **rollover** carries a category's unspent or overspent
+expense as fixed, non-monthly, or flexible; income, excluded, and owed categories cannot be budgeted. A **rollover** carries a category's unspent or overspent
 budget into later months.
 
 ## Behavior
@@ -57,7 +57,7 @@ each visible fixed category that has none this month; it never changes an existi
 ## Actuals and carry
 
 Actuals use [report accounting](reports.md): splits count once, refunds reduce spending,
-transfer and joint-settlement coverage is excluded, and excluded and uncategorized lines do
+transfer and joint-settlement coverage is excluded, and excluded, owed, and uncategorized lines do
 not become category actuals. Joint share applies consistently to actuals, income estimates,
 and carry. Budget progress and reports must agree for the same month and setting.
 

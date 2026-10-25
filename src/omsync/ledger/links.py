@@ -1,16 +1,13 @@
-"""Links that explain part of a transaction's amount, the pairs you turned down, the transactions
-you expect no counterpart for, and the counterparties that lead to proposals.
+"""Links that explain part of a transaction's amount, and the pairs you turned down.
 
-"Reconciled" is never stored. It is worked out from the links. An acknowledgment says no
-counterpart is expected, which is not the same as reconciled: it never covers any of a
-transaction's amount.
+"Reconciled" is never stored. It is worked out from the links.
 """
 
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, false, func
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from omsync.core.db import Base
@@ -81,40 +78,3 @@ class RejectedProposal(Base):
         default=RejectionReason.rejected,
         server_default=RejectionReason.rejected.value,
     )
-
-
-class Acknowledgment(Base):
-    """A transaction you expect no counterpart for. It is a decision about one transaction, and it
-    explains none of its amount: a link is the only thing that reconciles.
-    """
-
-    __tablename__ = "acknowledgment"
-    __table_args__ = {"sqlite_autoincrement": True}
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    transaction_id: Mapped[int] = mapped_column(ForeignKey("transaction.id"), unique=True)
-    note: Mapped[str | None]
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-
-class CounterpartyKind(StrEnum):
-    person = "person"
-    business = "business"
-
-
-class Counterparty(Base):
-    """A person or business that P2P payments go to or come from.
-
-    no_match_expected is a standing acknowledgment: transactions whose payee text matches the
-    patterns on their side are not expected to have a counterpart. It never changes how proposals
-    are made.
-    """
-
-    __tablename__ = "counterparty"
-    __table_args__ = {"sqlite_autoincrement": True}
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str]
-    kind: Mapped[CounterpartyKind] = mapped_column(string_enum(CounterpartyKind))
-    payee_patterns: Mapped[dict[str, list[str]]] = mapped_column(JSON)
-    no_match_expected: Mapped[bool] = mapped_column(default=False, server_default=false())

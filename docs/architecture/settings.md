@@ -15,8 +15,8 @@ vault email can be configured so terminal operations need not ask for it every t
 Configuration cannot widen the loopback bind address. Secrets live in the
 [keychain and vault](access.md), never in TOML.
 
-Institutions, accounts, aliases, providers, categories, keywords, amount rules, and
-counterparties live in the database. Browser storage owns device presentation such as
+Institutions, accounts, aliases, providers, categories, keywords, rules, contacts, and
+account nicknames live in the database. Browser storage owns device presentation such as
 theme, privacy mode, and accounts-panel geometry. Database presentation preferences own
 shared choices such as joint share, dashboard layout, and whether a failed
 sync closes its browser. These are not competing sources
@@ -75,19 +75,32 @@ short-lived opaque tokens tied to the institution; forged, expired, or foreign t
 nothing. Public labels show only masked last four digits. Source files may contain full
 identifiers and remain private data.
 
-## Matching and rental settings
+## Categories
 
-Counterparties have names, person/business kind, and outgoing/incoming patterns for
-[reconciliation](reconciliation.md), and may be marked as expecting no match: the standing
-acknowledgment reviewed and removed here. The user's own names are literal transfer-recognition
-alternatives, not regexes or hard-coded personal identities.
+The Categories page lives in Settings, under Transactions, rather than on the icon rail: the user
+shapes categories and keywords once and revisits them occasionally, so they are configuration, not
+daily work. It holds the category table, the keyword lists, rules, the payee tester, triage,
+keyword import, and categorize; their behavior is in [categories](categories.md). The page keeps its
+long-table layout inside Settings: from xl the tables scroll under their headers beside the
+sub-nav. The old `/categories` address redirects to it.
+
+## Contacts and rental settings
+
+The Contacts page holds the people and businesses on the other side of your money, and you (see
+[contacts](contacts.md)). It lists every contact, you first, and each has a page of its own. Your
+page has your names, saved in parts and recognized in the forms banks print, and your accounts
+outside the ledger with the patterns tied to them. Each tracked account's nicknames, the names a
+payment app shows for it, are edited on that account's page. Names and nicknames are literal
+transfer-recognition alternatives, not hard-coded personal identities. The joint rule reads them too,
+to tell your joint-account inflows from your partner's. `/settings/you` and `/settings/names` redirect
+to your page.
 
 Rental preferences map accounts to property labels and choose category names for
 [workbooks](reports.md). Removing a property mapping changes reporting configuration,
 not its transactions. Category choices outside the configured set appear as Other.
 
-Institution, account, provider, and counterparty changes use [batches](changes.md).
-Self-names, rental mappings/categories, and ordinary presentation preferences save directly
+Institution, account, provider, contact, name, and nickname changes use [batches](changes.md).
+Rental mappings/categories and ordinary presentation preferences save directly
 without financial undo. The interface must not offer an undo promise for
 settings that are not batches.
 

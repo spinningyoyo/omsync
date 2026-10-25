@@ -13,7 +13,8 @@ and charts. An interaction must not depend on a second financial model in JavaSc
 
 The desktop shell has an icon rail, a resizable and collapsible accounts panel, and the
 active page. Navigation groups tracking, transaction work, and planning. Settings and
-sign-out live in the user menu. On small screens the rail becomes bottom navigation and
+sign-out live in the user menu; configuration that is set up once and revisited, such as
+categories and keywords, lives in Settings rather than on the rail. On small screens the rail becomes bottom navigation and
 the accounts panel becomes a dismissible overlay; wide tables scroll inside their region. A page
 built around long tables, such as the register or Categories, fills the window on large screens, so
 each table scrolls under the controls above it while its header row stays in view; on small

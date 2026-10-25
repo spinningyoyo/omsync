@@ -33,7 +33,18 @@
 
 {% block frag_keyword_panel %}
 {% from "categories/parts.html" import keyword_panel %}
-{{ keyword_panel(list_key, lists, conflicts, rows, choices, form) }}
+{{ keyword_panel(list_key, lists, conflicts, rows, choices, form, query, total) }}
+{% endblock %}
+
+{% block frag_move_dialog %}
+{% from "categories/parts.html" import move_dialog %}
+{{ move_dialog(category, uses, choices, target, preview, error, key) }}
+{% endblock %}
+
+{# The move's reply closes the dialog; its toast arrives out of band. #}
+{% block frag_move_done %}
+{% from "transactions/parts.html" import toast_region %}
+{{ toast_region(label, batch_id) }}
 {% endblock %}
 
 {% block frag_keyword_add %}
@@ -58,26 +69,31 @@
 
 {% block frag_rule_panel %}
 {% from "categories/parts.html" import rule_panel %}
-{{ rule_panel(rows, choices, form) }}
+{{ rule_panel(rows, choices, contacts, accounts, form) }}
 {% endblock %}
 
 {% block frag_rule_add %}
 {% from "transactions/parts.html" import toast_region %}
 {% from "categories/parts.html" import rule_add_form %}
-{{ rule_add_form(form, choices) }}
+{{ rule_add_form(form, choices, contacts, accounts) }}
 {%- if label %}{{ toast_region(label, batch_id) }}{% endif %}
 {% endblock %}
 
 {% block frag_rule_row %}
 {% from "transactions/parts.html" import toast_region %}
 {% from "categories/parts.html" import rule_row %}
-{{ rule_row(row) }}
+{{ rule_row(row, first, last) }}
 {%- if label %}{{ toast_region(label, batch_id) }}{% endif %}
 {% endblock %}
 
 {% block frag_rule_edit %}
 {% from "categories/parts.html" import rule_edit_row %}
-{{ rule_edit_row(form, choices) }}
+{{ rule_edit_row(form, choices, contacts, accounts) }}
+{% endblock %}
+
+{% block frag_rule_preview %}
+{% from "categories/parts.html" import rule_preview %}
+{{ rule_preview(count, moves, error) }}
 {% endblock %}
 
 {# A batch reply passes its label; a refusal or a no-op passes its message. #}
@@ -92,7 +108,7 @@
 
 {% block frag_payee_results %}
 {% from "categories/parts.html" import payee_results %}
-{{ payee_results(payee, matches, names, error, amount_rule) }}
+{{ payee_results(payee, person, matches, names, error, rule) }}
 {% endblock %}
 
 {% block frag_triage %}

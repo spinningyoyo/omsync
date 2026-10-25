@@ -15,13 +15,19 @@ payees and receipt items into reusable classification choices.
 
 Categories have a name and a **type**: fixed, flexible, or non-monthly for the expenses a
 [budget](budgets.md) plans; unassigned for an expense not yet classified; income for money that
-counts as income in [reports](reports.md); or excluded for money reports leave out, as for transfers
-and loan payments. One field carries all of it, so a category cannot be both income and budgeted,
+counts as income in [reports](reports.md); or excluded for money reports leave out, as for transfers;
+or owed, which reports also leave out, for money between you and a contact that a
+[contact balance](contacts.md#balances) counts, such as a loan. One field carries all of it, so a category cannot be both income and budgeted,
 and leaving a category out of reports is an explicit choice rather than a group name that has to be
 spelled right. New categories are unassigned. Names are unique without regard to case. Hidden
-categories remain on historical transactions but leave ordinary pickers. Deletion is refused while
-any transaction, split, keyword, amount rule, or other data uses the category; hiding preserves
-both history and a clean picker.
+categories remain on historical transactions but leave ordinary pickers. A category nothing uses is
+deleted plainly. One in use is deleted by **delete and move**: its uses move to another category as
+one batch, which undo reverses. Transactions and splits move with their origin kept; keywords move
+as they are; budget lines and recurring series move to the target; saved filters that name it and
+rental category names are renamed to it. A rule that would name the target on both sides is
+dropped, and the preview says so. A month the target already budgets refuses the move, and so does
+any pair of rules that would end with the same conditions; nothing is merged, and the person chooses
+which to keep. Hiding keeps both history and a clean picker without moving anything.
 
 A category may also have an **icon**, any [Lucide](https://lucide.dev) icon; one with none shows
 `shapes`. The icon is chosen in a dialog that searches the whole set by name and tag. It is
@@ -29,11 +35,14 @@ decoration for places that list categories as planning lines: the Categories tab
 [budget](budgets.md) page. The register and its pickers show names only, so a long list stays
 scannable and the icon never competes with the amounts.
 
-Categories are listed in one table, a row each. Name and type are edited in the row and save as the
+Categories are listed in one table, a row each, on the Categories page in
+[Settings](settings.md#categories). Name and type are edited in the row and save as the
 cell is left or changed. The table sorts by name or type from its column headers and filters to one
 type. Ticking rows sets a type, or hides or shows them, as one batch that undo reverses together.
 The sort and filter belong to the view, not the data: they hold through every edit on the page and
-are forgotten when it is left. The categories and the keywords of the open list are shown in full,
+are forgotten when it is left. The open keyword list has a search that keeps the keywords whose
+pattern or category name contains the text, ignoring case, and shows how many match; it belongs to
+the view in the same way. The categories and the keywords of the open list are shown in full,
 however many, each table scrolling inside its column under its header row while the controls around
 it stay in view.
 
@@ -48,21 +57,56 @@ the MEMO fallback uses Unique keywords only, because Generic patterns are loose 
 fragments that misfire on memo location text. A MEMO match must not override a payee match.
 Receipt items use their vendor's own list.
 
-An **amount rule** sends a small payee match elsewhere. When the winning keyword comes from a Unique
-or Generic list and assigns category From, and the transaction's absolute amount is strictly below
-the rule's limit, the transaction takes category To instead. The rule applies to the winner after
-precedence is settled, so it covers a Unique MEMO match too; receipt vendor lists have no rules.
-The amount is absolute, so a refund follows its purchase, and an amount equal to the limit does not
-qualify. At most one rule applies and rules never chain: of those that qualify, the lowest limit
-wins, then the earliest created. A rule must name two different categories, and a list has one rule
-per From category and limit. Disabled rules do not apply. A category named by a rule cannot be
-deleted, though it can be hidden. The result keeps keyword origin, so it is recomputed like any
-keyword result.
+A **rule** sets a category when all of its conditions hold. Rules are an ordered list: they are tried
+in position order, the first that holds sets its category, and a rule's result never triggers another
+rule. A rule needs at least one condition, and a condition that is not set does not matter:
 
-Categorize changes only unset or keyword-origin, unsplit transactions. Manual and
-receipt-origin categories and all split transactions are protected. A keyword-origin
-category becomes unset if its keyword no longer matches. Running again with unchanged
-rules and data changes nothing.
+- **Keyword**: the category the winning keyword assigns, and optionally only when that keyword came
+  from the Unique or Generic list. A rule with no keyword condition can hold for a payee that no
+  keyword matched.
+- **Amount**: the absolute amount is strictly under a limit, or at least a minimum, or both, which is
+  a range whose limit is above its minimum. The amount is absolute, so a refund follows its
+  purchase, and an amount equal to the limit does not qualify.
+- **Other side**: a payment with a person, one contact, or one of your own accounts, which is the
+  [other side](contacts.md#the-other-side) stored on the transaction. A payment is with a person when
+  its stored other side is a contact of the person kind whose role is neither owner nor co-owner.
+  With none stored, it is when the description is a payment that names a person in the wordings
+  recognition reads, and the name is not your own money: none of your names or account nicknames, no
+  tracked account named by its digits, no saved contact that is a business, the owner, or the
+  co-owner, and not only words of the owner's name, each a given, middle, or family name or a letter
+  that starts one, because a short wording such as the owner's given name alone may be the owner.
+  Otherwise a name that no contact has counts as a person as written.
+- **Account**: the account the transaction is in.
+
+Keywords still do all matching of description text. The winning keyword is found as before: the first
+hit in Unique, then in Generic, with the MEMO fallback for Unique keywords only. A rule reads that
+winner's category and list, and the other side. The person condition reads the name a description
+gives only when no other side is stored, as the rule above describes.
+
+A rule sets its category with origin **rule**. A rule ranks with a keyword: each may replace the
+other, so categorize can rerun, while your choices and receipts outrank both. When no rule holds, the
+keyword's category stands with origin keyword, or the category is unset when no keyword matched. A
+rule must set a category other than the one it reads from. Disabled rules do not hold. A rule with
+the same conditions as another is refused, because one of the two would never apply. Because the
+order decides, a broad rule placed before a narrow one hides it; the payee tester and the transaction
+say which rule decided.
+
+Because a rule can read the stored other side, the [automatic
+step](contacts.md#running-it-automatically) identifies the other side before it categorizes, while
+categorizing on demand reads the other side as it is stored.
+
+The **Rules** tab of the Categories page lists the rules in order, each as its sentence, with buttons
+to move it up or down, a switch to turn it on or off, Edit, and Delete. The form for a new rule and for
+an edit names every condition a rule has, so an edit keeps none that the form cannot show. **Preview**
+says how many transactions the draft would change, lists up to 50 of them with their current and new
+categories, and writes nothing. Saving, editing, turning on or off, moving, and deleting a rule each run
+the automatic step, so the categories follow the rules at once; the toast says how many transactions
+changed, and undo reverses the change and that step together.
+
+Categorize changes only unset, keyword-origin, and rule-origin transactions that are unsplit. Manual
+and receipt-origin categories and all split transactions are protected. A category set by a keyword
+or a rule becomes unset if neither still gives one. Running again with unchanged rules and data
+changes nothing.
 
 ## Flow
 
@@ -77,7 +121,8 @@ flowchart LR
 ```
 
 The payee tester lists matching keywords in precedence order and marks the winner. Given an optional
-amount, it also shows the amount rule that redirects the winner. Conflict
+amount, and whether the payment is with a person, it also names the rule that decides the category, if
+one holds, even when no keyword matched. Conflict
 inspection identifies identical patterns pointing to different categories, including
 across Unique and Generic. It titles the finding "Needs attention", lists each pattern with the
 category each list gives it, and marks the keyword that applies, chosen by the precedence above.
@@ -97,8 +142,8 @@ can be accepted with its location reported; other malformed JSON or invalid patt
 refused without repeating private contents. Newly named categories start unassigned.
 Uploaded files are temporary input, not live configuration files.
 
-Category, keyword, and amount rule edits (an icon choice among them), file import, and categorize
-apply use [batches](changes.md).
+Category, keyword, and rule edits (an icon choice among them), delete and move, file import, and
+categorize apply use [batches](changes.md).
 A stale categorize preview is refused. Undo cannot erase a later user edit to a transaction
 that categorization changed.
 
@@ -109,9 +154,13 @@ the same word need not mean the same category in both. Explicit precedence keeps
 result deterministic rather than dependent on incidental query order.
 
 One word can mean a four-dollar snack or a sixty-dollar dinner, so a keyword alone cannot always
-choose a category. Amount rules answer that with a single threshold on a keyword's result, which
-keeps them a refinement of keywords rather than a general rule engine, and keeps the outcome as
-explainable as the keyword that produced it.
+choose a category. Rules answer that with conditions that a transaction already carries: the
+keyword's category, the amount, the other side, and the account. The amount alone cannot tell a lunch
+paid to a friend from a transfer to your own account or a joint contribution, so a rule may be
+limited by who is on the other side, which omsync already knows. A rule may stand without a keyword,
+which goes beyond refining keywords. It still reads only what a transaction already carries, sets
+one category, and the first rule that holds decides, so the outcome stays as explainable as the
+keyword that produced it.
 
 Origin protection distinguishes automation that may be recomputed from user decisions
 that must remain authoritative. The database owns the live keyword lists; imported JSON

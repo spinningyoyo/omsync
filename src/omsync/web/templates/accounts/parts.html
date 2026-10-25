@@ -1,5 +1,5 @@
 {# Parts of the account page: the header with its edit dialog, the balance chart's card, the balance
-   check card, and the sync card. Adapted from Sure (we-promise/sure), AGPL-3.0:
+   check card, the sync card, and the nicknames card. Adapted from Sure (we-promise/sure), AGPL-3.0:
    app/views/accounts/show/_header.html.erb and app/components/UI/account_page.html.erb (header and
    layout). The chart is in static/js/controllers/balance_chart_controller.js. Rails, Turbo, the
    account tabs, statements, and sharing are left out.
@@ -115,6 +115,44 @@
     {%- endfor %}
   </ul>
   {%- endif %}
+</section>
+{%- endmacro %}
+
+{# The nicknames card: the names a payment app shows for this account, each removable, and a form to
+   add one. A write re-renders the card in place, and an undo re-renders it out of band (oob).
+   The error is shown in the card, where the form was. #}
+{% macro nicknames_card(account_id, nicknames, add_key, error="", oob=false) -%}
+<section id="account-nicknames" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="nicknames-title" hx-target="#account-nicknames" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <div>
+    <h2 id="nicknames-title" class="text-sm font-medium text-primary">Nicknames</h2>
+    <p class="text-sm text-secondary">The name a payment app shows for this account. A transfer that carries a nickname is recognized as moving between your own accounts. Up to 10.</p>
+  </div>
+  {%- if error %}
+  <p class="text-sm text-destructive" role="alert">{{ error }}</p>
+  {%- endif %}
+  {%- if nicknames %}
+  <ul class="flex flex-col divide-y divide-subdued">
+    {%- for nickname in nicknames %}
+    <li>
+      <form class="flex items-center justify-between gap-3 py-2" hx-post="/accounts/{{ account_id }}/nicknames/{{ nickname.id }}/remove">
+        <input type="hidden" name="idempotency_key" value="{{ nickname.remove_key }}">
+        <span class="break-all text-sm text-primary">{{ nickname.nickname }}</span>
+        {{ button("Remove", variant="outline", size="sm", type="submit", aria_label="Remove " ~ nickname.nickname) }}
+      </form>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="text-sm text-secondary">No nicknames yet.</p>
+  {%- endif %}
+  <form class="flex flex-wrap items-end gap-3" hx-post="/accounts/{{ account_id }}/nicknames">
+    <input type="hidden" name="idempotency_key" value="{{ add_key }}">
+    <label class="form-field w-auto min-w-[14rem]">
+      <span class="form-field__label">Add a nickname</span>
+      <input type="text" name="nickname" maxlength="80" required class="form-field__input" placeholder="As the payment app shows it">
+    </label>
+    {{ button("Add", variant="outline", type="submit") }}
+  </form>
 </section>
 {%- endmacro %}
 

@@ -101,7 +101,7 @@ contain membership identifiers.
 
 ## Preview and apply receipts
 
-Import the supporting transactions first. Add receipt-item keywords in Categories, or
+Import the supporting transactions first. Add receipt-item keywords in Settings → Categories, or
 preview/import a vendor keyword file:
 
 ```sh

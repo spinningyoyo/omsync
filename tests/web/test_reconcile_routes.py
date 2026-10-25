@@ -15,7 +15,6 @@ from support import sign_in
 
 from omsync.core.db import Base
 from omsync.ledger.categories import Category, Keyword
-from omsync.ledger.counterparties import create_counterparty
 from omsync.ledger.links import Link
 from omsync.ledger.models import Account, AccountType, Institution, Transaction
 from omsync.receipts.model import (
@@ -43,7 +42,6 @@ def ledger(app: FastAPI) -> dict[str, int]:
     """Synthetic accounts and August 2026 transactions:
 
     - a Zelle pair with one confirmation, same day, which proposes an auto transfer;
-    - a Venmo pair with a named counterparty, which proposes a review P2P payment;
     - a Zelle inflow with no debit, which is listed as not matched;
     - an ordinary purchase, which proposes nothing.
     """
@@ -82,17 +80,8 @@ def ledger(app: FastAPI) -> dict[str, int]:
 
         ids["zelle_out"] = add("checking", -10_000, "Zelle payment to Pat; Conf# vq9s86kwm")
         ids["zelle_in"] = add("card", 10_000, "Zelle payment from Pat; Conf# vq9s86kwm")
-        ids["venmo_out"] = add("savings", -2_000, "Venmo to Sam")
-        ids["venmo_in"] = add("card", 2_000, "Venmo from Sam", on=date(2026, 8, 4))
         ids["solo_in"] = add("checking", 5_000, "Zelle payment from Lee", on=date(2026, 8, 5))
         ids["cafe"] = add("card", -3_000, "Corner Cafe")
-        create_counterparty(
-            db,
-            name="Sam",
-            kind="person",
-            payee_patterns={"out": ["Venmo to Sam"], "in": ["Venmo from Sam"]},
-            idempotency_key="seed-sam",
-        )
         db.commit()
     return ids
 

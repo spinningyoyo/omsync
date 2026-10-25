@@ -1,6 +1,6 @@
 """The Categories page, its table of categories, and the icon picker.
 
-The page also renders the keyword, amount rule, and triage panels, which categories_keywords.py,
+The page also renders the keyword, rule, and triage panels, which categories_keywords.py,
 categories_rules.py, and categories_triage.py serve on their own after it loads.
 """
 
@@ -8,14 +8,14 @@ from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from omsync.core.batches import BatchError
 from omsync.ledger import categories_admin as admin
 from omsync.ledger.categories_admin import CategoryRow, NothingChanged
 from omsync.ledger.models import CategoryType
-from omsync.web.categories_replies import block, events, refused, toast
+from omsync.web.categories_replies import block, events, refused, toast, whole_number
 from omsync.web.categories_view import TableView
 from omsync.web.deps import get_db
 from omsync.web.icons import has_icon, search_icons
@@ -23,6 +23,7 @@ from omsync.web.routes.categories_keywords import keyword_context, list_choices,
 from omsync.web.routes.categories_rules import rule_context
 from omsync.web.routes.categories_triage import triage_context
 from omsync.web.routes.shell import shell_context
+from omsync.web.settings_views import SETTINGS_NAV
 
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
@@ -40,13 +41,22 @@ def _table_view(
 
 View = Annotated[TableView, Depends(_table_view)]
 PAGE = "pages/categories.html"
+PATH = "/settings/categories"  # the page; its fragments and writes stay under /categories
 TABS = ("keywords", "rules", "test", "triage", "import")
 ICON_PAGE = 120
+TARGET_MESSAGE = "Pick a category to move its uses to."
 
 # Page
 
 
-@router.get("/categories", response_class=HTMLResponse)
+@router.get("/categories")
+def categories_redirect(request: Request) -> RedirectResponse:
+    """The page's old address, before it moved into Settings. The query string goes along."""
+    query = request.url.query
+    return RedirectResponse(PATH + (f"?{query}" if query else ""), status_code=303)
+
+
+@router.get(PATH, response_class=HTMLResponse)
 def categories_page(
     request: Request,
     db: DbSession,
@@ -55,20 +65,23 @@ def categories_page(
 ) -> HTMLResponse:
     """The whole page. `tab` and `list` open a given tab and keyword list, so a conflict can link to
     its row."""
-    context = shell_context(request, db, active="categories", title="Categories")
+    context = shell_context(request, db, active="", title="Categories")
     return request.app.state.templates.TemplateResponse(
         request,
         PAGE,
         {
             **context,
+            "nav": SETTINGS_NAV,
+            "active_href": PATH,
             **_category_list(db, TableView()),
             "tab": tab if tab in TABS else "keywords",
             "keywords": keyword_context(db, safe_list(list_key)),
-            "amount_rules": rule_context(db),
+            "rules": rule_context(db),
             "payee": "",
             "amount": "",
+            "person": False,
             "matches": [],
-            "amount_rule": None,
+            "rule": None,
             "names": admin.category_names(db),
             "payee_error": "",
             "triage": triage_context(request, db),
@@ -326,6 +339,52 @@ def delete_category(
     )
 
 
+@router.get("/categories/{category_id:int}/delete-and-move", response_class=HTMLResponse)
+def move_dialog(
+    request: Request, db: DbSession, category_id: int, target_id: str = ""
+) -> HTMLResponse:
+    """The Delete and move dialog for a category in use: what uses it, and the move to the target
+    chosen, if one is. Choosing a target asks again, so the counts shown are for that target."""
+    return block(request, "frag_move_dialog", **_move_context(db, category_id, target_id))
+
+
+@router.post("/categories/{category_id:int}/delete-and-move", response_class=HTMLResponse)
+def delete_and_move(
+    request: Request,
+    db: DbSession,
+    category_id: int,
+    target_id: Annotated[str, Form()] = "",
+    digest: Annotated[str, Form()] = "",
+    idempotency_key: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """Move the uses to the target and delete the category, as one batch. A refusal, or a change
+    since the preview, re-renders the dialog with its message and a fresh preview."""
+    key = idempotency_key or uuid4().hex
+    try:
+        batch = admin.delete_and_move(
+            db,
+            category_id,
+            whole_number(target_id, TARGET_MESSAGE),
+            idempotency_key=key,
+            digest=digest,
+        )
+    except (ValueError, BatchError) as exc:
+        return block(
+            request,
+            "frag_move_dialog",
+            status=refused(exc),
+            **_move_context(db, category_id, target_id, key=key, error=str(exc)),
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="No such category") from None
+    return block(
+        request,
+        "frag_move_done",
+        trigger=events(changed=True, close=True),
+        **toast(batch),
+    )
+
+
 # Helpers
 
 
@@ -350,6 +409,29 @@ def _category_list(
         "drafts": drafts or {},
         "errors": errors or {},
         "message": message,
+    }
+
+
+def _move_context(
+    db: Session, category_id: int, target: str, *, key: str = "", error: str = ""
+) -> dict[str, Any]:
+    """The Delete and move dialog's context. A target that the move refuses keeps the dialog open
+    with the reason; a blank target shows the uses and asks for one."""
+    category = _category_or_404(db, category_id)
+    preview = None
+    if target.strip():
+        try:
+            preview = admin.move_preview(db, category_id, whole_number(target, TARGET_MESSAGE))
+        except ValueError as exc:
+            error = error or str(exc)
+    return {
+        "category": category,
+        "uses": admin.category_uses(db, category_id),
+        "choices": [(cid, name) for cid, name in admin.category_choices(db) if cid != category_id],
+        "target": target.strip(),
+        "preview": preview,
+        "error": error,
+        "key": key or uuid4().hex,
     }
 
 

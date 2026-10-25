@@ -203,8 +203,8 @@ def check_splits(total_cents: int, amounts: Sequence[str], categories: Sequence[
     """Validate submitted split lines against the transaction amount.
 
     Lines with neither an amount nor a category are ignored. Every other line needs a
-    non-zero amount with the transaction's sign and a known category. There must be at least
-    two such lines, and they must add up to the amount exactly.
+    non-zero amount, of either sign, and a known category. There must be at least two such
+    lines, and they must add up to the amount exactly.
     """
     line_errors: dict[int, str] = {}
     lines: list[SplitLine] = []
@@ -214,7 +214,7 @@ def check_splits(total_cents: int, amounts: Sequence[str], categories: Sequence[
         if not amount_text.strip() and not category_text.strip():
             continue
         try:
-            cents = _line_amount(amount_text, total_cents)
+            cents = _line_amount(amount_text)
             category = canonical_category(category_text)
         except RegisterError as exc:
             line_errors[index] = str(exc)
@@ -236,16 +236,13 @@ def check_splits(total_cents: int, amounts: Sequence[str], categories: Sequence[
     return SplitCheck(lines, {}, "")
 
 
-def _line_amount(text: str, total_cents: int) -> int:
+def _line_amount(text: str) -> int:
     cleaned = text.strip()
     if not cleaned:
         raise RegisterError("Enter an amount.")
     cents = _money(cleaned)
     if cents == 0:
         raise RegisterError("An amount cannot be zero.")
-    if (cents < 0) != (total_cents < 0):
-        sign_example = format_cents(total_cents, symbol="")
-        raise RegisterError(f"Amounts take the transaction's sign, like {sign_example}.")
     return cents
 
 

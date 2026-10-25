@@ -1,18 +1,23 @@
 """View data for the account page: the chart's points, the balance check's issue rows with the
-register link for each interval, and the sync card's rows. The numbers come from
-omsync.ledger.accounts_view. This module only formats them and builds links.
+register link for each interval, the sync card's rows, and the nicknames card's rows. The numbers
+come from omsync.ledger.accounts_view and omsync.ledger.contacts. This module only formats them and
+builds links.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from urllib.parse import urlencode
+from uuid import uuid4
+
+from sqlalchemy.orm import Session
 
 from omsync.core.money import format_cents
 from omsync.ingest.balance_check import BalanceIssue, BalanceStatus
 from omsync.ingest.connectors.base import ConnectorError
 from omsync.ingest.connectors.registry import get_connector
 from omsync.ledger.accounts_view import BalancePoint, RecentSync
+from omsync.ledger.contacts import list_nicknames
 from omsync.ledger.filters import Condition, FilterSpec
 from omsync.ledger.models import SyncStatus
 from omsync.web.register_state import encode_filter
@@ -41,6 +46,13 @@ class SyncView:
     when: str  # local time
     files: str
     message: str | None
+
+
+@dataclass(frozen=True)
+class NicknameRow:
+    id: int
+    nickname: str
+    remove_key: str
 
 
 def day_label(day: date) -> str:
@@ -97,6 +109,18 @@ def sync_views(runs: Sequence[RecentSync]) -> list[SyncView]:
             )
         )
     return views
+
+
+def nickname_context(db: Session, account_id: int) -> dict[str, object]:
+    """The nicknames card's rows: the account's nicknames, and a key for its add form."""
+    return {
+        "nicknames": tuple(
+            NicknameRow(row.id, row.nickname, remove_key=uuid4().hex)
+            for row in list_nicknames(db)
+            if row.account_id == account_id
+        ),
+        "nickname_key": uuid4().hex,
+    }
 
 
 def connector_label(connector_key: str | None, enabled: bool) -> str:

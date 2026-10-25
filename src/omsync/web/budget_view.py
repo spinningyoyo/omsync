@@ -379,7 +379,7 @@ def _flex_sections(
     flex: FlexView, categories: dict[int, Category], fill_count: int
 ) -> tuple[SectionView, ...]:
     """The four flex tables. Categories with no line and no spending are listed too, so a budget
-    can be set for them. Income, excluded, and hidden categories are not listed."""
+    can be set for them. Income, excluded, owed, and hidden categories are not listed."""
     buckets: dict[CategoryType, list[BudgetRow]] = {
         CategoryType.fixed: list(flex.fixed),
         CategoryType.non_monthly: list(flex.non_monthly),

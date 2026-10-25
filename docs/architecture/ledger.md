@@ -47,28 +47,39 @@ Money is integer cents throughout storage and financial calculations. A negative
 is money out, including a credit-card purchase; a positive amount is money in, including a
 card payment or refund. Display formatting never determines financial arithmetic.
 
-A **split** assigns part of a transaction to its own category and memo. Splits conserve the
-transaction's signed amount exactly. The parent is not counted again alongside its splits.
+A **split** assigns part of a transaction to its own category and memo. Each split is nonzero and
+may be positive or negative. The splits sum exactly to the transaction's signed amount. The parent
+is not counted again alongside its splits.
 A transaction's amount cannot change merely because it is categorized or split.
 
 A **category** describes what money was for, and its **type** says how the ledger treats it:
 fixed, flexible, and non-monthly expenses are what a budget plans, unassigned is an expense not yet
-classified, income contributes to income, and excluded money is left out of reports. Hiding a
-category removes it from pickers without erasing history.
+classified, income contributes to income, and excluded and owed money are left out of reports. Owed
+money is what [contact balances](contacts.md#balances) count. Hiding a category removes it from
+pickers without erasing history.
 
 **Category origin** records who assigned a category. User choices outrank receipts, which
-outrank keywords. Automation never replaces a user-assigned category or split. Origins are
+outrank keywords and rules. Keywords and rules rank alike, so each may replace the other. Automation
+never replaces a user-assigned category or split. Origins are
 part of the meaning of a classification, not just diagnostic metadata. Keyword precedence
 belongs to [categories](categories.md); receipt protection belongs to [receipts](receipts.md).
+
+The **other side** of a transaction, or of a split, is the contact that the money moved to or from,
+and optionally one of that contact's accounts outside the ledger. It carries an **origin** as a
+category does: omsync recognizes it from the description after each import, or the user chooses it,
+and the user's choice outranks recognition, which never replaces it. Recognition never sets a
+split. The other side says who is on the other end, not what the money was for, and explains no
+amount: only links reconcile. How it is recognized belongs to [contacts](contacts.md); what it
+changes in reconciliation belongs to [reconciliation](reconciliation.md).
 
 ## Relationships and balances
 
 A **link** explains an amount with a typed relationship: transfer, refund, P2P payment,
 joint settlement, or receipt match. Links explain money; they do not change the amount an
 institution reported. A transaction is **reconciled** when its links cover its full absolute
-amount. This is derived from links, never an independently editable flag. An
-**acknowledgment** records that no counterpart is expected for a transaction; it explains no
-amount and does not make the transaction reconciled (see [reconciliation](reconciliation.md)).
+amount. This is derived from links, never an independently editable flag. A known other side
+outside the ledger explains why a transaction has no link, and does not make it reconciled (see
+[reconciliation](reconciliation.md)).
 
 A **statement balance** is the institution's balance as of a date. Ledger balances and
 available balances remain distinguishable. Account displays and goal progress use ledger

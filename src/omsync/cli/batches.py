@@ -8,7 +8,8 @@ from sqlalchemy import select
 from omsync.cli.common import fail, ready_session
 from omsync.cli.groups import batches_app
 from omsync.core.batch_models import Batch
-from omsync.core.batches import BatchError, UndoConflict, undo
+from omsync.core.batches import BatchError, UndoConflict
+from omsync.reconcile.auto import undo_with_automatic
 
 
 @batches_app.command("list")
@@ -35,10 +36,11 @@ def batches_list(
 def batches_undo(
     batch_id: Annotated[int, typer.Argument(help="The batch to undo, from `omsync batches list`.")],
 ) -> None:
-    """Undo a batch, if nothing it changed has changed since and no later batch depends on it."""
+    """Undo a batch, with the automatic batches it triggered, if nothing they changed has changed
+    since and no later batch depends on them."""
     with ready_session() as (_settings, session):
         try:
-            batch = undo(session, batch_id)
+            batch, followers = undo_with_automatic(session, batch_id)
         except UndoConflict as exc:
             typer.echo(f"error: {exc}", err=True)
             for table, row_id in exc.rows:
@@ -46,7 +48,8 @@ def batches_undo(
             raise typer.Exit(code=1) from exc
         except BatchError as exc:
             fail(str(exc))
-        typer.echo(f"Undid batch {batch.id} ({batch.kind}).")
+        with_automatic = f", with {followers} automatic batch(es) it triggered" if followers else ""
+        typer.echo(f"Undid batch {batch.id} ({batch.kind}){with_automatic}.")
 
 
 def _summary(summary: dict[str, Any] | None) -> str:

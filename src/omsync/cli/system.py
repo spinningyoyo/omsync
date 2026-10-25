@@ -1,5 +1,6 @@
 """doctor reports missing setup. serve runs the web app. The db commands manage the file."""
 
+import logging
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -8,16 +9,20 @@ from typing import Annotated
 import typer
 import uvicorn
 from alembic import command
+from sqlalchemy.orm import Session
 
 from omsync.cli.common import fail, load_settings_or_exit
 from omsync.cli.groups import app, db_app
 from omsync.core import backups
-from omsync.core.db import database_url
+from omsync.core.db import database_url, make_engine
 from omsync.core.doctor import run_checks
 from omsync.core.locks import SERVE_LOCK_NAME, LockBusy, exclusive_lock
 from omsync.core.schema import alembic_config, head_revision
 from omsync.core.settings import Settings, load_settings
+from omsync.reconcile.auto import reconcile_after_import
 from omsync.web.app import create_app
+
+log = logging.getLogger(__name__)
 
 
 @app.command()
@@ -38,7 +43,12 @@ def doctor() -> None:
 
 @app.command()
 def serve() -> None:
-    """Upgrade the database as `db upgrade` does, then run the web app on the configured host.
+    """Upgrade the database as `db upgrade` does, run the automatic step once, then run the web
+    app on the configured host.
+
+    The automatic step is the one that follows an import (see omsync.reconcile.auto). It runs
+    here so that what a migration or an edit made outside the app left undone is caught up before
+    the first page. A failure is logged and never stops the server.
 
     Holds serve.lock while it runs, so `omsync backup restore` refuses to replace the data under a
     running server. A second server exits 1 instead of starting.
@@ -47,9 +57,30 @@ def serve() -> None:
     try:
         with exclusive_lock(settings.data_dir / SERVE_LOCK_NAME):
             upgrade_database(settings)
+            _run_automatic_step(settings)
             uvicorn.run(create_app(settings), host=settings.host, port=settings.port)
     except LockBusy:
         fail("omsync serve is already running, or a restore is in progress. Stop it first.")
+
+
+def _run_automatic_step(settings: Settings) -> None:
+    """Run the automatic step once on the upgraded database. Never raises: a failure is logged."""
+    engine = make_engine(database_url(settings))
+    try:
+        with Session(engine) as session:
+            result = reconcile_after_import(session)
+    except Exception:  # starting the server matters more than this step
+        log.warning("The automatic step could not run at startup", exc_info=True)
+        return
+    finally:
+        engine.dispose()
+    if result.problem is not None:
+        log.warning("The automatic step could not run at startup: %s", result.problem)
+    elif result.categorized or result.identified or result.linked:
+        typer.echo(
+            f"Automatic step: categorized {result.categorized}, identified the other side of "
+            f"{result.identified}, linked {result.linked}."
+        )
 
 
 @db_app.command("upgrade")

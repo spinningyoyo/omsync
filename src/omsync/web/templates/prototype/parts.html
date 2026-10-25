@@ -43,7 +43,7 @@
 <tr class="split-editor" id="split-editor-{{ txn.id }}" data-split-editor>
 <td colspan="6">
   <form id="split-form-{{ txn.id }}" class="split-form" hx-post="/prototype/register/split/{{ txn.id }}" hx-target="#txn-{{ txn.id }}" hx-swap="outerHTML">
-    <p class="split-hint">Split {{ txn.amount_cents|money }}. Amounts take the transaction's sign.</p>
+    <p class="split-hint">Split {{ txn.amount_cents|money }}. Lines may be positive or negative, but must add up to this amount.</p>
     <div id="split-lines-{{ txn.id }}" class="split-lines" hx-post="/prototype/register/split/{{ txn.id }}/preview" hx-trigger="input delay:150ms" hx-target="#amount-left-{{ txn.id }}" hx-swap="outerHTML">
       {%- for line in editor.lines %}
       {{ split_line(txn.id, line, loop.index0 == editor.focus_index) }}

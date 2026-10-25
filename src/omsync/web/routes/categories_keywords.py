@@ -29,8 +29,11 @@ def keyword_panel(
     request: Request,
     db: DbSession,
     list_key: Annotated[str | None, Query(alias="list")] = None,
+    q: str = "",
 ) -> HTMLResponse:
-    return block(request, "frag_keyword_panel", **keyword_context(db, safe_list(list_key)))
+    """The keyword panel. `q` keeps the keywords whose pattern or category contains it. A search
+    swaps only the results region, so this panel is the full page for a reload (see parts.html)."""
+    return block(request, "frag_keyword_panel", **keyword_context(db, safe_list(list_key), query=q))
 
 
 @router.post("/categories/keywords", response_class=HTMLResponse)
@@ -187,7 +190,9 @@ def delete_keyword(
 
 
 @router.get("/categories/test", response_class=HTMLResponse)
-def test_payee(request: Request, db: DbSession, payee: str = "", amount: str = "") -> HTMLResponse:
+def test_payee(
+    request: Request, db: DbSession, payee: str = "", amount: str = "", person: str = ""
+) -> HTMLResponse:
     text = payee.strip()
     matches: list[Any] = []
     rule = None
@@ -195,18 +200,20 @@ def test_payee(request: Request, db: DbSession, payee: str = "", amount: str = "
     if text:
         try:
             amount_cents = admin.parse_dollars(amount) if amount.strip() else None
-            explanation = explain(db, text, amount_cents)
+            explanation = explain(db, text, amount_cents, with_person=person == "1")
         except ValueError as exc:  # a bad amount, or InvalidKeyword
             error = str(exc)
         else:
-            matches, rule = explanation.matches, explanation.amount_rule
+            matches = explanation.matches
+            rule = None if explanation.rule is None else admin.get_rule(db, explanation.rule.id)
     return block(
         request,
         "frag_payee_results",
         payee=text,
         amount=amount.strip(),
+        person=person == "1",
         matches=matches,
-        amount_rule=rule,
+        rule=rule,
         error=error,
         names=admin.category_names(db),
     )
@@ -230,12 +237,14 @@ def keyword_form(list_key: str, **values: Any) -> dict[str, Any]:
     return form
 
 
-def keyword_context(db: Session, list_key: str) -> dict[str, Any]:
+def keyword_context(db: Session, list_key: str, *, query: str = "") -> dict[str, Any]:
     return {
         "list_key": list_key,
         "lists": list_choices(db),
         "conflicts": find_conflicts(db),
-        "rows": admin.keywords_in_list(db, list_key),
+        "query": query,
+        "rows": admin.keywords_in_list(db, list_key, query),
+        "total": admin.keyword_count(db, list_key),
         "choices": admin.category_choices(db),
         "form": keyword_form(list_key),
     }

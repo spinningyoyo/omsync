@@ -42,16 +42,6 @@
 {{ dialog_error(message) }}
 {% endblock %}
 
-{% block frag_ack_transaction %}
-{% from "reconcile/parts.html" import ack_transaction_body %}
-{{ ack_transaction_body(source, txn, start, end, idempotency_key) }}
-{% endblock %}
-
-{% block frag_ack_counterparty %}
-{% from "reconcile/parts.html" import ack_counterparty_body %}
-{{ ack_counterparty_body(source, txn, start, end, idempotency_key, choices, kinds) }}
-{% endblock %}
-
 {# A saved decision made in a dialog: it closes on the close-dialogs event, and the results re-run. #}
 {% block frag_dialog_done %}
 {% from "reconcile/parts.html" import results_region, toast_region %}

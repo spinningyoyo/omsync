@@ -1,8 +1,9 @@
-{# The account page: header and edit, the balance chart, the balance check, and the sync card.
+{# The account page: header and edit, the balance chart, the balance check, the sync card, and the
+   nicknames card.
    Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/accounts/show.html.erb (see
    accounts/parts.html). D3 is loaded here only, because no other page draws a chart. #}
 {% extends "layouts/shell.html" %}
-{% from "accounts/parts.html" import account_header, chart_card, balance_card, sync_card %}
+{% from "accounts/parts.html" import account_header, chart_card, balance_card, sync_card, nicknames_card %}
 
 {% block chart_scripts %}
 <script src="/static/vendor/d3.min.js" defer></script>
@@ -17,6 +18,7 @@
     <div class="flex min-w-0 flex-col gap-6">
       {{ balance_card(detail.summary.status, issues) }}
       {{ sync_card(connector, syncs) }}
+      {{ nicknames_card(active_account_id, nicknames, nickname_key) }}
     </div>
   </div>
 </div>

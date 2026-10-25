@@ -36,9 +36,11 @@ from omsync.web.routes import (
     categories_keywords,
     categories_rules,
     categories_triage,
-    counterparties,
+    contacts,
+    contacts_detail,
     dev,
     home,
+    other_side,
     plan,
     plan_goals,
     prototype_register,
@@ -48,7 +50,6 @@ from omsync.web.routes import (
     register_filters,
     register_review,
     reports,
-    self_names,
     shell,
     sign_in,
     transactions,
@@ -145,8 +146,9 @@ def create_app(
     app.include_router(recurring.router)
     app.include_router(plan.router)
     app.include_router(plan_goals.router)
-    app.include_router(counterparties.router)
-    app.include_router(self_names.router)
+    app.include_router(contacts.router)
+    app.include_router(contacts_detail.router)
+    app.include_router(other_side.router)
     app.include_router(settings_router)
     app.include_router(settings_providers_router)
     app.include_router(settings_wizard_router)

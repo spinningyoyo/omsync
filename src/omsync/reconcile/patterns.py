@@ -1,4 +1,4 @@
-"""Transfer recognition patterns with literal alternatives for the user's saved names."""
+"""Transfer recognition patterns with literal alternatives for the user's own names."""
 
 import re
 from collections.abc import Iterable
@@ -17,7 +17,7 @@ _GENERIC_BASE = (r"Credit Card Payment from \d{4}",)
 
 @dataclass(frozen=True)
 class Patterns:
-    """The compiled patterns that depend on self_names."""
+    """The compiled patterns that depend on the user's own names."""
 
     transfer_with_conf: re.Pattern[str]
     cb_credit: re.Pattern[str]
@@ -29,14 +29,16 @@ class Patterns:
 _NEVER = re.compile(r"(?!)")
 
 
-def build_patterns(self_names: Iterable[str]) -> Patterns:
+def build_patterns(own_names: Iterable[str]) -> Patterns:
     """Compile the name-dependent patterns, adding one alternative per name.
 
-    Names are matched literally, not as regular expressions, and case-insensitively. Blank names
-    are ignored. self_zelle matches a Zelle payment sent to one of your own names. self_inflow
-    matches a Zelle payment received from one of your own names.
+    Names are matched literally, not as regular expressions, and case-insensitively. A name's words
+    may be separated by any spacing and an optional period, and a name never starts or ends in the
+    middle of a word, so an initial does not match inside another name. Blank names are ignored.
+    self_zelle matches a Zelle payment sent to one of your own names. self_inflow matches a Zelle
+    payment received from one of your own names.
     """
-    names = [name.strip() for name in self_names if name and name.strip()]
+    names = [name.strip() for name in own_names if name and name.strip()]
     if not names:
         return Patterns(
             transfer_with_conf=_compile(_TRANSFER_BASE),
@@ -45,7 +47,7 @@ def build_patterns(self_names: Iterable[str]) -> Patterns:
             self_zelle=_NEVER,
             self_inflow=_NEVER,
         )
-    alternation = "|".join(re.escape(name) for name in names)
+    alternation = _alternation(names)
     return Patterns(
         transfer_with_conf=_compile(
             (*_TRANSFER_BASE, rf"TRANSFER \w+ (?:\w+ )?(?:{alternation}):.*Confirmation#")
@@ -55,16 +57,29 @@ def build_patterns(self_names: Iterable[str]) -> Patterns:
         self_zelle=_compile(
             (
                 r"Zelle\s+(?:payment|Transfer|Recurring payment|Scheduled payment)\s+to\s+"
-                rf"(?:{alternation})(?![A-Za-z])",
+                rf"(?:{alternation})",
             )
         ),
         self_inflow=_compile(
             (
                 r"Zelle\s+(?:payment|Transfer|Recurring payment|Scheduled payment)\s+from\s+"
-                rf"(?:{alternation})(?![A-Za-z])",
+                rf"(?:{alternation})",
             )
         ),
     )
+
+
+def names_pattern(names: Iterable[str]) -> re.Pattern[str] | None:
+    """Compile one pattern that finds any of the names as build_patterns reads them, or None when
+    there is no name."""
+    cleaned = [name.strip() for name in names if name and name.strip()]
+    return _compile((_alternation(cleaned),)) if cleaned else None
+
+
+def _alternation(names: Iterable[str]) -> str:
+    """One alternative per name, bounded so that it neither starts nor ends inside a word."""
+    alternatives = (r"\.?\s+".join(re.escape(word) for word in name.split()) for name in names)
+    return rf"(?<![A-Za-z])(?:{'|'.join(alternatives)})(?![A-Za-z])"
 
 
 def _compile(alternatives: tuple[str, ...]) -> re.Pattern[str]:

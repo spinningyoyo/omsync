@@ -47,6 +47,10 @@ review as one such approval, computed from the data just imported and refused as
 first; it is a separate batch that undo reverses without touching the import. Undoing an import
 whose transactions that batch linked is refused until the automatic batch is undone.
 
+When the automatic step follows a change you made in the app, each of its batches names that change
+in its summary. Undoing the change then undoes those batches first, newest first, and the change
+last, in one transaction: each is checked as any undo is, and if any is refused, none is undone.
+
 ## Boundaries
 
 Ledger changes and domain configuration use batches. Ordinary presentation preferences

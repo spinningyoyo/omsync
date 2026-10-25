@@ -77,7 +77,7 @@ def attention(session: Session, *, today: date, proposal_range: tuple[date, date
     """The counts as of `today`. Reconciliation items are not stored, so they are what a run over
     `proposal_range` finds waiting for a decision: review and manual proposals plus the transactions
     that are not matched, as the Reconcile page shows for that range. Automatic proposals are
-    applied after each import, and acknowledged or forwarded transactions need nothing. Recurring
+    applied after each import, and transactions whose other side is known need nothing. Recurring
     items are the Needs attention list on the Recurring Overview: this calendar month's missed
     occurrences and open questions."""
     return Attention(

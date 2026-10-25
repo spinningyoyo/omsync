@@ -105,8 +105,8 @@ window closes with no charge and no paid-elsewhere mark.
 
 ### Transfers
 
-A series whose category is excluded from reports, as transfers such as card autopay and loan
-payments are, is listed and labeled "Not in totals". Its occurrences are paid, upcoming, or missed like any other, but it stays out
+A series whose category reports leave out, such as an excluded transfer like card autopay or an
+owed loan payment, is listed and labeled "Not in totals". Its occurrences are paid, upcoming, or missed like any other, but it stays out
 of bill totals, so money is not counted twice.
 
 ### Interface

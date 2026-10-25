@@ -1,4 +1,4 @@
-"""Categories, the keywords and amount rules that assign them, and saved transaction filters."""
+"""Categories, the keywords and rules that assign them, and saved transaction filters."""
 
 from datetime import datetime
 from enum import StrEnum
@@ -23,7 +23,9 @@ from omsync.ledger.enums import string_enum
 class CategoryType(StrEnum):
     """What a category is for. Fixed, flexible, and non-monthly are the types of expense a budget
     plans; unassigned is an expense not yet classified. Income feeds income in reports. Excluded
-    money is left out of reports altogether, as transfers and loan payments are."""
+    money is left out of reports altogether, as transfers and loan payments are. Owed money is left
+    out of reports like excluded money, and is what contact balances count: a loan, or money held
+    for a contact."""
 
     fixed = "fixed"
     flexible = "flexible"
@@ -31,6 +33,7 @@ class CategoryType(StrEnum):
     unassigned = "unassigned"
     income = "income"
     excluded = "excluded"
+    owed = "owed"
 
 
 TYPE_LABELS: dict[CategoryType, str] = {
@@ -40,10 +43,14 @@ TYPE_LABELS: dict[CategoryType, str] = {
     CategoryType.unassigned: "Unassigned",
     CategoryType.income: "Income",
     CategoryType.excluded: "Excluded",
+    CategoryType.owed: "Owed",
 }
 
+# Types whose money reports leave out. Only contact balances read the owed ones.
+NOT_IN_REPORTS = frozenset({CategoryType.excluded, CategoryType.owed})
+
 # Types whose money is not spending, so a budget cannot plan them.
-UNBUDGETED_TYPES = frozenset({CategoryType.income, CategoryType.excluded})
+UNBUDGETED_TYPES = frozenset({CategoryType.income, CategoryType.excluded, CategoryType.owed})
 
 # The Lucide icon a category shows until one is chosen.
 DEFAULT_CATEGORY_ICON = "shapes"
@@ -87,32 +94,70 @@ class Keyword(Base):
     enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
 
 
-class AmountRule(Base):
-    """Sends a small payee-keyword match to a different category.
+class RuleOtherSide(StrEnum):
+    """Who is on the other side of a payment that a rule reads. person is a payment with a person
+    (see omsync.ledger.other_side.PersonSides); contact is the contact stored on the rule; and
+    owner_account is a payment whose other side is you, one of your own accounts."""
 
-    When the winning payee keyword comes from list_key and assigns from_category, and a
-    transaction's absolute amount is below below_cents, to_category is assigned instead.
-    list_key is "unique" or "generic".
+    person = "person"
+    contact = "contact"
+    owner_account = "owner_account"
+
+
+class CategoryRule(Base):
+    """Sets a category on a transaction when all of its conditions hold.
+
+    Rules are tried in position order, lowest first, and the first that holds wins; rules never
+    chain. A condition that is not set does not matter, and at least one must be set. from_category
+    is the category the keywords assigned, and list_key, when set, requires that the winning keyword
+    came from that list ("unique" or "generic"). below_cents is strict and at_least_cents inclusive,
+    both on the absolute amount, so a refund follows its purchase. other_side reads who is on the
+    other side, and contact_id and account_id name a contact and an account of the transaction.
     """
 
-    __tablename__ = "amount_rule"
+    __tablename__ = "category_rule"
     __table_args__ = (
-        UniqueConstraint(
-            "list_key", "from_category_id", "below_cents", name="uq_amount_rule_list_from_limit"
-        ),
-        CheckConstraint("below_cents > 0", name="ck_amount_rule_limit_positive"),
         CheckConstraint(
-            "from_category_id != to_category_id", name="ck_amount_rule_categories_differ"
+            "from_category_id IS NOT NULL OR below_cents IS NOT NULL"
+            " OR at_least_cents IS NOT NULL OR other_side IS NOT NULL OR account_id IS NOT NULL",
+            name="ck_category_rule_has_condition",
+        ),
+        CheckConstraint(
+            "list_key IS NULL OR (from_category_id IS NOT NULL"
+            " AND list_key IN ('unique', 'generic'))",
+            name="ck_category_rule_list",
+        ),
+        CheckConstraint("below_cents IS NULL OR below_cents > 0", name="ck_category_rule_below"),
+        CheckConstraint(
+            "at_least_cents IS NULL OR at_least_cents > 0", name="ck_category_rule_at_least"
+        ),
+        CheckConstraint(
+            "below_cents IS NULL OR at_least_cents IS NULL OR below_cents > at_least_cents",
+            name="ck_category_rule_range",
+        ),
+        CheckConstraint(
+            "CASE WHEN other_side = 'contact' THEN contact_id IS NOT NULL"
+            " ELSE contact_id IS NULL END",
+            name="ck_category_rule_contact",
+        ),
+        CheckConstraint(
+            "from_category_id IS NULL OR from_category_id != to_category_id",
+            name="ck_category_rule_categories_differ",
         ),
         {"sqlite_autoincrement": True},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    list_key: Mapped[str]
-    from_category_id: Mapped[int] = mapped_column(ForeignKey("category.id"))
-    below_cents: Mapped[int]
-    to_category_id: Mapped[int] = mapped_column(ForeignKey("category.id"))
+    position: Mapped[int]
     enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
+    from_category_id: Mapped[int | None] = mapped_column(ForeignKey("category.id"))
+    list_key: Mapped[str | None]
+    below_cents: Mapped[int | None]
+    at_least_cents: Mapped[int | None]
+    other_side: Mapped[RuleOtherSide | None] = mapped_column(string_enum(RuleOtherSide))
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contact.id"))
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"))
+    to_category_id: Mapped[int] = mapped_column(ForeignKey("category.id"))
 
 
 class SavedFilter(Base):

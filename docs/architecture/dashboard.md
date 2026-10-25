@@ -58,7 +58,7 @@ number and the list drift apart, so none exists.
 | Item | Counted as | Opens |
 | --- | --- | --- |
 | Import reviews | Open [import reviews](import.md): unresolved statement rows | Register, Needs review |
-| Reconciliation to resolve | What a [reconciliation](reconciliation.md) run over the last 90 days, the range Reconcile opens with, leaves for a decision: review and manual proposals plus not-matched transactions. Automatic proposals, acknowledged and forwarded transactions are not counted | Reconcile, with that range in the link |
+| Reconciliation to resolve | What a [reconciliation](reconciliation.md) run over the last 90 days, the range Reconcile opens with, leaves for a decision: review and manual proposals plus not-matched transactions. Automatic proposals and transactions whose other side is known are not counted | Reconcile, with that range in the link |
 | Uncategorized transactions | Transactions matching the register filter "category is empty": no category of their own and no categorized split, on any date | Register, with that filter |
 | Recurring needing attention | The items in the Recurring Overview's Needs attention list for this calendar month: missed occurrences and open recurring questions, as in [recurring](recurring.md) | Recurring Overview, whose Needs attention list shows the same items |
 | Balance check failures | Each open account whose [balance check](accounts.md) reports an issue, listed by name | That account's page |

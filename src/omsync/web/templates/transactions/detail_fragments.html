@@ -1,0 +1,21 @@
+{# Fragment blocks for the transaction detail replies (routes/other_side.py). The region is the
+   target of every write; the toast travels with it, and an undo sends the toast and the region. #}
+
+{% block frag_saved %}
+{% from "transactions/detail_parts.html" import detail_region, toast_region %}
+{{ detail_region(detail) }}
+{{ toast_region(message, batch_id, txn_id) }}
+{% endblock %}
+
+{% block frag_error %}
+{% from "transactions/detail_parts.html" import detail_region %}
+{{ detail_region(detail, error=error) }}
+{% endblock %}
+
+{% block frag_undo_reply %}
+{% from "transactions/detail_parts.html" import detail_region, toast %}
+{{ toast(message) }}
+{%- if detail %}
+{{ detail_region(detail, oob=true) }}
+{%- endif %}
+{% endblock %}

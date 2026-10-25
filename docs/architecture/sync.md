@@ -21,16 +21,17 @@ automation: the user places files in the institution folder and uses the same im
   Formats without an account ID use an account subfolder.
 - Fetching is an external operation that writes files and an operational log. A sync always
   imports the files it fetched, each as its own batch under the [import contract](import.md).
-- After importing, a sync [categorizes](categories.md) the history with the keywords, then lets
+- After importing, a sync [identifies the other side](contacts.md#running-it-automatically) and
+  [categorizes](categories.md) the history with the keywords, then lets
   [reconciliation](reconciliation.md) link the proposals that need no review, as one batch that
   undo reverses, and the result says how many links it made. Sync all does this once per provider,
   since each provider's import is its own run and the next provider's files can complete a pair
   the previous one left open.
 - Categorizing is its own batch that `omsync batches undo` reverses, and it can categorize earlier
-  transactions that were left unset. A sync then categorizes the provider's accounts once more,
-  which changes nothing when that step succeeded. Keywords that cannot be applied, or a preview
-  gone stale, fail the sync with a message but keep the imported statements, and
-  `omsync categorize` runs the same step later.
+  transactions that were left unset. A sync then identifies the other side and categorizes the
+  provider's accounts once more, which changes nothing when that step succeeded. Keywords that
+  cannot be applied, or a preview gone stale, fail the sync with a message but keep the imported
+  statements, and `omsync categorize` categorizes later.
 - Before importing, a sync links a statement account its files name to an account when the
   provider asked the institution for that account, exactly one open account at the institution
   ends in the same four digits, and that account has no statement alias yet. The link is an
@@ -98,7 +99,8 @@ flowchart TD
     Vault --> Fetch[Fetch statements for its accounts through the website]
     Fetch --> Files[Retain completed files]
     Files --> Import[Import each file as a batch]
-    Import --> Categorize[Categorize with keywords]
+    Import --> Identify[Identify the other side]
+    Identify --> Categorize[Categorize with keywords]
     Categorize --> Reconcile[Link automatic proposals]
     Reconcile --> Log[Finish operational log]
     Log --> Finish[Lock vault and release operation lock]

@@ -29,6 +29,14 @@ _ZELLE_PERSON_RES = {
 }
 _NAME_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'.-]*")
 _MEMO_RE = re.compile(r"\s+for\b", re.IGNORECASE)
+# Wordings that put the person after the confirmation: "Zelle Transfer Conf# ABC123; NAME" and
+# Bank of America's "Online Banking Transfer Conf# ABC123; NAME" for a transfer from one of its
+# other customers, which exists for money in only.
+_AFTER_CONFIRMATION_RE = re.compile(
+    r"^\s*(?:Zelle\b[^;]*?|(?P<bank>Online Banking Transfer))\s*\bConf#\s*\w+\s*;\s*(?P<rest>.+)$",
+    re.IGNORECASE,
+)
+_NAME_END_RE = re.compile(r"\s+for\b|;", re.IGNORECASE)
 
 # Words every P2P description shares, which say how the money moved and not what it was for.
 GENERIC_WORDS = frozenset(
@@ -74,8 +82,8 @@ def rule_round_trip(pool: Pool, emit: Emitter) -> None:
     that starts with it. The amounts are equal and the dates at most 30 days apart. Every pair is
     automatic: payments to one person of one amount are interchangeable, so of several, the
     nearest pairs are linked first, by date gap and then IDs. Your own names, accounts you name,
-    saved counterparties (their own rule proposes those, and may expect no match), and anything an
-    earlier rule proposed are left out. The memo after "for" never decides a match.
+    payments whose other side is stored as the owner or the co-owner, and anything an earlier rule
+    proposed are left out. The memo after "for" never decides a match.
     """
     proposed = {t for d in emit.drafts for t in (d.out_txn_id, d.in_txn_id)}
     people = {t.id: _person(t, emit) for t in pool if t.id not in proposed}
@@ -115,11 +123,44 @@ def rule_round_trip(pool: Pool, emit: Emitter) -> None:
         )
 
 
+def payment_name_text(description: str, amount_cents: int) -> str | None:
+    """The part of a payment's description that names the other person, or None when it is not
+    such a payment.
+
+    A Zelle payment to someone has money out and one from someone has money in. The person follows
+    "to" or "from", or in the older wordings follows the confirmation after a semicolon, in a
+    Zelle Transfer or a Bank of America online transfer from another customer. The text stops
+    before a memo ("for ...") or a semicolon, so a memo is never read as a name.
+    """
+    direction = "to" if amount_cents < 0 else "from"
+    match = _ZELLE_PERSON_RES[direction].search(description)
+    rest = match.group("rest") if match is not None else None
+    if rest is None:
+        older = _AFTER_CONFIRMATION_RE.match(description)
+        if older is not None and (amount_cents > 0 or older.group("bank") is None):
+            rest = older.group("rest")
+    if rest is None:
+        return None
+    return _NAME_END_RE.split(rest, maxsplit=1)[0].strip() or None
+
+
+def written_name(name_text: str) -> str | None:
+    """The person as the description writes them: the leading words of the name text, up to the
+    first that is not a name word, or None when it has none."""
+    words: list[str] = []
+    for word in name_text.split():
+        if not _NAME_TOKEN_RE.fullmatch(word) or word.lower() == "conf":
+            break
+        words.append(word)
+    return " ".join(words) or None
+
+
 def _person(txn: TxnView, emit: Emitter) -> tuple[str, str] | None:
     """Return the first two name tokens of a Zelle payment to or from someone, lowercased.
 
-    None when the description is not such a payment, names fewer than two tokens, is your own
-    money (your name or a tracked account), or belongs to a saved counterparty.
+    None when the description is not such a payment, names fewer than two tokens, or is your own
+    money (your name, a tracked account, or a payment whose stored other side is the owner or the
+    co-owner of the joint accounts).
     """
     direction = "to" if txn.amount_cents < 0 else "from"
     match = _ZELLE_PERSON_RES[direction].search(txn.description)
@@ -142,8 +183,7 @@ def _person(txn: TxnView, emit: Emitter) -> tuple[str, str] | None:
         else emit.patterns.self_inflow.search(core.description)
         or emit.accounts_by_digits(core.description, exclude=txn.account_id)
     )
-    saved = any(m.matches(txn.description, txn.amount_cents) for m in emit.counterparties)
-    return None if own or saved else (tokens[0], tokens[1])
+    return None if own or txn.with_household else (tokens[0], tokens[1])
 
 
 def _same_person(first: tuple[str, str] | None, second: tuple[str, str] | None) -> bool:

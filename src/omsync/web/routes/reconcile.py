@@ -14,9 +14,9 @@ from sqlalchemy.orm import Session
 from omsync.core.batch_models import Batch
 from omsync.core.batches import BatchError, StalePreview, applied_batch_for_key
 from omsync.core.money import to_cents
-from omsync.ledger.counterparties import NothingChanged as CounterpartyUnchanged
-from omsync.ledger.counterparties import update_counterparty
-from omsync.ledger.links import CounterpartyKind, LinkKind
+from omsync.ledger.contacts import ContactKind, create_contact, starting_names
+from omsync.ledger.links import LinkKind
+from omsync.ledger.other_side import set_other_side
 from omsync.ledger.sources import Account
 from omsync.ledger.transactions import Transaction
 from omsync.receipts.service import apply_digest, apply_report, registered_vendors, run_vendor
@@ -24,15 +24,13 @@ from omsync.reconcile.decisions import (
     MANUAL_KINDS,
     NothingChanged,
     StaleProposal,
-    acknowledge,
-    acknowledge_counterparty,
     approve,
     manual_link,
     reject,
-    unacknowledge,
     unlink,
 )
-from omsync.reconcile.not_matched import counterparty_choices
+from omsync.web.automatic import run_automatic, with_automatic
+from omsync.web.contacts_view import NEW_CONTACT, parse_choice
 from omsync.web.deps import get_db
 from omsync.web.reconcile_view import (
     MANUAL_KIND_LABELS,
@@ -242,6 +240,70 @@ def unlink_link(
     return _region(request, db, start_date, end_date, toast=_toast(batch, batch.summary))
 
 
+# The other side
+
+
+@router.post("/reconcile/other-side", response_class=HTMLResponse)
+def set_other_side_rows(
+    request: Request,
+    db: DbSession,
+    start: Annotated[str, Form()] = "",
+    end: Annotated[str, Form()] = "",
+    txn: Annotated[list[int] | None, Form()] = None,
+    target: Annotated[str, Form()] = "",
+    new_name: Annotated[str, Form()] = "",
+    new_kind: Annotated[str, Form()] = ContactKind.person.value,
+    idempotency_key: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """Set what is on the other side of the chosen Not matched rows, as one batch, then run the
+    automatic step. target is a contact, a contact's account, or NEW_CONTACT with new_name."""
+    try:
+        start_date, end_date = parse_range(start, end, date.today())
+    except RangeError as exc:
+        return _notice(request, str(exc), 422)
+    if not txn:
+        return _region(
+            request, db, start_date, end_date, notice="Choose at least one transaction.", status=422
+        )
+    key = idempotency_key or uuid4().hex
+    try:
+        if target == NEW_CONTACT:
+            contact_id = _new_contact(db, new_name, new_kind, key)
+            account_id = None
+        else:
+            contact_id, account_id = parse_choice(target)
+        batch = set_other_side(
+            db,
+            transaction_ids=txn,
+            contact_id=contact_id,
+            contact_account_id=account_id,
+            idempotency_key=key,
+        )
+    except LookupError as exc:
+        return _region(request, db, start_date, end_date, notice=str(exc), status=422)
+    except (ValueError, BatchError) as exc:
+        return _region(request, db, start_date, end_date, notice=str(exc), status=422)
+    label = str((batch.summary or {}).get("label", "Change saved"))
+    message = with_automatic(label, run_automatic(db, batch.id))
+    return _region(request, db, start_date, end_date, toast=Toast(message, batch.id))
+
+
+def _new_contact(db: Session, name: str, kind: str, key: str) -> int:
+    """Create the contact the rows are being set to, and return its ID. The key derives from the
+    request's, so a repeated submit finds the contact it made instead of making another."""
+    batch = create_contact(
+        db,
+        name=name,
+        kind=kind,
+        names=starting_names(name, kind),
+        idempotency_key=f"{key}:new-contact",
+    )
+    created = (batch.summary or {}).get("contact_id")
+    if not isinstance(created, int):
+        raise ValueError("The contact could not be created.")
+    return created
+
+
 # Manual links
 
 
@@ -350,175 +412,25 @@ def link_submit(
     return _dialog_done(request, db, start_date, end_date, batch)
 
 
-# Acknowledgments
-
-
-@router.get("/reconcile/acknowledge", response_class=HTMLResponse)
-def acknowledge_dialog(
-    request: Request,
-    db: DbSession,
-    txn: int,
-    scope: str = "transaction",
-    start: str = "",
-    end: str = "",
-) -> HTMLResponse:
-    """The dialog body for one transaction: a note for this transaction alone, or the choice of
-    counterparty that the standing acknowledgment covers."""
-    source, account = _transaction_or_404(db, txn)
-    try:
-        start_date, end_date = parse_range(start, end, date.today())
-    except RangeError as exc:
-        return _dialog_error(request, str(exc), 422)
-    context: dict[str, Any] = {
-        "source": side_of(source, account),
-        "txn": txn,
-        "start": start_date.isoformat(),
-        "end": end_date.isoformat(),
-        "idempotency_key": uuid4().hex,
-    }
-    if scope == "counterparty":
-        context.update(
-            choices=counterparty_choices(db, source),
-            kinds=[(kind.value, kind.value.title()) for kind in CounterpartyKind],
-        )
-        return _fragment(request, "frag_ack_counterparty", **context)
-    return _fragment(request, "frag_ack_transaction", **context)
-
-
-@router.post("/reconcile/acknowledge", response_class=HTMLResponse)
-def acknowledge_submit(
-    request: Request,
-    db: DbSession,
-    txn: Annotated[int, Form()],
-    note: Annotated[str, Form()] = "",
-    start: Annotated[str, Form()] = "",
-    end: Annotated[str, Form()] = "",
-    idempotency_key: Annotated[str, Form()] = "",
-) -> HTMLResponse:
-    """Say no counterpart is expected for one transaction. A refusal shows in the dialog."""
-    _transaction_or_404(db, txn)
-    try:
-        start_date, end_date = parse_range(start, end, date.today())
-    except RangeError as exc:
-        return _dialog_error(request, str(exc), 422)
-    try:
-        batch = acknowledge(db, txn, note=note, idempotency_key=idempotency_key or uuid4().hex)
-    except NothingChanged as exc:
-        return _dialog_error(request, str(exc), 409)
-    except (ValueError, BatchError) as exc:
-        return _dialog_error(request, str(exc), 422)
-    return _dialog_done(request, db, start_date, end_date, batch)
-
-
-@router.post("/reconcile/acknowledge/counterparty", response_class=HTMLResponse)
-def acknowledge_counterparty_submit(
-    request: Request,
-    db: DbSession,
-    txn: Annotated[int, Form()],
-    counterparty: Annotated[int | None, Form()] = None,
-    name: Annotated[str, Form()] = "",
-    kind: Annotated[str, Form()] = CounterpartyKind.business.value,
-    pattern: Annotated[str, Form()] = "",
-    start: Annotated[str, Form()] = "",
-    end: Annotated[str, Form()] = "",
-    idempotency_key: Annotated[str, Form()] = "",
-) -> HTMLResponse:
-    """Say no counterpart is expected from a counterparty: a saved one, or a new one made here."""
-    _transaction_or_404(db, txn)
-    try:
-        start_date, end_date = parse_range(start, end, date.today())
-    except RangeError as exc:
-        return _dialog_error(request, str(exc), 422)
-    try:
-        batch = acknowledge_counterparty(
-            db,
-            txn,
-            counterparty_id=counterparty,
-            name=name,
-            kind=kind,
-            pattern=pattern,
-            idempotency_key=idempotency_key or uuid4().hex,
-        )
-    except CounterpartyUnchanged as exc:
-        return _dialog_error(request, str(exc), 409)
-    except LookupError as exc:
-        return _dialog_error(request, str(exc), 422)
-    except (ValueError, BatchError) as exc:
-        return _dialog_error(request, str(exc), 422)
-    return _dialog_done(request, db, start_date, end_date, batch)
-
-
-@router.post("/reconcile/acknowledgments/{acknowledgment_id}/remove", response_class=HTMLResponse)
-def remove_acknowledgment(
-    request: Request,
-    db: DbSession,
-    acknowledgment_id: int,
-    start: Annotated[str, Form()] = "",
-    end: Annotated[str, Form()] = "",
-    idempotency_key: Annotated[str, Form()] = "",
-) -> HTMLResponse:
-    try:
-        start_date, end_date = parse_range(start, end, date.today())
-    except RangeError as exc:
-        return _notice(request, str(exc), 422)
-    try:
-        batch = unacknowledge(db, acknowledgment_id, idempotency_key=idempotency_key or uuid4().hex)
-    except LookupError:
-        return _region(
-            request,
-            db,
-            start_date,
-            end_date,
-            notice="That acknowledgment no longer exists.",
-            status=409,
-        )
-    return _region(request, db, start_date, end_date, toast=_toast(batch, batch.summary))
-
-
-@router.post(
-    "/reconcile/counterparties/{counterparty_id}/expect-match", response_class=HTMLResponse
-)
-def expect_match_again(
-    request: Request,
-    db: DbSession,
-    counterparty_id: int,
-    start: Annotated[str, Form()] = "",
-    end: Annotated[str, Form()] = "",
-    idempotency_key: Annotated[str, Form()] = "",
-) -> HTMLResponse:
-    """Remove a counterparty's standing acknowledgment. The counterparty itself stays."""
-    try:
-        start_date, end_date = parse_range(start, end, date.today())
-    except RangeError as exc:
-        return _notice(request, str(exc), 422)
-    try:
-        batch = update_counterparty(
-            db,
-            counterparty_id,
-            no_match_expected=False,
-            idempotency_key=idempotency_key or uuid4().hex,
-        )
-    except (LookupError, CounterpartyUnchanged):
-        return _region(
-            request,
-            db,
-            start_date,
-            end_date,
-            notice="That counterparty is no longer acknowledged.",
-            status=409,
-        )
-    return _region(request, db, start_date, end_date, toast=_toast(batch, batch.summary))
-
-
 # Undo
 
 
-def undo_reply(request: Request, db: Session, start: str | None, end: str | None) -> HTMLResponse:
+def undo_reply(
+    request: Request,
+    db: Session,
+    start: str | None,
+    end: str | None,
+    *,
+    automatic: bool = False,
+    message: str = "Undone",
+) -> HTMLResponse:
     """After an undo of a reconcile or receipts batch: the toast, and the results re-run.
 
     Called from the shared undo route. The range comes from the undo URL, and the default range
-    applies when it names none.
+    applies when it names none. After an undo of the other side, `automatic` runs the automatic
+    step again, because what it identified rested on what was undone.
     """
+    message = with_automatic(message, run_automatic(db)) if automatic else message
     today = date.today()
     try:
         start_date, end_date = parse_range(start, end, today)
@@ -527,7 +439,7 @@ def undo_reply(request: Request, db: Session, start: str | None, end: str | None
     return _fragment(
         request,
         "frag_undo_reply",
-        message="Undone",
+        message=message,
         results=results_for(
             db, request.app.state.settings, start=start_date, end=end_date, today=today
         ),

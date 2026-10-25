@@ -42,6 +42,7 @@ from omsync.ledger.sources import Account, account_digits
 from omsync.ledger.statements import StatementFile, StatementRow
 from omsync.ledger.transactions import (
     CategoryOrigin,
+    ContactOrigin,
     ImportReview,
     ReviewStatus,
     Split,
@@ -311,7 +312,9 @@ def set_splits(
 
     One batch: the old split rows are deleted, the new ones are inserted with ids that no row
     holds yet, and the transaction's own category is cleared. The lines must pass
-    check_split_lines. Each split's origin is manual. Raises ValueError otherwise.
+    check_split_lines. Each split's origin is manual. A new line keeps the other side of the old
+    line at the same position, so editing amounts or categories does not forget who a part is
+    owed by. Raises ValueError otherwise.
     """
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
@@ -323,12 +326,14 @@ def set_splits(
     rows = check.lines
 
     old_ids = _split_ids(session, txn_id)
+    old = [snapshot(session, "split", split_id) or {} for split_id in old_ids]
     changes = [
-        Change("split", str(split_id), snapshot(session, "split", split_id), None)
-        for split_id in old_ids
+        Change("split", str(split_id), before, None)
+        for split_id, before in zip(old_ids, old, strict=True)
     ]
     next_id = next_primary_key(session, Split.__table__)
     for position, (amount, category_id, memo) in enumerate(rows):
+        kept = old[position] if position < len(old) else {}
         changes.append(
             Change(
                 "split",
@@ -342,6 +347,9 @@ def set_splits(
                     "category_id": category_id,
                     "category_origin": CategoryOrigin.manual.value,
                     "memo": (memo or "").strip() or None,
+                    "contact_id": kept.get("contact_id"),
+                    "contact_account_id": kept.get("contact_account_id"),
+                    "contact_origin": kept.get("contact_origin", ContactOrigin.none.value),
                 },
             )
         )
@@ -465,7 +473,7 @@ def check_split_drafts(
             errors.append("")
             continue
         try:
-            cents = _read_amount(draft.amount, total_cents)
+            cents = _read_amount(draft.amount)
             if draft.category_id is None:
                 raise ValueError("Pick a category.")
             _usable_category(session, draft.category_id)
@@ -481,14 +489,13 @@ def check_split_drafts(
 def check_split_lines(session: Session, total_cents: int, lines: Sequence[SplitLine]) -> SplitCheck:
     """Check split lines whose amounts and categories are already known.
 
-    Each line needs a nonzero amount with the transaction's sign and a category that exists and
-    is not hidden. There must be at least two lines, and they must add up to the transaction
-    exactly.
+    Each line needs a nonzero amount, of either sign, and a category that exists and is not
+    hidden. There must be at least two lines, and they must add up to the transaction exactly.
     """
     errors: list[str] = []
     for amount, category_id, _memo in lines:
         try:
-            _check_amount(amount, total_cents)
+            _check_amount(amount)
             if category_id is None:
                 raise ValueError("Pick a category.")
             _usable_category(session, category_id)
@@ -521,7 +528,7 @@ def _conclude_split_check(
     return SplitCheck(None, errors, message, balance)
 
 
-def _read_amount(text: str, total_cents: int) -> int:
+def _read_amount(text: str) -> int:
     cleaned = text.strip()
     if not cleaned:
         raise ValueError("Enter an amount.")
@@ -529,15 +536,13 @@ def _read_amount(text: str, total_cents: int) -> int:
         cents = to_cents(cleaned)
     except ValueError:
         raise ValueError(f"{cleaned} is not an amount.") from None
-    _check_amount(cents, total_cents)
+    _check_amount(cents)
     return cents
 
 
-def _check_amount(cents: int, total_cents: int) -> None:
+def _check_amount(cents: int) -> None:
     if cents == 0:
         raise ValueError("An amount cannot be zero.")
-    if (cents < 0) != (total_cents < 0):
-        raise ValueError(f"Amounts take the transaction's sign, like {format_cents(total_cents)}.")
 
 
 # Helpers

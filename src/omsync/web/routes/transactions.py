@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch, BatchState
-from omsync.core.batches import BatchError, UndoConflict, applied_batch_for_key, undo
+from omsync.core.batches import BatchError, UndoConflict, applied_batch_for_key
 from omsync.core.money import format_cents
 from omsync.ledger.filters import FilterError, FilterSpec
 from omsync.ledger.register import (
@@ -31,6 +31,7 @@ from omsync.ledger.register import (
     set_splits,
     split_balance,
 )
+from omsync.reconcile.auto import undo_with_automatic
 from omsync.web.deps import get_db
 from omsync.web.register_replies import FRAGMENTS, reply, review_items
 from omsync.web.register_state import (
@@ -40,8 +41,9 @@ from omsync.web.register_state import (
     decode_filter,
     page_rows,
 )
-from omsync.web.routes.accounts import account_undo_reply
-from omsync.web.routes.counterparties import counterparty_undo_reply
+from omsync.web.routes.accounts import account_undo_reply, nicknames_undo_reply
+from omsync.web.routes.contacts import contacts_undo_reply
+from omsync.web.routes.other_side import transaction_undo_reply
 from omsync.web.routes.plan import plan_undo_reply
 from omsync.web.routes.reconcile import undo_reply as reconcile_undo_reply
 from omsync.web.routes.recurring import undo_reply as recurring_undo_reply
@@ -54,6 +56,7 @@ PAGE = "pages/transactions.html"
 EDITABLE_FIELDS = ("category", "memo")
 STALE_MESSAGE = "This changed elsewhere, reload."
 UNDO_CONFLICT_MESSAGE = "Can't undo: changed since this was made."
+UNDONE_WITH_AUTOMATIC = "Undone, with the automatic step that followed it"
 ADD_CATEGORIES_HINT = "Add categories on the Categories page."
 
 
@@ -352,16 +355,20 @@ def undo_batch(
     end: str | None = None,
     plan: str | None = None,
     source: str | None = None,
+    contact: int | None = None,
+    txn: int | None = None,
 ) -> HTMLResponse:
-    """Undo one batch and say so in the toast. What re-renders depends on the batch: a register row
+    """Undo one batch and say so in the toast, together with the automatic batches that followed
+    it (see undo_with_automatic). What re-renders depends on the batch: a register row
     is re-rendered out of band, a bulk edit or a saved filter re-renders the register, a review
     re-renders the review list, a reconcile or receipts batch re-runs the Reconcile results for the
-    range in start and end (a counterparty batch made there too), and a counterparty batch made on
-    its own page re-renders its list."""
+    range in start and end, a contact batch re-renders the Contacts page, the transaction detail, or
+    the Reconcile results, by the source the toast was sent from, and a nickname batch re-renders
+    the nicknames card of the account in account."""
     if db.get(Batch, batch_id) is None:
         raise HTTPException(status_code=404, detail="No such change")
     try:
-        batch = undo(db, batch_id)
+        batch, automatic = undo_with_automatic(db, batch_id)
     except UndoConflict:
         return _fragment(request, "frag_toast", status_code=409, message=UNDO_CONFLICT_MESSAGE)
     except BatchError:
@@ -373,19 +380,23 @@ def undo_batch(
         )
         return _fragment(request, "frag_toast", status_code=409, message=message)
     if _is_categories_batch(batch.kind):
-        return _categories_undone(request)
+        return _categories_undone(request, UNDONE_WITH_AUTOMATIC if automatic else "Undone")
     if batch.kind.startswith(("bulk.", "saved_filter.")):
         return _register_refresh_after_undo(request, db, account, f, saved, page)
     if batch.kind == "review_resolve":
         return _review_refresh_after_undo(request, db)
-    if (
-        batch.kind.startswith("reconcile.")
-        or batch.kind == "receipts"
-        or (batch.kind.startswith("counterparty.") and source == "reconcile")
-    ):
+    if batch.kind.startswith("reconcile.") or batch.kind == "receipts":
         return reconcile_undo_reply(request, db, start, end)
-    if batch.kind.startswith("counterparty."):
-        return counterparty_undo_reply(request, db, "Undone")
+    if batch.kind.startswith("account_nickname."):
+        message = UNDONE_WITH_AUTOMATIC if automatic else "Undone"
+        return nicknames_undo_reply(request, db, account, message)
+    if batch.kind.startswith("contact."):
+        message = UNDONE_WITH_AUTOMATIC if automatic else "Undone"
+        if source == "reconcile":
+            return reconcile_undo_reply(request, db, start, end, automatic=True, message=message)
+        if source == "transaction":
+            return transaction_undo_reply(request, db, txn, message)
+        return contacts_undo_reply(request, db, contact, message)
     if batch.kind.startswith("provider_") or (
         batch.kind.startswith("account.") and source == "providers"
     ):
@@ -437,12 +448,14 @@ def _register_refresh_after_undo(
 
 def _is_categories_batch(kind: str) -> bool:
     """Batches made on the Categories page, and categorize, whose undo changes what it shows."""
-    return kind in ("categorize", "keyword_import") or kind.startswith(("category.", "keyword."))
+    return kind in ("categorize", "keyword_import") or kind.startswith(
+        ("category.", "keyword.", "rule.")
+    )
 
 
-def _categories_undone(request: Request) -> HTMLResponse:
-    """The Categories page reloads the regions that show categories and keywords (categories.py)."""
-    response = _fragment(request, "frag_toast", message="Undone")
+def _categories_undone(request: Request, message: str) -> HTMLResponse:
+    """The Categories page reloads the regions that show categories, keywords, and rules."""
+    response = _fragment(request, "frag_toast", message=message)
     response.headers["HX-Trigger"] = json.dumps({"categories-changed": True})
     return response
 

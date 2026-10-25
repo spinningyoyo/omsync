@@ -4,7 +4,6 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from omsync.ledger.counterparties import CounterpartyMatcher
 from omsync.ledger.links import LinkKind
 from omsync.reconcile.model import AccountRef, Draft, Queue, TxnView, pair_signature
 from omsync.reconcile.patterns import DEFAULT_PATTERNS, Patterns
@@ -24,10 +23,10 @@ DESCRIPTIONS: dict[str, str] = {
     "7c": "Merchant: Same-Account PayPal Return (±$0.01)",
     "rt": "P2P: Round Trip",
     "ru": "Return: Round Trip via Untracked Account",
-    "cp": "P2P: Named Counterparty",
     "7b": "Merchant: Cross-Account Return",
     "7d": "Merchant: Cross-Account Return (Brand Match)",
     # Proposed by earlier versions. Links made from those proposals keep these names.
+    "cp": "P2P: Named Counterparty",
     "p2p": "P2P: General Reimbursement",
     "p2p_solo": "P2P: Solo Inflow (No Debit Match)",
 }
@@ -58,7 +57,7 @@ class Emitter:
 
     Rules ask allowed() while they choose candidates. A rejected pair is therefore not counted
     as a candidate, so an ambiguity check sees only live options. patterns holds the payee
-    patterns built from your own names. counterparties holds the compiled named counterparties.
+    patterns built from your own names.
     """
 
     def __init__(
@@ -66,12 +65,10 @@ class Emitter:
         rejected: frozenset[str] | None = None,
         *,
         patterns: Patterns = DEFAULT_PATTERNS,
-        counterparties: Sequence[CounterpartyMatcher] = (),
         accounts: Sequence[AccountRef] = (),
     ) -> None:
         self._rejected: frozenset[str] = rejected or frozenset()
         self.patterns = patterns
-        self.counterparties: tuple[CounterpartyMatcher, ...] = tuple(counterparties)
         self.accounts: tuple[AccountRef, ...] = tuple(accounts)
         self.drafts: list[Draft] = []
 

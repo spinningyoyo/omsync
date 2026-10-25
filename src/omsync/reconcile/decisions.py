@@ -1,15 +1,12 @@
-"""Your decisions on proposals: approve, reject, link by hand, unlink, and acknowledge.
+"""Your decisions on proposals: approve, reject, link by hand, and unlink.
 
 Each decision is one batch from omsync.core.batches, with an idempotency key, so a repeated call
 changes nothing twice. approve re-runs the engine for the range and refuses any signature that is
-no longer a current proposal. Partner contributions are never linked: approval only fills in an
-empty memo on the partner's transaction. Rejecting a proposal and unlinking a link both remember
-the pair, so it is not proposed again. Acknowledging a transaction, or a counterparty, says no
-counterpart is expected; it creates no link and covers none of an amount. coverage and
+no longer a current proposal. Partner contributions are never linked or annotated. Rejecting a
+proposal and unlinking a link both remember the pair, so it is not proposed again. coverage and
 is_reconciled read links; they never store the state.
 """
 
-import re
 from collections.abc import Iterable, Sequence
 from datetime import date
 from typing import Any
@@ -25,27 +22,12 @@ from omsync.core.batches import (
     make_preview,
     snapshot,
 )
-from omsync.ledger.counterparties import (
-    create_counterparty,
-    load_matchers,
-    update_counterparty,
-    validate_patterns,
-)
-from omsync.ledger.links import (
-    Acknowledgment,
-    CounterpartyKind,
-    Link,
-    LinkKind,
-    RejectedProposal,
-    RejectionReason,
-)
+from omsync.ledger.links import Link, LinkKind, RejectedProposal, RejectionReason
 from omsync.ledger.transactions import Transaction
 from omsync.reconcile.engine import run
 from omsync.reconcile.model import Draft, pair_signature, pair_signature_of, signature
-from omsync.reconcile.pool import transaction_description
 
 # Kinds a person may link by hand. Receipt links come from receipt matching.
-MAX_NOTE_LENGTH = 200
 MANUAL_KINDS = frozenset(
     {LinkKind.transfer, LinkKind.refund, LinkKind.p2p, LinkKind.joint_settlement}
 )
@@ -100,9 +82,15 @@ def approve(
 
 
 def approve_drafts(
-    session: Session, drafts: Sequence[Draft], *, idempotency_key: str, label: str
+    session: Session,
+    drafts: Sequence[Draft],
+    *,
+    idempotency_key: str,
+    label: str,
+    summary: dict[str, Any] | None = None,
 ) -> Batch:
-    """Record drafts from a run that was just made as links, in one batch labelled `label`.
+    """Record drafts from a run that was just made as links, in one batch labelled `label`, with
+    any extra keys of `summary` in the batch summary.
 
     The caller took the drafts from engine.run on the current data, so they are current: the
     batch is refused as stale if the data changes before it is applied. Raises ValueError when two
@@ -110,8 +98,9 @@ def approve_drafts(
     """
     _refuse_shared_transactions(drafts)
     changes: list[Change] = [Change("link", None, None, _link_values(d)) for d in drafts]
-    changes.extend(_partner_memo_changes(session, drafts))
-    preview = make_preview(session, "reconcile.approve", changes, summary={"label": label})
+    preview = make_preview(
+        session, "reconcile.approve", changes, summary={**(summary or {}), "label": label}
+    )
     return apply(session, preview, idempotency_key=idempotency_key)
 
 
@@ -248,101 +237,6 @@ def unlink(session: Session, link_id: int, *, idempotency_key: str) -> Batch:
     return apply(session, preview, idempotency_key=idempotency_key)
 
 
-def acknowledge(
-    session: Session, txn_id: int, *, note: str | None = None, idempotency_key: str
-) -> Batch:
-    """Say that no counterpart is expected for a transaction, with an optional note.
-
-    This is not a link and reconciles nothing. Raises LookupError for a missing transaction,
-    NothingChanged when it is already acknowledged, and ValueError for a transaction links already
-    cover in full or a note that is too long.
-    """
-    replay = applied_batch_for_key(session, idempotency_key)
-    if replay is not None:
-        return replay
-    txn = _transaction_or_raise(session, txn_id)
-    clean = " ".join((note or "").split())
-    if len(clean) > MAX_NOTE_LENGTH:
-        raise ValueError(f"a note can be at most {MAX_NOTE_LENGTH} characters")
-    if session.scalar(select(Acknowledgment.id).where(Acknowledgment.transaction_id == txn_id)):
-        raise NothingChanged("that transaction is already acknowledged")
-    if coverage(session, txn_id) >= abs(txn.amount_cents):
-        raise ValueError("links already explain that whole transaction")
-    preview = make_preview(
-        session,
-        "reconcile.acknowledge",
-        [Change("acknowledgment", None, None, {"transaction_id": txn_id, "note": clean or None})],
-        summary={"label": f"No match expected for transaction {txn_id}"},
-    )
-    return apply(session, preview, idempotency_key=idempotency_key)
-
-
-def unacknowledge(session: Session, acknowledgment_id: int, *, idempotency_key: str) -> Batch:
-    """Remove an acknowledgment, so its transaction is expected to have a counterpart again.
-    Raises LookupError if it does not exist."""
-    replay = applied_batch_for_key(session, idempotency_key)
-    if replay is not None:
-        return replay
-    before = snapshot(session, "acknowledgment", acknowledgment_id)
-    if before is None:
-        raise LookupError(f"no acknowledgment {acknowledgment_id}")
-    preview = make_preview(
-        session,
-        "reconcile.unacknowledge",
-        [Change("acknowledgment", str(acknowledgment_id), before, None)],
-        summary={"label": f"Expecting a match for transaction {before['transaction_id']} again"},
-    )
-    return apply(session, preview, idempotency_key=idempotency_key)
-
-
-def acknowledge_counterparty(
-    session: Session,
-    txn_id: int,
-    *,
-    idempotency_key: str,
-    counterparty_id: int | None = None,
-    name: str = "",
-    kind: CounterpartyKind | str = CounterpartyKind.business,
-    pattern: str = "",
-) -> Batch:
-    """Say that no counterpart is expected from a transaction's counterparty, now and later.
-
-    With counterparty_id, the saved counterparty is marked. Without it, a new counterparty named
-    `name` is saved, with `pattern` on the side the transaction's sign names. Either way the
-    counterparty's patterns must match this transaction, so the choice visibly covers it. Raises
-    LookupError for a missing transaction or counterparty, ValueError for a refused name or
-    pattern, and counterparties.NothingChanged when the counterparty is already marked.
-    """
-    replay = applied_batch_for_key(session, idempotency_key)
-    if replay is not None:
-        return replay
-    txn = _transaction_or_raise(session, txn_id)
-    text = transaction_description(session, txn)
-    if counterparty_id is not None:
-        matcher = next((m for m in load_matchers(session) if m.id == counterparty_id), None)
-        if matcher is None:
-            raise LookupError(f"no counterparty {counterparty_id}")
-        if not matcher.matches(text, txn.amount_cents):
-            raise ValueError(f"{matcher.name}'s patterns do not match that transaction")
-        return update_counterparty(
-            session, counterparty_id, no_match_expected=True, idempotency_key=idempotency_key
-        )
-    side = "out" if txn.amount_cents < 0 else "in"
-    patterns = validate_patterns(
-        {"out": [pattern] if side == "out" else [], "in": [pattern] if side == "in" else []}
-    )
-    if not re.search(patterns[side][0], text, re.IGNORECASE):
-        raise ValueError("that pattern does not match the transaction")
-    return create_counterparty(
-        session,
-        name=name,
-        kind=kind,
-        payee_patterns=patterns,
-        no_match_expected=True,
-        idempotency_key=idempotency_key,
-    )
-
-
 def coverage(session: Session, txn_id: int) -> int:
     """Return the cents that links explain for one transaction, from either side."""
     total = session.scalar(
@@ -393,30 +287,6 @@ def _link_values(draft: Draft) -> dict[str, Any]:
         "receipt_key": None,
         "evidence": evidence,
     }
-
-
-def _partner_memo_changes(session: Session, selected: Sequence[Draft]) -> list[Change]:
-    """Memo updates for partner contributions, setting only memos that are empty today."""
-    changes: list[Change] = []
-    seen: set[int] = set()
-    for draft in selected:
-        for note in draft.evidence.get("partner_contributions", []):
-            txn_id = int(note["txn_id"])
-            if txn_id in seen:
-                continue
-            seen.add(txn_id)
-            txn = session.get(Transaction, txn_id)
-            if txn is None or txn.memo:
-                continue
-            changes.append(
-                Change(
-                    "transaction",
-                    str(txn_id),
-                    {"memo": txn.memo},
-                    {"memo": str(note["memo"])},
-                )
-            )
-    return changes
 
 
 def _rejection_values(pair: str, draft: Draft | None, chosen: str) -> dict[str, Any]:

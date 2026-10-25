@@ -18,8 +18,9 @@ institution group shows the institution's logo beside its name (see
 [Settings](settings.md#bank-sync)). The choice is a database presentation preference.
 
 An account page shows institution, type, joint and closed status, balance and its date,
-transaction count and range, balance history, balance-check results, and recent institution
-sync attempts. It links to the register scoped to that account. Closed accounts leave the
+transaction count and range, balance history, balance-check results, recent institution
+sync attempts, and the account's nicknames, which it also edits (see
+[contacts](contacts.md#account-nicknames)). It links to the register scoped to that account. Closed accounts leave the
 normal panel without losing their history.
 
 Account edits change name, joint status, closed status, or the displayed last four digits

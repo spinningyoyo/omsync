@@ -47,16 +47,14 @@ SETTINGS_NAV: tuple[NavSection, ...] = (
         "General",
         (
             NavItem("Bank sync", "/settings/providers", "banknote-arrow-down"),
+            NavItem("Contacts", "/settings/contacts", "book-user"),
             NavItem("Rental properties", "/settings/rental", "house"),
             NavItem("About", "/settings/about", "info"),
         ),
     ),
     NavSection(
-        "Matching",
-        (
-            NavItem("Counterparties", "/settings/counterparties"),
-            NavItem("Your names", "/settings/names"),
-        ),
+        "Transactions",
+        (NavItem("Categories", "/settings/categories", "shapes"),),
     ),
 )
 

@@ -28,7 +28,7 @@ does not expect it to have a counterpart.
 
 Source rows retain their reported fields, file identity, and position. Joined rows do not
 overwrite user edits. Import itself does not categorize; the [automatic reconciliation](reconciliation.md) after it
-categorizes first, and `omsync categorize` runs the same step on demand.
+identifies the other side and then categorizes, and `omsync categorize` categorizes on demand.
 
 A file's content identity makes importing it again a no-op. Each applied file is one atomic
 [batch](changes.md). A bad file reports its failure without preventing other valid files
@@ -86,8 +86,11 @@ A new transaction's payee and raw payee are the row's **description**, and its m
 empty: the memo is the user's, and no source MEMO is copied into it. The description is NAME
 for most institutions, because their MEMO is a separate field, such as Fidelity's reference
 number, MCC, and card line. Chase and Chase Business cut NAME at 32 characters and continue the
-description in MEMO, so their description is NAME and MEMO joined: with no space when NAME is
-exactly 32 characters, since the cut falls inside a word, and with one space otherwise. The
+description in MEMO, so their description is NAME and MEMO joined. A NAME of exactly 32
+characters was cut at the limit, usually inside a word, so MEMO follows with no space; when the
+cut visibly fell between words, because NAME ends in “from” or “to” or MEMO starts with a
+transaction# or a Zelle confirmation, one space separates them, as it does after a shorter NAME.
+The
 format registry marks which formats join; import and [reconciliation](reconciliation.md) read
 a row's description through the same function. [Categorization](categories.md) matches that
 description and can fall back to source MEMO.

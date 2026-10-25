@@ -1,6 +1,8 @@
 {# Fragment blocks for the account page's replies (routes/accounts.py). A saved or undone change sends
    its header and the accounts panel out of band, so both show it, and the toast comes after them. A
-   block imports the macros it uses, because it renders without this file's top-level code. #}
+   nickname reply swaps the nicknames card in place and sends the toast out of band; an undone one
+   sends the card out of band behind its toast. A block imports the macros it uses, because it
+   renders without this file's top-level code. #}
 
 {% block frag_edit_error %}
 <p class="text-sm text-destructive" role="alert">{{ message }}</p>
@@ -13,6 +15,20 @@
 {{ account_header(detail, type_label, form_key, transactions_href, oob=true) }}
 {{ panel_groups(groups, oob=true) }}
 {{ toast_region(label, batch_id) }}
+{% endblock %}
+
+{% block frag_nicknames %}
+{% from "accounts/parts.html" import nicknames_card %}
+{% from "transactions/parts.html" import toast_region %}
+{{ nicknames_card(account_id, nicknames, nickname_key, error=error) }}
+{%- if message %}{{ toast_region(message, batch_id, account=account_id) }}{% endif %}
+{% endblock %}
+
+{% block frag_nicknames_undone %}
+{% from "accounts/parts.html" import nicknames_card %}
+{% from "transactions/parts.html" import toast %}
+{{ toast(message) }}
+{%- if account_id %}{{ nicknames_card(account_id, nicknames, nickname_key, oob=true) }}{% endif %}
 {% endblock %}
 
 {% block frag_grouping %}

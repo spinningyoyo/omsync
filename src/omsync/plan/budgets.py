@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session
 from omsync.core.batch_models import Batch
 from omsync.core.batches import Change, applied_batch_for_key, apply, make_preview, snapshot
 from omsync.core.months import month_end, shift_month_start
-from omsync.ledger.categories import DEFAULT_CATEGORY_ICON, Category, CategoryType
+from omsync.ledger.categories import (
+    DEFAULT_CATEGORY_ICON,
+    NOT_IN_REPORTS,
+    Category,
+    CategoryType,
+)
 from omsync.ledger.models import BudgetKind, BudgetLine, Goal
 from omsync.ledger.preferences import get_pref
 from omsync.reports.queries import Period, by_category, monthly_trend, spending_by_month
@@ -390,8 +395,8 @@ def set_line(
             raise ValueError(f"there is no category {category_id}")
         if category.type is CategoryType.income:
             raise ValueError(f"{category.name} is an income category and has no budget")
-        if category.type is CategoryType.excluded:
-            raise ValueError(f"{category.name} is excluded from reports and has no budget")
+        if category.type in NOT_IN_REPORTS:
+            raise ValueError(f"{category.name} is left out of reports and has no budget")
     else:
         if category_id is not None:
             raise ValueError("the flex pool is not tied to a category")

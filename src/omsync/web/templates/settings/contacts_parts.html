@@ -1,0 +1,450 @@
+{# The Contacts region: either the list (every contact, you first, with the form that names you until
+   you are named) or one contact's page (balance, open items, lines, and the editors; yours has no
+   balance). The region swaps itself on each write, and out of band after an undo. Macros import what
+   they use, because a fragment block renders without this file's top level. Import this file with
+   context: the region reads the view data (view, has_owner, rows, detail, ...) from the render
+   context. #}
+{% from "components/button.html" import button, link_button %}
+{% from "components/pill.html" import pill with context %}
+
+{% macro contacts_region(error="", oob=false) -%}
+<div id="contacts-region" class="flex flex-col gap-6" hx-target="#contacts-region" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {%- if error %}
+  <p class="text-sm text-destructive" role="alert">{{ error }}</p>
+  {%- endif %}
+  {%- if view == "detail" %}
+  {{ detail_view(detail) }}
+  {%- else %}
+  {%- if not has_owner %}{{ owner_card() }}{% endif %}
+  {{ contacts_section() }}
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# One contact's names, accounts outside the ledger with the patterns tied to them, and the
+   patterns that name no account. For you, only the patterns tied to an account matter. #}
+{% macro contact_editor(c) -%}
+<div class="flex flex-col gap-3">
+  <div>
+    <h3 class="text-sm font-medium text-primary">{{ "Your names" if c.is_owner else "Names" }}</h3>
+    <p class="text-sm text-secondary">A name in parts. Banks print it in several forms, such as given and family name in either order, with or without the middle name or its initial, or with the given name as an initial, and each is recognized. Up to 10 names, 80 characters per part.</p>
+  </div>
+  {%- if c.names %}
+  <ul class="flex flex-col divide-y divide-subdued">
+    {%- for name in c.names %}
+    <li class="flex items-start justify-between gap-3 py-2">
+      <span class="flex min-w-0 flex-col gap-0.5">
+        <span class="break-all text-sm text-primary">{{ name.text }}</span>
+        <span class="break-words text-xs text-secondary">Recognized as: {{ name.forms }}{% if name.matches is not none %} · matches {{ name.matches }} transaction{{ "" if name.matches == 1 else "s" }}{% endif %}</span>
+      </span>
+      <form hx-post="/settings/contacts/names/{{ name.id }}/remove">
+        <input type="hidden" name="idempotency_key" value="{{ name.remove_key }}">
+        <input type="hidden" name="contact" value="{{ c.id }}">
+        {{ button("Remove", variant="outline", size="sm", type="submit", aria_label="Remove " ~ name.text) }}
+      </form>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="text-sm text-secondary">No names saved yet.</p>
+  {%- endif %}
+  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ c.id }}/names">
+    <input type="hidden" name="idempotency_key" value="{{ c.add_name_key }}">
+    <label class="form-field w-auto min-w-[10rem]">
+      <span class="form-field__label">Given name</span>
+      <input type="text" name="given" maxlength="80" required class="form-field__input">
+    </label>
+    <label class="form-field w-auto min-w-[10rem]">
+      <span class="form-field__label">Middle name (optional)</span>
+      <input type="text" name="middle" maxlength="80" class="form-field__input">
+    </label>
+    <label class="form-field w-auto min-w-[10rem]">
+      <span class="form-field__label">Family name (optional)</span>
+      <input type="text" name="family" maxlength="80" class="form-field__input">
+    </label>
+    {{ button("Add name", variant="primary", type="submit") }}
+  </form>
+</div>
+
+<div class="flex flex-col gap-3">
+  <div>
+    <h3 class="text-sm font-medium text-primary">{{ "Your accounts outside omsync" if c.is_owner else "Accounts" }}</h3>
+    <p class="text-sm text-secondary">
+      {%- if c.is_owner %}An account you do not sync, such as a brokerage. A description that names its last four digits, or a pattern tied to it, records it as the other side.
+      {%- else %}An account of this contact. A description that names its last four digits, or a pattern tied to it, records it as the other side.{% endif %} Up to 20 accounts.</p>
+  </div>
+  {%- if c.accounts %}
+  <ul class="flex flex-col divide-y divide-subdued">
+    {%- for account in c.accounts %}
+    <li class="flex flex-col gap-2 py-3">
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-sm text-primary">{{ account.label }}{% if account.digits %} <span class="text-secondary">{{ account.digits }}</span>{% endif %}</span>
+        <form hx-post="/settings/contacts/accounts/{{ account.id }}/remove">
+          <input type="hidden" name="idempotency_key" value="{{ account.remove_key }}">
+          <input type="hidden" name="contact" value="{{ c.id }}">
+          {{ button("Remove", variant="outline", size="sm", type="submit", aria_label="Remove " ~ account.label) }}
+        </form>
+      </div>
+      {%- for pattern in account.patterns %}
+      {{ pattern_line(c, pattern, account.label) }}
+      {%- endfor %}
+      <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ c.id }}/patterns">
+        <input type="hidden" name="idempotency_key" value="{{ account.add_pattern_key }}">
+        <input type="hidden" name="account" value="{{ account.id }}">
+        {{ side_select() }}
+        <label class="form-field w-auto min-w-[14rem]">
+          <span class="form-field__label">Pattern for this account</span>
+          <input type="text" name="pattern" maxlength="200" required class="form-field__input" placeholder="Words in the description">
+        </label>
+        {{ button("Add pattern", variant="outline", type="submit") }}
+      </form>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="text-sm text-secondary">No accounts yet.</p>
+  {%- endif %}
+  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ c.id }}/accounts">
+    <input type="hidden" name="idempotency_key" value="{{ c.add_account_key }}">
+    <label class="form-field w-auto min-w-[12rem]">
+      <span class="form-field__label">Account name</span>
+      <input type="text" name="label" maxlength="80" required class="form-field__input" placeholder="Brokerage">
+    </label>
+    <label class="form-field w-auto min-w-[8rem]">
+      <span class="form-field__label">Last four digits (optional)</span>
+      <input type="text" name="last4" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" class="form-field__input">
+    </label>
+    {{ button("Add account", variant="outline", type="submit") }}
+  </form>
+</div>
+
+{%- if not c.is_owner or c.loose_patterns %}
+<div class="flex flex-col gap-3">
+  <div>
+    <h3 class="text-sm font-medium text-primary">Patterns</h3>
+    <p class="text-sm text-secondary">A case-insensitive regular expression for wordings no name covers, for payments you sent (out) or received (in). Up to 10 per side.</p>
+  </div>
+  {%- if c.loose_patterns %}
+  <ul class="flex flex-col divide-y divide-subdued">
+    {%- for pattern in c.loose_patterns %}
+    <li class="py-2">{{ pattern_line(c, pattern, none) }}</li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="text-sm text-secondary">No patterns yet.</p>
+  {%- endif %}
+  {%- if not c.is_owner %}
+  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ c.id }}/patterns">
+    <input type="hidden" name="idempotency_key" value="{{ c.add_pattern_key }}">
+    {{ side_select() }}
+    <label class="form-field w-auto min-w-[14rem]">
+      <span class="form-field__label">Pattern</span>
+      <input type="text" name="pattern" maxlength="200" required class="form-field__input" placeholder="Words in the description">
+    </label>
+    {%- if c.account_choices %}
+    <label class="form-field w-auto min-w-[10rem]">
+      <span class="form-field__label">Names an account (optional)</span>
+      <select name="account" class="form-field__input">
+        <option value="">No account</option>
+        {%- for account_id, label in c.account_choices %}
+        <option value="{{ account_id }}">{{ label }}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    {%- endif %}
+    {{ button("Add pattern", variant="outline", type="submit") }}
+  </form>
+  {%- endif %}
+</div>
+{%- endif %}
+{%- endmacro %}
+
+{% macro side_select() -%}
+<label class="form-field w-auto min-w-[9rem]">
+  <span class="form-field__label">Side</span>
+  <select name="side" class="form-field__input">
+    <option value="out">You paid</option>
+    <option value="in">You received</option>
+  </select>
+</label>
+{%- endmacro %}
+
+{% macro pattern_line(c, pattern, account_label) -%}
+<form class="flex items-center justify-between gap-3" hx-post="/settings/contacts/patterns/{{ pattern.id }}/remove">
+  <input type="hidden" name="idempotency_key" value="{{ pattern.remove_key }}">
+  <input type="hidden" name="contact" value="{{ c.id }}">
+  <span class="min-w-0 break-all text-sm text-primary"><span class="text-secondary">{{ "You paid" if pattern.side == "out" else "You received" }}:</span> <code>{{ pattern.pattern }}</code></span>
+  {{ button("Remove", variant="outline", size="sm", type="submit", aria_label="Remove the pattern " ~ pattern.pattern) }}
+</form>
+{%- endmacro %}
+
+{# The list's card until you are named: the name the owner is created from. #}
+{% macro owner_card() -%}
+<section id="you" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="you-title">
+  <div>
+    <h2 id="you-title" class="font-medium text-primary">Add your name so omsync recognizes transfers between your accounts</h2>
+    <p class="text-sm text-secondary">Your name as banks print it. Your accounts outside omsync can be added on your page after it.</p>
+  </div>
+  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/you/names">
+    <input type="hidden" name="idempotency_key" value="{{ add_owner_name_key }}">
+    <label class="form-field w-auto min-w-[10rem]">
+      <span class="form-field__label">Given name</span>
+      <input type="text" name="given" maxlength="80" required class="form-field__input" data-autofocus>
+    </label>
+    <label class="form-field w-auto min-w-[10rem]">
+      <span class="form-field__label">Middle name (optional)</span>
+      <input type="text" name="middle" maxlength="80" class="form-field__input">
+    </label>
+    <label class="form-field w-auto min-w-[10rem]">
+      <span class="form-field__label">Family name (optional)</span>
+      <input type="text" name="family" maxlength="80" class="form-field__input">
+    </label>
+    {{ button("Add your name", variant="primary", type="submit") }}
+  </form>
+</section>
+{%- endmacro %}
+
+{% macro contacts_section() -%}
+<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="contacts-title">
+  <div>
+    <h2 id="contacts-title" class="font-medium text-primary">Contacts <span class="text-sm text-secondary">({{ rows|length }})</span></h2>
+    <p class="text-sm text-secondary">What is owed between you and each contact, from the loans and transfers recorded with them. The largest balances come first.</p>
+  </div>
+  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts">
+    <input type="hidden" name="idempotency_key" value="{{ create_key }}">
+    <label class="form-field w-auto min-w-[12rem]">
+      <span class="form-field__label">Name</span>
+      <input type="text" name="name" maxlength="80" required class="form-field__input" placeholder="Sam Friend">
+    </label>
+    <label class="form-field w-auto min-w-[9rem]">
+      <span class="form-field__label">Kind</span>
+      <select name="kind" class="form-field__input">
+        <option value="person">Person</option>
+        <option value="business">Business</option>
+      </select>
+    </label>
+    <label class="form-field w-auto min-w-[8rem]">
+      <span class="form-field__label">Given name (optional)</span>
+      <input type="text" name="given" maxlength="80" class="form-field__input">
+    </label>
+    <label class="form-field w-auto min-w-[8rem]">
+      <span class="form-field__label">Middle (optional)</span>
+      <input type="text" name="middle" maxlength="80" class="form-field__input">
+    </label>
+    <label class="form-field w-auto min-w-[8rem]">
+      <span class="form-field__label">Family (optional)</span>
+      <input type="text" name="family" maxlength="80" class="form-field__input">
+    </label>
+    {{ button("Add contact", variant="primary", type="submit") }}
+  </form>
+  <p class="text-sm text-secondary">Leave the name parts empty to read the name as written: the first word is the given name and the last the family name.</p>
+  {%- if rows %}
+  <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Contacts">
+    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+      <thead>
+        <tr>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Name</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Kind</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Balance</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Open items</th>
+        </tr>
+      </thead>
+      <tbody>
+        {%- for row in rows %}
+        <tr>
+          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+            <a href="/settings/contacts/{{ row.id }}" class="text-primary underline-offset-2 hover:underline focus-ring">{{ row.name }}</a>
+            {%- if row.role %} {{ pill(row.role, tone="indigo", style="soft") }}{% endif %}
+          </td>
+          <td class="px-3 py-3 align-top text-secondary{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.kind }}</td>
+          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+            {%- if row.balance_cents is none %}<span class="text-secondary">No balance</span>
+            {%- elif row.balance_cents == 0 %}<span class="text-secondary">Settled</span>
+            {%- else %}<span class="text-secondary">{{ row.direction }}</span> <span class="tabular-nums">{{ row.balance_cents|abs|money }}</span>{% endif %}
+          </td>
+          <td class="px-3 py-3 align-top text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.open_items if row.balance_cents else "" }}</td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+  {%- else %}
+  <p class="text-sm text-secondary">No contacts yet. Add one, or set the other side of a transaction to a new contact.</p>
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{# A contact's page #}
+
+{% macro detail_view(d) -%}
+<div class="flex flex-col gap-2">
+  {{ link_button("Contacts", href="/settings/contacts", variant="ghost", size="sm", icon="chevron-left") }}
+  <h2 class="text-xl font-medium text-primary">{{ d.editor.name }}
+    <span class="ml-1 align-middle">{{ pill(d.kind, tone="gray", style="outline") }}{% if d.role %} {{ pill(d.role, tone="indigo", style="soft") }}{% endif %}</span></h2>
+</div>
+
+{%- if d.is_owner %}
+<section class="rounded-xl bg-container p-5 shadow-border-xs">
+  <p class="text-sm text-secondary">No balance is kept with you: money between your own accounts stays yours.</p>
+</section>
+{%- elif d.balance %}
+{{ balance_section(d.balance) }}
+{%- else %}
+<section class="rounded-xl bg-container p-5 shadow-border-xs">
+  <p class="text-sm text-secondary">{{ d.editor.name }} is the co-owner of your joint accounts. No balance is kept between the owners.</p>
+</section>
+{%- endif %}
+
+<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="contact-edit-title">
+  <h3 id="contact-edit-title" class="font-medium text-primary">Details</h3>
+  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ d.editor.id }}/edit">
+    <input type="hidden" name="idempotency_key" value="{{ d.edit_key }}">
+    <label class="form-field w-auto min-w-[12rem]">
+      <span class="form-field__label">Name</span>
+      <input type="text" name="name" maxlength="80" required value="{{ d.editor.name }}" class="form-field__input">
+    </label>
+    {%- if not d.is_owner %}
+    <label class="form-field w-auto min-w-[9rem]">
+      <span class="form-field__label">Kind</span>
+      <select name="kind" class="form-field__input">
+        <option value="person"{% if d.kind_value == "person" %} selected{% endif %}>Person</option>
+        <option value="business"{% if d.kind_value == "business" %} selected{% endif %}>Business</option>
+      </select>
+    </label>
+    {%- endif %}
+    {{ button("Save", variant="outline", type="submit") }}
+  </form>
+  {%- if not d.is_owner %}
+  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ d.editor.id }}/role">
+    <input type="hidden" name="idempotency_key" value="{{ d.role_key }}">
+    <label class="form-field w-auto min-w-[12rem]">
+      <span class="form-field__label">Role</span>
+      <select name="role" class="form-field__input">
+        <option value="other"{% if d.role_value == "other" %} selected{% endif %}>Contact</option>
+        <option value="co_owner"{% if d.role_value == "co_owner" %} selected{% endif %}>Co-owner of the joint accounts</option>
+      </select>
+    </label>
+    {{ button("Set role", variant="outline", type="submit") }}
+  </form>
+  <p class="text-sm text-secondary">The co-owner's deposits into a joint account are a co-owner's contribution, and no balance is kept between the owners.</p>
+  {%- endif %}
+</section>
+
+<section class="flex flex-col gap-5 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="contact-recognize-title">
+  <h3 id="contact-recognize-title" class="font-medium text-primary">How payments are recognized</h3>
+  {{ contact_editor(d.editor) }}
+</section>
+
+{%- if not d.is_owner %}
+<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="contact-remove-title">
+  <h3 id="contact-remove-title" class="font-medium text-primary">Merge or delete</h3>
+  {%- if d.merge_choices %}
+  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ d.editor.id }}/merge" hx-confirm="Merge {{ d.editor.name }} into the contact you chose? Its names, patterns, accounts, and transactions move there.">
+    <input type="hidden" name="idempotency_key" value="{{ d.merge_key }}">
+    <label class="form-field w-auto min-w-[14rem]">
+      <span class="form-field__label">Merge into</span>
+      <select name="into" class="form-field__input" required>
+        <option value="">Choose a contact</option>
+        {%- for contact_id, name in d.merge_choices %}
+        <option value="{{ contact_id }}">{{ name }}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    {{ button("Merge", variant="outline", type="submit") }}
+  </form>
+  <p class="text-sm text-secondary">The names, patterns, accounts, and transactions of {{ d.editor.name }} move to the contact you choose, and {{ d.editor.name }} is deleted.</p>
+  {%- endif %}
+  <form hx-post="/settings/contacts/{{ d.editor.id }}/delete" hx-confirm="Delete {{ d.editor.name }}? The other side recorded for its transactions is cleared.">
+    <input type="hidden" name="idempotency_key" value="{{ d.delete_key }}">
+    {{ button("Delete " ~ d.editor.name, variant="destructive", size="sm", type="submit") }}
+  </form>
+</section>
+{%- endif %}
+{%- endmacro %}
+
+{% macro balance_section(b) -%}
+<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="balance-title">
+  <div>
+    <h3 id="balance-title" class="font-medium text-primary">Balance</h3>
+    {%- if b.direction_key == "settled" %}
+    <p class="text-lg text-primary">Settled</p>
+    {%- else %}
+    <p class="text-lg text-primary">{{ b.direction }} <span class="tabular-nums">{{ b.cents|abs|money }}</span></p>
+    <p class="text-sm text-secondary">{{ "This contact owes you." if b.direction_key == "owes_you" else "You owe this contact, or you hold money for them." }}</p>
+    {%- endif %}
+  </div>
+
+  {%- if b.open_items %}
+  <div>
+    <h4 class="mb-2 text-sm font-medium text-primary">Open items</h4>
+    <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Open items">
+      <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+        <thead>
+          <tr>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Payee</th>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Open</th>
+          </tr>
+        </thead>
+        <tbody>
+          {%- for item in b.open_items %}
+          <tr>
+            <td class="px-3 py-2 whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ item.on }}</td>
+            <td class="px-3 py-2{% if not loop.first %} border-t border-subdued{% endif %}"><a href="/transactions/{{ item.txn_id }}/detail" class="underline-offset-2 hover:underline focus-ring">{{ item.payee }}</a></td>
+            <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ item.amount_cents|money }}</td>
+            <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ item.open_cents|money }}</td>
+          </tr>
+          {%- endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {%- endif %}
+
+  {%- if b.lines %}
+  <details>
+    <summary class="cursor-pointer text-sm font-medium text-primary">Every line ({{ b.lines|length }})</summary>
+    <p class="mt-2 text-sm text-secondary">Loans and transfers with this contact, oldest first. Money out and money in clear each other oldest first; the cleared amount is how much of a line was cleared that way.</p>
+    <div class="table-scroll mt-2 shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Lines">
+      <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+        <thead>
+          <tr>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Payee</th>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Cleared</th>
+          </tr>
+        </thead>
+        <tbody>
+          {%- for line in b.lines %}
+          <tr>
+            <td class="px-3 py-2 whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ line.on }}</td>
+            <td class="px-3 py-2{% if not loop.first %} border-t border-subdued{% endif %}"><a href="/transactions/{{ line.txn_id }}/detail" class="underline-offset-2 hover:underline focus-ring">{{ line.payee }}</a>{% if line.is_split %} <span class="text-xs text-secondary">(part)</span>{% endif %}</td>
+            <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ line.amount_cents|money }}</td>
+            <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ line.cleared_cents|money }}</td>
+          </tr>
+          {%- endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {%- else %}
+  <p class="text-sm text-secondary">No loans or transfers are recorded with this contact yet. Set the other side of a transaction to this contact, and categorize it as a loan or a transfer, to record one.</p>
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{# The undo toast. Its Undo posts to the shared undo route; contact says which view to show. #}
+{% macro toast(message, batch_id=none, contact_id=none) -%}
+<div class="toast" role="status" data-controller="toast">
+  <span class="toast-message">{{ message }}</span>
+  {%- if batch_id %}
+  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo?source=contacts" ~ ("&contact=" ~ contact_id if contact_id else ""), "hx-target": "#toast-region"}) }}
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro toast_region(message, batch_id=none, contact_id=none) -%}
+<div id="toast-region" hx-swap-oob="true" aria-live="polite">{{ toast(message, batch_id, contact_id) }}</div>
+{%- endmacro %}

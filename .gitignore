@@ -17,6 +17,10 @@ exports/
 backups/
 browser-profile/
 
+# One-off scripts that hold your own accounts, logins, names, or maneko history. Kept locally.
+scripts/setup_institutions.py
+scripts/maneko_*.py
+
 # Python and tooling
 .venv/
 __pycache__/

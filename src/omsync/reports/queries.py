@@ -6,7 +6,7 @@ percent), so no float reaches the data path. These are reads: nothing here write
 A line is what a report counts. A transaction with splits contributes its splits, and any other
 transaction contributes itself. Lines never count as income or spending when:
 
-- a line whose category is excluded;
+- a line whose category is left out of reports (excluded or owed);
 - an uncategorized line. uncategorized_total reports those separately.
 
 A transfer or joint_settlement link explains part of its transactions' amounts. The explained part
@@ -38,6 +38,7 @@ from sqlalchemy.orm import Session
 
 from omsync.core.money import allocate
 from omsync.core.months import month_end, shift_month_start
+from omsync.ledger.categories import NOT_IN_REPORTS
 from omsync.ledger.models import (
     Account,
     Category,
@@ -286,8 +287,8 @@ def has_transactions(session: Session) -> bool:
 
 def report_lines(session: Session, period: Period, *, joint_share: bool) -> list[ReportLine]:
     """Every counted line posted in the period, with explained amounts and joint share applied.
-    Lines of an excluded category are dropped here, so every figure shares one definition of a
-    line."""
+    Lines of a category that reports leave out are dropped here, so every figure shares one
+    definition of a line."""
     explained = explained_cents(session, period)
     split_rows = session.execute(
         select(
@@ -352,8 +353,8 @@ def _line(transaction_id: int, row: Row, amount: int) -> ReportLine:
 
 
 def _counts(line: ReportLine) -> bool:
-    """False for a line whose category is excluded from reports."""
-    return line.type is not CategoryType.excluded
+    """False for a line whose category reports leave out, such as excluded or owed."""
+    return line.type not in NOT_IN_REPORTS
 
 
 def explained_cents(session: Session, period: Period) -> dict[int, int]:

@@ -1,0 +1,124 @@
+{# The transaction detail: the transaction, who is on the other side of it, and the same for each
+   split. The region swaps itself on each write, and out of band after an undo. Macros import what
+   they use, because a fragment block renders without this file's top level. #}
+{% from "components/button.html" import button %}
+{% from "components/pill.html" import pill with context %}
+
+{% macro detail_region(detail, error="", oob=false) -%}
+{%- set row = detail.row -%}
+<div id="txn-detail-region" class="flex flex-col gap-6" hx-target="#txn-detail-region" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <section class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="txn-title">
+    <h2 id="txn-title" class="font-medium text-primary">{{ row.payee }}</h2>
+    <dl class="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+      <div><dt class="text-xs uppercase text-secondary">Date</dt><dd class="text-primary">{{ row.posted_on.isoformat() }}</dd></div>
+      <div><dt class="text-xs uppercase text-secondary">Account</dt><dd class="text-primary">{{ row.account_name }}{% if row.account_digits %} <span class="text-secondary">{{ row.account_digits }}</span>{% endif %}</dd></div>
+      <div><dt class="text-xs uppercase text-secondary">Amount</dt><dd class="tabular-nums text-primary">{{ row.amount_cents|money }}</dd></div>
+      <div><dt class="text-xs uppercase text-secondary">Category</dt><dd class="text-primary">{{ "Split" if row.is_split else (row.category or "Uncategorized") }}</dd></div>
+      {%- if row.memo %}
+      <div class="sm:col-span-2"><dt class="text-xs uppercase text-secondary">Memo</dt><dd class="break-words text-primary">{{ row.memo }}</dd></div>
+      {%- endif %}
+    </dl>
+    {%- if detail.set_by_rule %}
+    <p class="text-sm text-secondary">Set by rule: {{ detail.set_by_rule }}</p>
+    {%- endif %}
+  </section>
+
+  <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="other-side-title">
+    <div>
+      <h2 id="other-side-title" class="font-medium text-primary">What is on the other side?</h2>
+      <p class="text-sm text-secondary">The contact, or one of your accounts outside omsync, that this money moved to or from. omsync recognizes it after each import; what you set here is kept, and recognition never replaces it.</p>
+    </div>
+    {%- if error %}
+    <p class="text-sm text-destructive" role="alert">{{ error }}</p>
+    {%- endif %}
+    {{ side_status(detail.side, none) }}
+    {{ side_form("/transactions/" ~ row.id ~ "/other-side", detail.groups, detail.side, detail.set_key, detail.clear_key, "the transaction") }}
+  </section>
+
+  {%- if detail.splits %}
+  <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="splits-title">
+    <div>
+      <h2 id="splits-title" class="font-medium text-primary">Splits</h2>
+      <p class="text-sm text-secondary">A part can be owed by a contact of its own, such as a purchase shared with a friend. A part with none belongs to the transaction's other side.</p>
+    </div>
+    <ul class="flex flex-col divide-y divide-subdued">
+      {%- for part in detail.splits %}
+      <li class="flex flex-col gap-3 py-3">
+        <div class="flex flex-wrap justify-between gap-2 text-sm">
+          <span class="text-primary">Part {{ part.number }}{% if part.split.category %} · {{ part.split.category }}{% endif %}{% if part.split.memo %} · {{ part.split.memo }}{% endif %}</span>
+          <span class="tabular-nums text-primary">{{ part.split.amount_cents|money }}</span>
+        </div>
+        {{ side_status(part.side, detail.side) }}
+        {{ side_form("/transactions/" ~ row.id ~ "/splits/" ~ part.split.id ~ "/other-side", detail.groups, part.side, part.set_key, part.clear_key, "part " ~ part.number) }}
+      </li>
+      {%- endfor %}
+    </ul>
+  </section>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# Who is on the other side now, and what set it. inherited is the transaction's side, for a split
+   with none of its own. #}
+{% macro side_status(side, inherited) -%}
+{%- if side.contact_id %}
+<p class="flex flex-wrap items-center gap-2 text-sm text-primary">
+  {%- if side.is_you %}
+  <span>Your account {{ side.account or "outside omsync" }}</span>
+  {%- else %}
+  <a href="/settings/contacts/{{ side.contact_id }}" class="underline-offset-2 hover:underline focus-ring">{{ side.name }}</a>{% if side.account %}<span class="text-secondary">· {{ side.account }}</span>{% endif %}
+  {%- endif %}
+  {{ pill(side.origin_label, tone="indigo" if side.origin == "manual" else "gray", style="soft") }}
+</p>
+{%- elif inherited is not none and inherited.contact_id %}
+<p class="text-sm text-secondary">Belongs to {{ inherited.name if not inherited.is_you else "your account " ~ (inherited.account or "outside omsync") }}, the transaction's other side.</p>
+{%- else %}
+<p class="text-sm text-secondary">Not identified.</p>
+{%- endif %}
+{%- endmacro %}
+
+{# Choose who is on the other side, or clear it so that recognition may set it again. #}
+{% macro side_form(url, groups, side, set_key, clear_key, what) -%}
+<div class="flex flex-wrap items-end gap-3">
+  <form class="flex flex-wrap items-end gap-3" hx-post="{{ url }}">
+    <input type="hidden" name="idempotency_key" value="{{ set_key }}">
+    <label class="form-field w-auto min-w-[16rem]">
+      <span class="form-field__label">Set the other side of {{ what }} to</span>
+      <select name="target" class="form-field__input" required>
+        <option value="">Choose…</option>
+        {%- for group in groups %}
+        <optgroup label="{{ group.label }}">
+          {%- for choice in group.choices %}
+          <option value="{{ choice.value }}"{% if choice.value == side.selected %} selected{% endif %}>{{ choice.label }}</option>
+          {%- endfor %}
+        </optgroup>
+        {%- endfor %}
+      </select>
+    </label>
+    {{ button("Set", variant="primary", type="submit") }}
+  </form>
+  {%- if side.origin != "none" or side.contact_id %}
+  <form hx-post="{{ url }}">
+    <input type="hidden" name="idempotency_key" value="{{ clear_key }}">
+    <input type="hidden" name="target" value="">
+    {{ button("Clear", variant="outline", type="submit", aria_label="Clear the other side of " ~ what) }}
+  </form>
+  {%- endif %}
+</div>
+{%- if not groups %}
+<p class="text-sm text-secondary">There is no contact yet. Add one on the <a href="/settings/contacts" class="underline focus-ring">Contacts page</a>, or add your accounts outside omsync there.</p>
+{%- endif %}
+{%- endmacro %}
+
+{% macro toast(message, batch_id=none, txn_id=none) -%}
+<div class="toast" role="status" data-controller="toast">
+  <span class="toast-message">{{ message }}</span>
+  {%- if batch_id %}
+  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo?source=transaction&txn=" ~ txn_id, "hx-target": "#toast-region"}) }}
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro toast_region(message, batch_id=none, txn_id=none) -%}
+<div id="toast-region" hx-swap-oob="true" aria-live="polite">{{ toast(message, batch_id, txn_id) }}</div>
+{%- endmacro %}

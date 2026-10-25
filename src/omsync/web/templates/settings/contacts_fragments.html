@@ -1,0 +1,20 @@
+{# Fragment blocks for the Contacts replies (routes/contacts.py and the shared undo route). The
+   region is the target of every write; the toast comes with it, and its Undo posts to the shared
+   undo route. #}
+
+{% block frag_saved %}
+{% from "settings/contacts_parts.html" import contacts_region, toast_region with context %}
+{{ contacts_region() }}
+{{ toast_region(message, batch_id, contact_id) }}
+{% endblock %}
+
+{% block frag_error %}
+{% from "settings/contacts_parts.html" import contacts_region with context %}
+{{ contacts_region(error=error) }}
+{% endblock %}
+
+{% block frag_undo_reply %}
+{% from "settings/contacts_parts.html" import contacts_region, toast with context %}
+{{ toast(message) }}
+{{ contacts_region(oob=true) }}
+{% endblock %}

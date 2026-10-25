@@ -16,11 +16,11 @@ from sqlalchemy.orm import Session
 from omsync.core.batch_models import Batch
 from omsync.core.batches import Change, applied_batch_for_key, apply, make_preview, snapshot
 from omsync.core.months import month_end, shift_months
+from omsync.ledger.categories import NOT_IN_REPORTS
 from omsync.ledger.models import (
     Account,
     Cadence,
     Category,
-    CategoryType,
     RecurringPaidElsewhere,
     RecurringPrice,
     RecurringRejection,
@@ -709,12 +709,12 @@ def series_transactions(
 
 
 def is_transfer(session: Session, series: RecurringSeries) -> bool:
-    """Whether the series' category is excluded from reports, which is where transfers are kept.
+    """Whether the series' category is left out of reports, which is where transfers are kept.
     The ledger has no transfer type of its own."""
     if series.category_id is None:
         return False
     category = session.get(Category, series.category_id)
-    return category is not None and category.type is CategoryType.excluded
+    return category is not None and category.type in NOT_IN_REPORTS
 
 
 # Amounts

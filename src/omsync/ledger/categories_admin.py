@@ -1,4 +1,4 @@
-"""Admin writes for categories, keywords, and amount rules, and the reads the Categories page needs.
+"""Admin writes for categories, keywords, and rules, and the reads the Categories page needs.
 
 Every write is one batch from omsync.core.batches, with an idempotency key. A key that already
 applied returns its batch, even if the data has moved on, so a retried form changes nothing twice.
@@ -7,22 +7,26 @@ A refused change raises ValueError with a message for the screen, and nothing is
 Triage reads receipt files through the vendor registry. This module never imports omsync.web.
 """
 
+import copy
 import re
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
 from omsync.core.batches import (
     Change,
+    Preview,
+    StalePreview,
     applied_batch_for_key,
     apply,
     make_preview,
     next_primary_key,
+    preview_digest,
     snapshot,
 )
 from omsync.core.db import Base
@@ -31,23 +35,50 @@ from omsync.core.settings import Settings
 from omsync.ledger.categories import DEFAULT_CATEGORY_ICON
 from omsync.ledger.categorize import (
     PAYEE_LISTS,
+    ActiveRule,
+    Move,
     compile_pattern,
     is_list_key,
     load_keywords,
     match_receipt_item,
+    plan_categorize,
+    rule_for_transaction,
 )
 from omsync.ledger.models import (
-    AmountRule,
+    Account,
+    BudgetLine,
     Category,
     CategoryOrigin,
+    CategoryRule,
     CategoryType,
+    Contact,
+    ContactRole,
     Keyword,
+    RuleOtherSide,
+    SavedFilter,
     Transaction,
 )
 from omsync.receipts import vendor as vendor_registry
+from omsync.reports.rental import RENTAL_CATEGORIES, get_rental_categories
 
 NOTHING_CHANGED = "Nothing has changed."
 IN_USE = "in use: hide it instead"
+STALE = "This changed elsewhere. Preview again."
+SAVED_FILTER_USE = "saved_filter"
+RENTAL_NAME_USE = "rental_name"
+# A kind of use is a table name, or one of the two kinds above. Each has a singular and a plural.
+_USE_NAMES = {
+    "transaction": ("transaction", "transactions"),
+    "split": ("split line", "split lines"),
+    "keyword": ("keyword", "keywords"),
+    "category_rule": ("rule", "rules"),
+    "budget_line": ("budget line", "budget lines"),
+    "recurring_series": ("recurring series", "recurring series"),
+    SAVED_FILTER_USE: ("saved filter", "saved filters"),
+    RENTAL_NAME_USE: ("rental category name", "rental category names"),
+}
+# Tables whose category columns a move rewrites by its own rules, not by repointing every row.
+_BY_HAND = frozenset({"category_rule", "budget_line"})
 _ICON_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _WORD = re.compile(r"[^\W\d_]+")  # letters of any script, never digits or underscores
 
@@ -63,6 +94,21 @@ class CategoryRow:
     type: str  # the CategoryType value
     hidden: bool
     icon: str  # a Lucide icon name; the default when none was chosen
+    in_use: bool  # something points at it, so it deletes only by moving its uses
+
+
+@dataclass(frozen=True)
+class CategoryUse:
+    """How many rows of one kind point at a category. The kind is a table name, or one of the
+    kinds for saved filters and rental category names."""
+
+    kind: str
+    count: int
+
+    @property
+    def text(self) -> str:
+        singular, plural = _USE_NAMES.get(self.kind, (self.kind, self.kind))
+        return f"{self.count} {singular if self.count == 1 else plural}"
 
 
 @dataclass(frozen=True)
@@ -79,17 +125,53 @@ class KeywordRow:
 
 
 @dataclass(frozen=True)
-class AmountRuleRow:
+class RuleRow:
+    """One rule with the names its conditions show, and the sentence that says what it does.
+    Rules are listed in position order: the first that holds sets its category."""
+
     id: int
-    list_key: str
-    below_cents: int
+    position: int
     enabled: bool
-    from_category_id: int
-    from_category_name: str
+    list_key: str | None
+    from_category_id: int | None
+    from_category_name: str | None
     from_category_hidden: bool
+    below_cents: int | None
+    at_least_cents: int | None
+    other_side: str | None  # the RuleOtherSide value
+    contact_id: int | None
+    contact_name: str | None
+    account_id: int | None
+    account_name: str | None
     to_category_id: int
     to_category_name: str
     to_category_hidden: bool
+    sentence: str
+
+
+@dataclass(frozen=True)
+class RuleDraft:
+    """A rule as it would be stored: its conditions and the category it sets. Nothing is stored
+    until add_rule or update_rule, and preview_rule checks a draft the same way and writes nothing.
+    other_side is a RuleOtherSide, or its value."""
+
+    to_category_id: int
+    from_category_id: int | None = None
+    list_key: str | None = None
+    below_cents: int | None = None
+    at_least_cents: int | None = None
+    other_side: RuleOtherSide | str | None = None
+    contact_id: int | None = None
+    account_id: int | None = None
+
+
+@dataclass(frozen=True)
+class RulePreview:
+    """The transactions whose category a draft would change, were it saved now. count is their
+    number, and changes lists them in ID order."""
+
+    count: int
+    changes: tuple[Move, ...]
 
 
 # Reads
@@ -116,7 +198,8 @@ def category_rows(
         query = query.where(Category.hidden.is_(False))
     if category_type is not None:
         query = query.where(Category.type == category_type)
-    rows = [_category_row(row) for row in session.scalars(query)]
+    usage = _category_usage(session)
+    rows = [_category_row(row, row.id in usage) for row in session.scalars(query)]
     if sort == "name":
         return sorted(rows, key=lambda row: (row.name.casefold(), row.id), reverse=descending)
     order = list(CategoryType)
@@ -132,7 +215,19 @@ def get_category(session: Session, category_id: int) -> CategoryRow:
     row = session.get(Category, category_id)
     if row is None:
         raise LookupError(f"There is no category {category_id}.")
-    return _category_row(row)
+    return _category_row(row, category_id in _category_usage(session))
+
+
+def category_uses(session: Session, category_id: int) -> list[CategoryUse]:
+    """What points at a category, by kind, in the order the dialog lists them. An empty list means
+    nothing uses it."""
+    counts = _category_usage(session).get(category_id, Counter())
+    order = tuple(_USE_NAMES)
+    ordered = sorted(
+        counts.items(),
+        key=lambda item: (order.index(item[0]) if item[0] in order else len(order), item[0]),
+    )
+    return [CategoryUse(kind, count) for kind, count in ordered]
 
 
 def category_names(session: Session) -> dict[int, str]:
@@ -148,10 +243,12 @@ def category_choices(session: Session) -> list[tuple[int, str]]:
     return sorted(((int(cid), name) for cid, name in rows), key=lambda row: row[1].casefold())
 
 
-def keywords_in_list(session: Session, list_key: str) -> list[KeywordRow]:
+def keywords_in_list(session: Session, list_key: str, query: str = "") -> list[KeywordRow]:
     """The keywords of one list, in precedence order: priority, then longer pattern, then id.
 
-    Disabled keywords are listed too, at their precedence, so you can turn them back on.
+    Disabled keywords are listed too, at their precedence, so you can turn them back on. A query
+    keeps the keywords whose pattern or category name contains it, ignoring case. A blank query
+    keeps them all.
     """
     rows = session.execute(
         select(Keyword, Category.name, Category.hidden)
@@ -172,7 +269,24 @@ def keywords_in_list(session: Session, list_key: str) -> list[KeywordRow]:
         )
         for keyword, name, hidden in rows
     ]
+    needle = query.strip().casefold()
+    if needle:
+        found = [
+            row
+            for row in found
+            if needle in row.pattern.casefold() or needle in row.category_name.casefold()
+        ]
     return sorted(found, key=lambda row: (-row.priority, -len(row.pattern), row.id))
+
+
+def keyword_count(session: Session, list_key: str) -> int:
+    """How many keywords the list has, disabled ones included."""
+    return int(
+        session.scalar(
+            select(func.count()).select_from(Keyword).where(Keyword.list_key == list_key)
+        )
+        or 0
+    )
 
 
 def get_keyword(session: Session, keyword_id: int) -> KeywordRow:
@@ -186,54 +300,170 @@ def get_keyword(session: Session, keyword_id: int) -> KeywordRow:
     raise LookupError(f"There is no keyword {keyword_id}.")  # pragma: no cover - same query
 
 
-def amount_rules(session: Session) -> list[AmountRuleRow]:
-    """Every amount rule with its category names, by list (unique first), then from category,
-    then lowest limit. Disabled rules are listed too, so you can turn them back on."""
-    from_category = aliased(Category)
-    to_category = aliased(Category)
+# The conditions a rule has, in the order a draft names them, and the fields a rule stores.
+_CONDITIONS = (
+    "from_category_id",
+    "list_key",
+    "below_cents",
+    "at_least_cents",
+    "other_side",
+    "contact_id",
+    "account_id",
+)
+_RULE_FIELDS = (*_CONDITIONS, "to_category_id")
+_LIST_PHRASE = {"unique": "Unique", "generic": "Generic"}
+
+
+@dataclass(frozen=True)
+class _Names:
+    """The names a rule's sentence shows, loaded once for a page or a label."""
+
+    categories: dict[int, str]
+    hidden: frozenset[int]
+    contacts: dict[int, str]
+    accounts: dict[int, str]
+
+
+# Reads
+
+
+def rule_rows(session: Session) -> list[RuleRow]:
+    """Every rule in position order, with the sentence that says what it does. Disabled rules are
+    listed too, so you can turn them back on."""
+    names = _names(session)
+    rules = session.scalars(select(CategoryRule).order_by(CategoryRule.position, CategoryRule.id))
+    return [_row(rule, names) for rule in rules]
+
+
+def get_rule(session: Session, rule_id: int) -> RuleRow:
+    """Return one rule with its names. Raises LookupError if it does not exist."""
+    rule = session.get(CategoryRule, rule_id)
+    if rule is None:
+        raise LookupError(f"There is no rule {rule_id}.")
+    return _row(rule, _names(session))
+
+
+def transaction_rule(session: Session, transaction_id: int) -> RuleRow | None:
+    """The rule that holds for a transaction now, with its sentence, or None when none does. The
+    transaction's origin says whether a rule set its category; this says which rule holds for it."""
+    rule = rule_for_transaction(session, transaction_id)
+    return None if rule is None else get_rule(session, rule.id)
+
+
+def contact_choices(session: Session) -> list[tuple[int, str]]:
+    """(id, name) for the contacts a rule may name as the other side: everyone but you, by name."""
     rows = session.execute(
-        select(
-            AmountRule,
-            from_category.name,
-            from_category.hidden,
-            to_category.name,
-            to_category.hidden,
-        )
-        .join(from_category, from_category.id == AmountRule.from_category_id)
-        .join(to_category, to_category.id == AmountRule.to_category_id)
+        select(Contact.id, Contact.name).where(Contact.role != ContactRole.owner)
     ).all()
-    found = [
-        AmountRuleRow(
-            id=rule.id,
-            list_key=rule.list_key,
-            below_cents=rule.below_cents,
-            enabled=rule.enabled,
-            from_category_id=rule.from_category_id,
-            from_category_name=from_name,
-            from_category_hidden=from_hidden,
-            to_category_id=rule.to_category_id,
-            to_category_name=to_name,
-            to_category_hidden=to_hidden,
-        )
-        for rule, from_name, from_hidden, to_name, to_hidden in rows
-    ]
-    return sorted(
-        found,
-        key=lambda row: (
-            PAYEE_LISTS.index(row.list_key),
-            row.from_category_name.casefold(),
-            row.below_cents,
-            row.id,
-        ),
+    return sorted(((int(cid), name) for cid, name in rows), key=lambda row: row[1].casefold())
+
+
+def account_choices(session: Session) -> list[tuple[int, str]]:
+    """(id, name) for the tracked accounts a rule may name, by name."""
+    rows = session.execute(select(Account.id, Account.name)).all()
+    return sorted(((int(aid), name) for aid, name in rows), key=lambda row: row[1].casefold())
+
+
+def _names(session: Session) -> _Names:
+    categories = session.execute(select(Category.id, Category.name, Category.hidden)).all()
+    return _Names(
+        categories={row.id: row.name for row in categories},
+        hidden=frozenset(row.id for row in categories if row.hidden),
+        contacts=dict(session.execute(select(Contact.id, Contact.name)).all()),
+        accounts=dict(session.execute(select(Account.id, Account.name)).all()),
     )
 
 
-def get_amount_rule(session: Session, rule_id: int) -> AmountRuleRow:
-    """Return one amount rule with its category names. Raises LookupError if it does not exist."""
-    for row in amount_rules(session):
-        if row.id == rule_id:
-            return row
-    raise LookupError(f"There is no amount rule {rule_id}.")
+def _row(rule: CategoryRule, names: _Names) -> RuleRow:
+    fields = _fields_of(rule)
+    from_id = fields["from_category_id"]
+    to_id = fields["to_category_id"]
+    return RuleRow(
+        id=rule.id,
+        position=rule.position,
+        enabled=rule.enabled,
+        list_key=fields["list_key"],
+        from_category_id=from_id,
+        from_category_name=names.categories.get(from_id) if from_id is not None else None,
+        from_category_hidden=from_id in names.hidden,
+        below_cents=fields["below_cents"],
+        at_least_cents=fields["at_least_cents"],
+        other_side=fields["other_side"],
+        contact_id=fields["contact_id"],
+        contact_name=names.contacts.get(fields["contact_id"]),
+        account_id=fields["account_id"],
+        account_name=names.accounts.get(fields["account_id"]),
+        to_category_id=to_id,
+        to_category_name=names.categories[to_id],
+        to_category_hidden=to_id in names.hidden,
+        sentence=_sentence(names, **fields),
+    )
+
+
+def _fields_of(rule: CategoryRule) -> dict[str, Any]:
+    """A stored rule's values, named as a draft names them, with the other side as its value."""
+    other = None if rule.other_side is None else RuleOtherSide(rule.other_side).value
+    return {
+        "from_category_id": rule.from_category_id,
+        "list_key": rule.list_key,
+        "below_cents": rule.below_cents,
+        "at_least_cents": rule.at_least_cents,
+        "other_side": other,
+        "contact_id": rule.contact_id,
+        "account_id": rule.account_id,
+        "to_category_id": rule.to_category_id,
+    }
+
+
+def _sentence(
+    names: _Names,
+    *,
+    from_category_id: int | None,
+    list_key: str | None,
+    below_cents: int | None,
+    at_least_cents: int | None,
+    other_side: str | None,
+    contact_id: int | None,
+    account_id: int | None,
+    to_category_id: int,
+) -> str:
+    """A rule as one sentence, such as "Keywords say Transfer · under $100.00 · with a person →
+    Dining"."""
+    if from_category_id is None:
+        parts = ["Any transaction"]
+    elif list_key is None:
+        parts = [f"Keywords say {names.categories[from_category_id]}"]
+    else:
+        keywords = f"{_LIST_PHRASE[list_key]} keywords say"
+        parts = [f"{keywords} {names.categories[from_category_id]}"]
+    amount = _amount_text(below_cents, at_least_cents)
+    if amount is not None:
+        parts.append(amount)
+    if other_side == RuleOtherSide.person:
+        parts.append("with a person")
+    elif other_side == RuleOtherSide.contact:
+        parts.append(f"with {names.contacts[contact_id]}")
+    elif other_side == RuleOtherSide.owner_account:
+        parts.append("with one of my accounts")
+    if account_id is not None:
+        parts.append(f"in {names.accounts[account_id]}")
+    joined = " · ".join(parts)
+    return f"{joined} → {names.categories[to_category_id]}"
+
+
+def _amount_text(below_cents: int | None, at_least_cents: int | None) -> str | None:
+    if below_cents is not None and at_least_cents is not None:
+        return f"{format_cents(at_least_cents)} or more and under {format_cents(below_cents)}"
+    if below_cents is not None:
+        return f"under {format_cents(below_cents)}"
+    if at_least_cents is not None:
+        return f"{format_cents(at_least_cents)} or more"
+    return None
+
+
+def _sentence_for(session: Session, fields: Mapping[str, Any]) -> str:
+    """The sentence for a rule's values, as a batch label names it."""
+    return _sentence(_names(session), **{name: fields[name] for name in _RULE_FIELDS})
 
 
 def parse_dollars(text: str) -> int:
@@ -461,12 +691,13 @@ def hide_category(
 
 def delete_category(session: Session, category_id: int, *, idempotency_key: str) -> Batch:
     """Delete a category that nothing uses. Raises ValueError("in use: hide it instead") if a
-    transaction, split, keyword, amount rule, or any other row still points at it."""
+    transaction, split, keyword, rule, saved filter, rental name, or any other row still
+    points at it. delete_and_move deletes one that is in use."""
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
         return replay
     before = _category_snapshot(session, category_id)
-    if _category_in_use(session, category_id):
+    if category_id in _category_usage(session):
         raise ValueError(IN_USE)
     return _write(
         session,
@@ -476,6 +707,97 @@ def delete_category(session: Session, category_id: int, *, idempotency_key: str)
         idempotency_key,
         category_id=category_id,
     )
+
+
+@dataclass(frozen=True)
+class MovePreview:
+    """What delete_and_move would write, computed now. `uses` is what points at the category today,
+    including the rules that `dropped_rules` of them lose. `digest` identifies this exact
+    operation, so an apply made from a stale preview is refused."""
+
+    category_id: int
+    category_name: str
+    target_id: int
+    target_name: str
+    uses: tuple[CategoryUse, ...]
+    dropped_rules: int
+    digest: str
+    preview: Preview
+
+
+def move_preview(session: Session, category_id: int, target_id: int) -> MovePreview:
+    """The changes that delete_and_move would make: every use moved to the target, then the category
+    deleted. Writes nothing.
+
+    Raises LookupError if the category does not exist. Raises ValueError, with a message for the
+    screen, when the move is refused: the target is the category itself or does not exist, the
+    target already has a budget line for a month the category has one, or two rules would
+    become one.
+    """
+    source = _category_snapshot(session, category_id)
+    if target_id == category_id:
+        raise ValueError("Pick a different category to move its uses to.")
+    target = session.get(Category, target_id)
+    if target is None:
+        raise ValueError("Pick a category to move its uses to.")
+    source_name = str(source["name"])
+    changes = [
+        *_rule_changes(session, category_id, target_id, source_name, target.name),
+        *_budget_line_changes(session, category_id, target_id, source_name, target.name),
+        *_repoint_changes(session, category_id, target_id),
+        *_saved_filter_changes(session, category_id, target_id),
+        *_rental_name_changes(session, source_name, target.name),
+        Change("category", str(category_id), source, None),
+    ]
+    dropped = sum(
+        1 for change in changes if change.table == "category_rule" and change.after is None
+    )
+    label = f"Deleted {source_name} and moved its uses to {target.name}"
+    preview = make_preview(
+        session,
+        "category.delete_move",
+        changes,
+        summary={
+            "label": label,
+            "category_id": category_id,
+            "target_id": target_id,
+            "dropped_rules": dropped,
+        },
+    )
+    return MovePreview(
+        category_id=category_id,
+        category_name=source_name,
+        target_id=target_id,
+        target_name=target.name,
+        uses=tuple(category_uses(session, category_id)),
+        dropped_rules=dropped,
+        digest=preview_digest(preview),
+        preview=preview,
+    )
+
+
+def delete_and_move(
+    session: Session,
+    category_id: int,
+    target_id: int,
+    *,
+    idempotency_key: str,
+    digest: str | None = None,
+) -> Batch:
+    """Move every use of a category to another one, then delete the category, as one batch that undo
+    reverses. Keywords move as they are, transactions and splits keep their origin, and rental
+    category names become the target's name. See move_preview for what is refused.
+
+    `digest` is the digest of the preview the person saw. When it no longer matches the move,
+    nothing is written and StalePreview is raised. The same key applies at most once.
+    """
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    moving = move_preview(session, category_id, target_id)
+    if digest is not None and digest != moving.digest:
+        raise StalePreview(STALE)
+    return apply(session, moving.preview, idempotency_key=idempotency_key)
 
 
 # Keywords: writes
@@ -601,127 +923,174 @@ def delete_keyword(session: Session, keyword_id: int, *, idempotency_key: str) -
     )
 
 
-# Amount rules: writes
+# Rules: writes
 
 
-def add_amount_rule(
-    session: Session,
-    list_key: str,
-    from_category_id: int,
-    below_cents: int,
-    to_category_id: int,
-    *,
-    idempotency_key: str,
-) -> Batch:
-    """Add an amount rule: a payee keyword from this list that assigns from_category goes to
-    to_category when the transaction's absolute amount is below below_cents.
-
-    Raises ValueError when the list is not unique or generic, a category is missing or both are
-    the same, the limit is not positive, or the list already has a rule for that category and limit.
-    """
+def add_rule(session: Session, draft: RuleDraft, *, idempotency_key: str) -> Batch:
+    """Add a rule at the end of the order, so it is tried after every rule already there. Raises
+    ValueError with a message for the screen when the draft is refused, and nothing is written."""
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
         return replay
-    _check_amount_rule(session, list_key, from_category_id, below_cents, to_category_id)
-    _ensure_rule_free(session, list_key, from_category_id, below_cents, except_id=None)
-    new_id = next_primary_key(session, AmountRule.__table__)
-    values = {
-        "id": new_id,
-        "list_key": list_key,
-        "from_category_id": from_category_id,
-        "below_cents": below_cents,
-        "to_category_id": to_category_id,
-        "enabled": True,
-    }
+    values = _check_rule(session, draft)
+    _ensure_rule_free(session, values, except_id=None)
+    new_id = next_primary_key(session, CategoryRule.__table__)
+    last = session.scalar(select(func.max(CategoryRule.position)))
+    row = {"id": new_id, "position": (last or 0) + 1, "enabled": True, **values}
     return _write(
         session,
-        "amount_rule.add",
-        [Change("amount_rule", str(new_id), None, values)],
-        _rule_label("Added", session, values),
+        "rule.add",
+        [Change("category_rule", str(new_id), None, row)],
+        f"Added rule: {_sentence_for(session, values)}",
         idempotency_key,
-        amount_rule_id=new_id,
+        rule_id=new_id,
     )
 
 
-def update_amount_rule(
-    session: Session, rule_id: int, *, idempotency_key: str, **fields: Any
-) -> Batch:
-    """Change an amount rule's list_key, from_category_id, below_cents, or to_category_id.
-    Enabling is separate.
-
-    Raises LookupError if it does not exist, ValueError for a bad value, and NothingChanged when
-    the values are already stored.
-    """
+def update_rule(session: Session, rule_id: int, draft: RuleDraft, *, idempotency_key: str) -> Batch:
+    """Replace a rule's conditions and category. Its place in the order and whether it is on stay as
+    they are. Raises LookupError if it does not exist, ValueError for a refused draft, and
+    NothingChanged when the values are already stored."""
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
         return replay
-    unknown = set(fields) - {"list_key", "from_category_id", "below_cents", "to_category_id"}
-    if unknown:
-        raise ValueError(
-            f"An amount rule has no field {sorted(unknown)[0]!r} that can be changed here."
-        )
-    before = _amount_rule_snapshot(session, rule_id)
-    after = {**before, **fields}
-    _check_amount_rule(
-        session,
-        after["list_key"],
-        after["from_category_id"],
-        after["below_cents"],
-        after["to_category_id"],
-    )
+    before = _rule_snapshot(session, rule_id)
+    values = _check_rule(session, draft)
+    after = {**before, **values}
     if after == before:
         raise NothingChanged(NOTHING_CHANGED)
-    _ensure_rule_free(
-        session,
-        after["list_key"],
-        after["from_category_id"],
-        after["below_cents"],
-        except_id=rule_id,
-    )
+    _ensure_rule_free(session, values, except_id=rule_id)
     return _write(
         session,
-        "amount_rule.update",
-        [Change("amount_rule", str(rule_id), before, after)],
-        _rule_label("Updated", session, after),
+        "rule.update",
+        [Change("category_rule", str(rule_id), before, after)],
+        f"Updated rule: {_sentence_for(session, values)}",
         idempotency_key,
-        amount_rule_id=rule_id,
+        rule_id=rule_id,
     )
 
 
-def set_amount_rule_enabled(
+def set_rule_enabled(
     session: Session, rule_id: int, enabled: bool, *, idempotency_key: str
 ) -> Batch:
-    """Turn an amount rule on or off. A disabled rule is ignored by matching."""
+    """Turn a rule on or off. A disabled rule is skipped by categorize."""
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
         return replay
-    before = _amount_rule_snapshot(session, rule_id)
+    before = _rule_snapshot(session, rule_id)
     after = {**before, "enabled": bool(enabled)}
     if after == before:
         raise NothingChanged(NOTHING_CHANGED)
+    verb = "Turned on" if enabled else "Turned off"
     return _write(
         session,
-        "amount_rule.enable" if enabled else "amount_rule.disable",
-        [Change("amount_rule", str(rule_id), before, after)],
-        _rule_label("Turned on" if enabled else "Turned off", session, before),
+        "rule.enable" if enabled else "rule.disable",
+        [Change("category_rule", str(rule_id), before, after)],
+        f"{verb} rule: {_sentence_for(session, before)}",
         idempotency_key,
-        amount_rule_id=rule_id,
+        rule_id=rule_id,
     )
 
 
-def delete_amount_rule(session: Session, rule_id: int, *, idempotency_key: str) -> Batch:
-    """Delete an amount rule. Undo restores it with its id."""
+def delete_rule(session: Session, rule_id: int, *, idempotency_key: str) -> Batch:
+    """Delete a rule. Undo restores it with its id. Transactions it set keep its origin until the
+    next categorize, which sets them again or leaves them unset."""
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
         return replay
-    before = _amount_rule_snapshot(session, rule_id)
+    before = _rule_snapshot(session, rule_id)
     return _write(
         session,
-        "amount_rule.delete",
-        [Change("amount_rule", str(rule_id), before, None)],
-        _rule_label("Deleted", session, before),
+        "rule.delete",
+        [Change("category_rule", str(rule_id), before, None)],
+        f"Deleted rule: {_sentence_for(session, before)}",
         idempotency_key,
-        amount_rule_id=rule_id,
+        rule_id=rule_id,
+    )
+
+
+def move_rule(
+    session: Session,
+    rule_id: int,
+    direction: Literal["up", "down"],
+    *,
+    idempotency_key: str,
+) -> Batch:
+    """Move a rule one place earlier (up) or later (down), by swapping places with the rule beside
+    it, enabled or not, as one batch. Raises LookupError if the rule does not exist, ValueError for
+    a direction other than up or down, and NothingChanged at the first or last place."""
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    if direction not in ("up", "down"):
+        raise ValueError("Move a rule up or down.")
+    ordered = list(
+        session.scalars(select(CategoryRule.id).order_by(CategoryRule.position, CategoryRule.id))
+    )
+    if rule_id not in ordered:
+        raise LookupError(f"There is no rule {rule_id}.")
+    index = ordered.index(rule_id)
+    other_index = index - 1 if direction == "up" else index + 1
+    if not 0 <= other_index < len(ordered):
+        raise NothingChanged("It is already first." if direction == "up" else "It is already last.")
+    mover = _rule_snapshot(session, rule_id)
+    other = _rule_snapshot(session, ordered[other_index])
+    if mover["position"] == other["position"]:
+        raise NothingChanged(NOTHING_CHANGED)
+    # Two rows change, each once, so undo can restore each from its own snapshot.
+    changes = [
+        Change("category_rule", str(rule_id), mover, {**mover, "position": other["position"]}),
+        Change("category_rule", str(other["id"]), other, {**other, "position": mover["position"]}),
+    ]
+    return _write(
+        session,
+        "rule.move",
+        changes,
+        f"Moved rule {direction}: {_sentence_for(session, mover)}",
+        idempotency_key,
+        rule_id=rule_id,
+    )
+
+
+def preview_rule(session: Session, draft: RuleDraft, *, rule_id: int | None = None) -> RulePreview:
+    """The transactions whose category would change if the draft were saved now, with their count.
+
+    A draft with rule_id replaces that rule, keeping its place and whether it is on. Without
+    rule_id, the draft would be added last. Writes nothing. Raises ValueError for a draft that
+    add_rule or update_rule would refuse, and LookupError if rule_id does not exist.
+    """
+    values = _check_rule(session, draft)
+    stored = list(
+        session.scalars(select(CategoryRule).order_by(CategoryRule.position, CategoryRule.id))
+    )
+    if rule_id is not None and all(rule.id != rule_id for rule in stored):
+        raise LookupError(f"There is no rule {rule_id}.")
+    rules: list[ActiveRule] = []
+    for rule in stored:
+        if rule.id == rule_id:
+            if rule.enabled:
+                rules.append(_active(rule.id, rule.position, values))
+        elif rule.enabled:
+            rules.append(_active(rule.id, rule.position, _fields_of(rule)))
+    if rule_id is None:
+        rules.append(_active(0, (stored[-1].position + 1) if stored else 1, values))
+    plan = plan_categorize(session, rules=rules)
+    return RulePreview(count=plan.changed, changes=plan.moves)
+
+
+def _active(rule_id: int, position: int, fields: Mapping[str, Any]) -> ActiveRule:
+    other = fields["other_side"]
+    return ActiveRule(
+        id=rule_id,
+        position=position,
+        list_key=fields["list_key"],
+        from_category_id=fields["from_category_id"],
+        below_cents=fields["below_cents"],
+        at_least_cents=fields["at_least_cents"],
+        other_side=None if other is None else RuleOtherSide(other),
+        contact_id=fields["contact_id"],
+        account_id=fields["account_id"],
+        to_category_id=fields["to_category_id"],
     )
 
 
@@ -740,13 +1109,14 @@ def _write(
     return apply(session, preview, idempotency_key=idempotency_key)
 
 
-def _category_row(row: Category) -> CategoryRow:
+def _category_row(row: Category, in_use: bool) -> CategoryRow:
     return CategoryRow(
         id=row.id,
         name=row.name,
         type=CategoryType(row.type).value,
         hidden=bool(row.hidden),
         icon=row.icon or DEFAULT_CATEGORY_ICON,
+        in_use=in_use,
     )
 
 
@@ -764,11 +1134,86 @@ def _keyword_snapshot(session: Session, keyword_id: int) -> dict[str, Any]:
     return before
 
 
-def _amount_rule_snapshot(session: Session, rule_id: int) -> dict[str, Any]:
-    before = snapshot(session, "amount_rule", rule_id)
+def _rule_snapshot(session: Session, rule_id: int) -> dict[str, Any]:
+    before = snapshot(session, "category_rule", rule_id)
     if before is None:
-        raise LookupError(f"There is no amount rule {rule_id}.")
+        raise LookupError(f"There is no rule {rule_id}.")
     return before
+
+
+def _condition_key(fields: Mapping[str, Any]) -> tuple[Any, ...]:
+    return tuple(fields[name] for name in _CONDITIONS)
+
+
+def _check_rule(session: Session, draft: RuleDraft) -> dict[str, Any]:
+    """The values a draft stores, checked. Raises ValueError with a message for the screen.
+
+    A rule needs at least one condition. A keyword list needs the category the keywords assign,
+    the two categories must differ, a limit or minimum must be more than $0.00, and the under
+    limit must be more than the minimum. A contact goes with the contact option and no other.
+    """
+    values: dict[str, Any] = {
+        "from_category_id": draft.from_category_id,
+        "list_key": draft.list_key,
+        "below_cents": draft.below_cents,
+        "at_least_cents": draft.at_least_cents,
+        "other_side": None if draft.other_side is None else _other_side(draft.other_side),
+        "contact_id": draft.contact_id,
+        "account_id": draft.account_id,
+        "to_category_id": draft.to_category_id,
+    }
+    _check_category(session, draft.to_category_id, "Pick the category to set.")
+    from_id = draft.from_category_id
+    if from_id is not None:
+        _check_category(session, from_id, "Pick the category the keywords assign.")
+        if from_id == draft.to_category_id:
+            raise ValueError("Pick two different categories.")
+    if draft.list_key is not None:
+        if draft.list_key not in PAYEE_LISTS:
+            raise ValueError("The list must be unique or generic.")
+        if from_id is None:
+            raise ValueError("Pick the category the keywords assign to use a list.")
+    if draft.below_cents is not None:
+        _check_money(draft.below_cents, "The limit must be more than $0.00.")
+    if draft.at_least_cents is not None:
+        _check_money(draft.at_least_cents, "The minimum must be more than $0.00.")
+    if draft.below_cents is not None and draft.at_least_cents is not None:
+        if draft.below_cents <= draft.at_least_cents:
+            raise ValueError("The limit must be more than the minimum.")
+    if values["other_side"] == RuleOtherSide.contact:
+        if draft.contact_id is None or session.get(Contact, draft.contact_id) is None:
+            raise ValueError("Pick the contact.")
+    elif draft.contact_id is not None:
+        raise ValueError("A contact goes only with the contact option.")
+    if draft.account_id is not None and session.get(Account, draft.account_id) is None:
+        raise ValueError("Pick an account.")
+    conditions = ("from_category_id", "below_cents", "at_least_cents", "other_side", "account_id")
+    if all(values[name] is None for name in conditions):
+        raise ValueError("Set at least one condition.")
+    return values
+
+
+def _other_side(value: RuleOtherSide | str) -> str:
+    try:
+        return RuleOtherSide(value).value
+    except ValueError:
+        raise ValueError("Pick who is on the other side from the list.") from None
+
+
+def _check_money(cents: int, message: str) -> None:
+    if isinstance(cents, bool) or not isinstance(cents, int) or cents <= 0:
+        raise ValueError(message)
+
+
+def _ensure_rule_free(
+    session: Session, values: Mapping[str, Any], *, except_id: int | None
+) -> None:
+    """Refuse a rule whose conditions another rule already has, since one of them would never
+    apply."""
+    wanted = _condition_key(values)
+    for rule in session.scalars(select(CategoryRule)):
+        if rule.id != except_id and _condition_key(_fields_of(rule)) == wanted:
+            raise ValueError("A rule with these conditions already exists.")
 
 
 def _clean_name(name: str) -> str:
@@ -802,18 +1247,190 @@ def _ensure_name_free(session: Session, name: str, *, except_id: int | None) -> 
             raise ValueError(f"There is already a category named {existing}.")
 
 
-def _category_in_use(session: Session, category_id: int) -> bool:
-    """True when any table with a foreign key to category holds a row that points at it."""
-    category_table = Category.__table__
+def _category_columns() -> dict[str, list[Any]]:
+    """Every table with a foreign key to category.id, by table name, with its category columns."""
+    found: dict[str, list[Any]] = {}
     for table in Base.metadata.tables.values():
         for foreign_key in table.foreign_keys:
             target = foreign_key.column
-            if target.table is not category_table or target.name != "id":
-                continue
-            column = table.c[foreign_key.parent.name]
-            if session.scalar(select(column).where(column == category_id).limit(1)) is not None:
-                return True
-    return False
+            if target.table is Category.__table__ and target.name == "id":
+                found.setdefault(table.name, []).append(table.c[foreign_key.parent.name])
+    return found
+
+
+def _category_usage(session: Session) -> dict[int, Counter[str]]:
+    """What points at each category, by kind: rows with a foreign key to it, saved filters that name
+    it, and rental category names that match it. A category nothing points at is absent.
+
+    No row holds the same category in two columns (category_rule's check constraint forbids it), so
+    counting each column once counts each row once.
+    """
+    usage: dict[int, Counter[str]] = {}
+
+    def tally(category_id: int, kind: str, count: int = 1) -> None:
+        usage.setdefault(category_id, Counter())[kind] += count
+
+    for table_name, columns in _category_columns().items():
+        for column in columns:
+            counted = session.execute(
+                select(column, func.count()).where(column.is_not(None)).group_by(column)
+            ).all()
+            for category_id, count in counted:
+                tally(int(category_id), table_name, int(count))
+    for saved in session.scalars(select(SavedFilter)):
+        for category_id in _filter_category_ids(saved.conditions):
+            tally(category_id, SAVED_FILTER_USE)
+    ids_by_name = dict(session.execute(select(Category.name, Category.id)).all())
+    for name in {name.strip() for name in get_rental_categories(session)}:
+        if name in ids_by_name:
+            tally(int(ids_by_name[name]), RENTAL_NAME_USE)
+    return usage
+
+
+def _category_conditions(data: Any) -> list[dict[str, Any]]:
+    """The conditions in a saved filter's stored JSON that test the category by "is" or "is not"."""
+    if not isinstance(data, dict) or not isinstance(data.get("conditions"), list):
+        return []
+    return [
+        item
+        for item in data["conditions"]
+        if isinstance(item, dict)
+        and item.get("field") == "category"
+        and item.get("op") in ("is", "is_not")
+        and isinstance(item.get("value"), list)
+    ]
+
+
+def _filter_category_ids(data: Any) -> set[int]:
+    """The category ids a saved filter names."""
+    found: set[int] = set()
+    for item in _category_conditions(data):
+        found.update(v for v in item["value"] if isinstance(v, int) and not isinstance(v, bool))
+    return found
+
+
+def _repoint_filter(data: Any, source_id: int, target_id: int) -> dict[str, Any] | None:
+    """A copy of a saved filter's stored JSON with the source category replaced by the target, or
+    None when the filter does not name the source."""
+    repointed = copy.deepcopy(data)
+    changed = False
+    for item in _category_conditions(repointed):
+        if source_id in item["value"]:
+            item["value"] = list(
+                dict.fromkeys(target_id if v == source_id else v for v in item["value"])
+            )
+            changed = True
+    return repointed if changed else None
+
+
+def _rule_changes(
+    session: Session, source_id: int, target_id: int, source_name: str, target_name: str
+) -> list[Change]:
+    """The rules a move changes. A rule that would have the target on both sides is dropped. Two
+    rules that would then have the same conditions are refused rather than merged."""
+    drops: list[Change] = []
+    moves: list[Change] = []
+    seen: set[tuple[Any, ...]] = set()
+    for rule in session.scalars(select(CategoryRule).order_by(CategoryRule.id)):
+        fields = _fields_of(rule)
+        moved = {
+            name: target_id if fields[name] == source_id else fields[name]
+            for name in ("from_category_id", "to_category_id")
+        }
+        after = {**fields, **moved}
+        if after["from_category_id"] == after["to_category_id"]:
+            before = snapshot(session, "category_rule", rule.id)
+            drops.append(Change("category_rule", str(rule.id), before, None))
+            continue
+        key = _condition_key(after)
+        if key in seen:
+            raise ValueError(
+                f"Moving {source_name} would leave two rules with the same conditions, "
+                f"one of them to {target_name}. Change or delete one of them first."
+            )
+        seen.add(key)
+        if any(moved[name] != fields[name] for name in moved):
+            before_pair = {name: fields[name] for name in moved}
+            moves.append(Change("category_rule", str(rule.id), before_pair, moved))
+    return [*drops, *moves]
+
+
+def _budget_line_changes(
+    session: Session, source_id: int, target_id: int, source_name: str, target_name: str
+) -> list[Change]:
+    """The budget lines that move to the target. A month the target already budgets is refused, not
+    merged: the amounts stay as they are, and the person decides which line to keep."""
+    lines = list(
+        session.scalars(
+            select(BudgetLine).where(BudgetLine.category_id == source_id).order_by(BudgetLine.month)
+        )
+    )
+    taken = set(
+        session.scalars(select(BudgetLine.month).where(BudgetLine.category_id == target_id)).all()
+    )
+    clashes = [line.month for line in lines if line.month in taken]
+    if clashes:
+        periods = ", ".join(month.strftime("%B %Y") for month in clashes)
+        raise ValueError(
+            f"{target_name} already has a budget line for {periods}, so {source_name}'s line for "
+            "that month cannot move. Change or delete one of them first."
+        )
+    return [
+        Change("budget_line", str(line.id), {"category_id": source_id}, {"category_id": target_id})
+        for line in lines
+    ]
+
+
+def _repoint_changes(session: Session, source_id: int, target_id: int) -> list[Change]:
+    """Every row with a foreign key to the source points at the target instead. Only the category
+    column changes, so a transaction's or split's origin stays as it was."""
+    changes: list[Change] = []
+    for table_name, columns in _category_columns().items():
+        if table_name in _BY_HAND:
+            continue
+        table = Base.metadata.tables[table_name]
+        key = next(iter(table.primary_key.columns))
+        found = session.execute(
+            select(key, *columns).where(or_(*(column == source_id for column in columns)))
+        ).all()
+        for row in found:
+            mapping = row._mapping
+            before = {
+                column.name: source_id for column in columns if mapping[column.name] == source_id
+            }
+            after = {name: target_id for name in before}
+            changes.append(Change(table_name, str(mapping[key.name]), before, after))
+    return changes
+
+
+def _saved_filter_changes(session: Session, source_id: int, target_id: int) -> list[Change]:
+    changes: list[Change] = []
+    for saved in session.scalars(select(SavedFilter).order_by(SavedFilter.id)):
+        repointed = _repoint_filter(saved.conditions, source_id, target_id)
+        if repointed is None:
+            continue
+        before = snapshot(session, "saved_filter", saved.id)
+        changes.append(
+            Change(
+                "saved_filter", str(saved.id), before, {**(before or {}), "conditions": repointed}
+            )
+        )
+    return changes
+
+
+def _rental_name_changes(session: Session, source_name: str, target_name: str) -> list[Change]:
+    """The rental category names that name the source now name the target, once each. The preference
+    is a batch change, so undo puts the names back. The defaults apply until it is saved."""
+    names = get_rental_categories(session)
+    if not any(name.strip() == source_name for name in names):
+        return []
+    renamed = [target_name if name.strip() == source_name else name.strip() for name in names]
+    value = list(dict.fromkeys(renamed))
+    before = snapshot(session, "preference", RENTAL_CATEGORIES)
+    after = (
+        {"key": RENTAL_CATEGORIES, "value": value} if before is None else {**before, "value": value}
+    )
+    return [Change("preference", RENTAL_CATEGORIES, before, after)]
 
 
 def _check_list_key(list_key: str) -> None:
@@ -857,49 +1474,3 @@ def _ensure_pattern_free(
     for row_id, existing in rows:
         if row_id != except_id and existing.casefold() == pattern.casefold():
             raise ValueError("This list already has that pattern.")
-
-
-def _check_amount_rule(
-    session: Session, list_key: str, from_category_id: int, below_cents: int, to_category_id: int
-) -> None:
-    if list_key not in PAYEE_LISTS:
-        raise ValueError("The list must be unique or generic.")
-    _check_category(session, from_category_id, "Pick the category to change from.")
-    _check_category(session, to_category_id, "Pick the category to change to.")
-    if from_category_id == to_category_id:
-        raise ValueError("Pick two different categories.")
-    if isinstance(below_cents, bool) or not isinstance(below_cents, int) or below_cents <= 0:
-        raise ValueError("The limit must be more than $0.00.")
-
-
-def _ensure_rule_free(
-    session: Session,
-    list_key: str,
-    from_category_id: int,
-    below_cents: int,
-    *,
-    except_id: int | None,
-) -> None:
-    found = session.scalars(
-        select(AmountRule.id).where(
-            AmountRule.list_key == list_key,
-            AmountRule.from_category_id == from_category_id,
-            AmountRule.below_cents == below_cents,
-        )
-    ).all()
-    if any(row_id != except_id for row_id in found):
-        raise ValueError("This list already has a rule for that category and limit.")
-
-
-def _rule_label(verb: str, session: Session, values: dict[str, Any]) -> str:
-    names = dict(
-        session.execute(
-            select(Category.id, Category.name).where(
-                Category.id.in_([values["from_category_id"], values["to_category_id"]])
-            )
-        ).all()
-    )
-    return (
-        f"{verb} amount rule: {values['list_key']} {names[values['from_category_id']]} "
-        f"under {format_cents(values['below_cents'])} to {names[values['to_category_id']]}"
-    )

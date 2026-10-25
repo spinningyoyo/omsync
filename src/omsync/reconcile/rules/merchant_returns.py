@@ -3,7 +3,7 @@
 import re
 from collections import defaultdict
 
-from omsync.ledger.categories import CategoryType
+from omsync.ledger.categories import NOT_IN_REPORTS, CategoryType
 from omsync.ledger.links import LinkKind
 from omsync.receipts.vendors import BUILT_IN_VENDORS
 from omsync.reconcile.model import Queue, TxnView
@@ -11,7 +11,7 @@ from omsync.reconcile.pool import Pool
 from omsync.reconcile.rules.base import Emitter, claim, days_after
 from omsync.reconcile.text import is_generic_paypal_transfer, merchant_brand_similarity
 
-NON_SPENDING_TYPES = frozenset({CategoryType.excluded, CategoryType.income})
+NON_SPENDING_TYPES = frozenset({CategoryType.income, *NOT_IN_REPORTS})
 """Category types that never take part in merchant returns: money that is not spending, such as
 transfers, loans, investments, and income."""
 

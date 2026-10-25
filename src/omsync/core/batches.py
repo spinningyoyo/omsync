@@ -3,7 +3,8 @@
 A preview lists the changes an operation would make and the data revision it was computed
 from. It writes nothing, so it is safe to show. apply() writes a preview in one transaction
 after checking that the data still matches it. undo() reverses an applied batch while nothing
-it changed has changed since, and no later batch depends on it.
+it changed has changed since, and no later batch depends on it. undo_all() reverses several in one
+transaction, all or none.
 
 apply() and undo() own the session's transaction. They commit when they succeed and roll back
 on any error, so the session must have no unsaved changes when they start.
@@ -18,7 +19,7 @@ imported first. This module never imports omsync.ledger or omsync.web.
 
 import hashlib
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import Enum
@@ -214,41 +215,56 @@ def undo(session: Session, batch_id: int) -> Batch:
     Raises BatchError if the batch is not applied, for example because it was already undone.
     Raises UndoConflict, naming the rows in the way, if the data has moved on.
     """
+    return undo_all(session, [batch_id])[0]
+
+
+def undo_all(session: Session, batch_ids: Sequence[int]) -> list[Batch]:
+    """Reverse several applied batches in the order given, in one transaction.
+
+    Each is checked as undo checks it, after the ones before it were reversed, so a batch that
+    later ones depend on is undone after them. If any cannot be undone, none is: nothing is
+    written, and the error is the one that batch raised.
+    """
     _require_no_unsaved_changes(session)
     try:
-        _bump_revision(session)
-        batch = session.scalars(
-            select(Batch).where(Batch.id == batch_id).execution_options(populate_existing=True)
-        ).first()
-        if batch is None:
-            raise BatchError(f"there is no batch {batch_id}")
-        if batch.state is not BatchState.applied:
-            raise BatchError(f"batch {batch_id} is {batch.state.value}, so it cannot be undone")
-        changes = list(
-            session.scalars(
-                select(BatchChange).where(BatchChange.batch_id == batch_id).order_by(BatchChange.id)
-            )
-        )
-        later = _rows_changed_by_later_batches(session, batch_id, changes)
-        if later:
-            raise UndoConflict(
-                f"batch {batch_id} cannot be undone: a later batch changed {_describe(later)}",
-                later,
-            )
-        moved = _rows_moved_since(session, changes)
-        if moved:
-            raise UndoConflict(
-                f"batch {batch_id} cannot be undone: {_describe(moved)} changed after apply",
-                moved,
-            )
-        for change in reversed(changes):
-            _undo_change(session, change)
-        batch.state = BatchState.undone
-        batch.undone_at = _utc_now()
+        undone = [_undo_one(session, batch_id) for batch_id in batch_ids]
         session.commit()
     except BaseException:
         session.rollback()
         raise
+    return undone
+
+
+def _undo_one(session: Session, batch_id: int) -> Batch:
+    _bump_revision(session)
+    batch = session.scalars(
+        select(Batch).where(Batch.id == batch_id).execution_options(populate_existing=True)
+    ).first()
+    if batch is None:
+        raise BatchError(f"there is no batch {batch_id}")
+    if batch.state is not BatchState.applied:
+        raise BatchError(f"batch {batch_id} is {batch.state.value}, so it cannot be undone")
+    changes = list(
+        session.scalars(
+            select(BatchChange).where(BatchChange.batch_id == batch_id).order_by(BatchChange.id)
+        )
+    )
+    later = _rows_changed_by_later_batches(session, batch_id, changes)
+    if later:
+        raise UndoConflict(
+            f"batch {batch_id} cannot be undone: a later batch changed {_describe(later)}",
+            later,
+        )
+    moved = _rows_moved_since(session, changes)
+    if moved:
+        raise UndoConflict(
+            f"batch {batch_id} cannot be undone: {_describe(moved)} changed after apply",
+            moved,
+        )
+    for change in reversed(changes):
+        _undo_change(session, change)
+    batch.state = BatchState.undone
+    batch.undone_at = _utc_now()
     return batch
 
 

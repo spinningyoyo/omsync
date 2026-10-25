@@ -22,6 +22,7 @@ choices. Code expresses implementation. Operating guides explain how to use the 
 - [Receipts](architecture/receipts.md)
 - [Transactions](architecture/transactions.md)
 - [Categories and keywords](architecture/categories.md)
+- [Contacts](architecture/contacts.md)
 - [Reconciliation](architecture/reconciliation.md)
 
 ## Reading and planning
@@ -40,7 +41,7 @@ choices. Code expresses implementation. Operating guides explain how to use the 
 | --- | --- |
 | `core/` | [system](architecture/system.md); `batches.py` [changes](architecture/changes.md); `vault.py`, `sessions.py` [access](architecture/access.md); `settings.py` [settings](architecture/settings.md); `backups.py`, `recovery.py` [backups](architecture/backups.md) |
 | `ingest/` | [import](architecture/import.md); `sync.py`, `providers.py`, `connectors/` [sync](architecture/sync.md) |
-| `ledger/` | [ledger](architecture/ledger.md), [transactions](architecture/transactions.md), [categories](architecture/categories.md), [accounts](architecture/accounts.md) |
+| `ledger/` | [ledger](architecture/ledger.md), [transactions](architecture/transactions.md), [categories](architecture/categories.md), [accounts](architecture/accounts.md); `contacts.py`, `other_side.py` [contacts](architecture/contacts.md) |
 | `reconcile/` | [reconciliation](architecture/reconciliation.md) |
 | `receipts/` | [receipts](architecture/receipts.md) |
 | `plan/` | [budgets](architecture/budgets.md), [goals](architecture/goals.md), [recurring](architecture/recurring.md) |
@@ -57,6 +58,7 @@ choices. Code expresses implementation. Operating guides explain how to use the 
 ## Architecture decisions
 
 - [Separate Chase personal and Chase Business connectors](adr/0001-separate-chase-connectors.md)
+- [Identify the other side of every transaction](adr/0002-identify-the-other-side.md)
 
 For installation and startup, see the [project README](../README.md). Engineering instructions
 are in [AGENTS.md](../AGENTS.md); review standards are in [CODING_STANDARDS.md](../CODING_STANDARDS.md).

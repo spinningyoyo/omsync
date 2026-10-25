@@ -63,6 +63,10 @@ Dependencies point from the web and CLI entry points into domain packages, then 
 core services. Domain packages never import the web layer. Web and CLI operations share
 domain behavior instead of maintaining separate financial implementations.
 
+`omsync serve` upgrades the database, then runs the [automatic step](contacts.md#running-it-automatically)
+that follows an import once before it serves, so a failure there is logged and never blocks
+startup.
+
 SQLite is the authority for ledger state. Source files retain the institution or vendor's
 evidence. Browser storage holds presentation preferences, not financial truth. External
 sessions and files are outside database undo.

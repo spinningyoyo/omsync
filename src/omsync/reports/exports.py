@@ -23,8 +23,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from omsync.ledger.categories import TYPE_LABELS
-from omsync.ledger.models import Account, Category, CategoryType, Link, Transaction
+from omsync.ledger.categories import NOT_IN_REPORTS, TYPE_LABELS
+from omsync.ledger.models import Account, Category, Link, Transaction
 from omsync.ledger.sources import account_digits
 from omsync.reports.queries import (
     Period,
@@ -43,7 +43,7 @@ MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", 
 UNCATEGORIZED = "(uncategorized)"
 SPLIT_PARENT = "(split)"
 OTHER = "Other"
-TRANSFERS = "Transfers (excluded)"
+TRANSFERS = "Transfers and loans (not in reports)"
 INCOME = "Income"
 EXPENSES = "Expenses"
 SHEET_TITLE_LIMIT = 31
@@ -79,7 +79,14 @@ RENTAL_DETAIL_COLUMNS = (
     "bucket",
 )
 RENTAL_DETAIL_WIDTHS = (22, 12, 12, 28, 28, 14, 10, 14, 24, 22)
-SUMMARY_COLUMNS = ("property", "account", "income", "expenses", "net", "transfers (excluded)")
+SUMMARY_COLUMNS = (
+    "property",
+    "account",
+    "income",
+    "expenses",
+    "net",
+    "transfers and loans (not in reports)",
+)
 SUMMARY_WIDTHS = (24, 14, 14, 14, 14, 22)
 
 
@@ -160,9 +167,10 @@ def export_rental(
     Income and expenses are operating results only, and they count what the reports count: a
     transaction counts the amount its transfer and joint settlement links leave unexplained, and a
     split shares that counted amount in proportion (see queries.py). Joint share is off, as in the
-    other exports. The explained part is excluded, as are lines in an excluded category, since owner
-    contributions and distributions are not operating results. Excluded lines sit on a
-    "Transfers (excluded)" row below each property's totals, and in the Summary's last column.
+    other exports. The explained part is excluded, as are lines in a category left out of reports,
+    since owner contributions and distributions are not operating results. Those lines sit on a
+    "Transfers and loans (not in reports)" row below each property's totals, and in the Summary's
+    last column.
     So for each property, income minus expenses plus the transfers row is the sum of every ledger
     line in its account for the year.
 
@@ -331,7 +339,7 @@ def _rental_summary_sheet(
         all_transfers += transfers
         ws.append(_summary_row(prop.label, prop.account, income, expenses, transfers))
     ws.append(_summary_row("All properties", None, all_income, all_expenses, all_transfers))
-    for column in ("income", "expenses", "net", "transfers (excluded)"):
+    for column in ("income", "expenses", "net", "transfers and loans (not in reports)"):
         _format_column(ws, SUMMARY_COLUMNS.index(column) + 1, MONEY_FORMAT)
 
 
@@ -465,8 +473,8 @@ def _rental_lines(
 
 
 def _excluded_category_ids(session: Session) -> set[int]:
-    """Categories excluded from reports, as the reports leave them out."""
-    return set(session.scalars(select(Category.id).where(Category.type == CategoryType.excluded)))
+    """Categories that reports leave out: excluded and owed."""
+    return set(session.scalars(select(Category.id).where(Category.type.in_(NOT_IN_REPORTS))))
 
 
 def _monthly(lines: Iterable[_Line]) -> dict[tuple[str, str], list[int]]:

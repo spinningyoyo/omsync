@@ -69,9 +69,9 @@ Here’s a feature-by-feature verification plan, mapped to the new documentation
  │       │ interface.md       │ layouts, privacy mode, and reduced motion. Reload to verify presentation preferences  │
  │       │                    │ persist.                                                                              │
  ├───────┼────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┤
- │ 6     │ Settings —         │ Walk through institution setup, account mapping, connector selection, counterparties, │
- │       │ settings.md        │ self-names, and rental preferences. Confirm masked identifiers and that undo is       │
- │       │                    │ offered only for batch-backed settings.                                               │
+ │ 6     │ Settings —         │ Walk through institution setup, account mapping, connector selection, your names on   │
+ │       │ settings.md        │ the Contacts page, nicknames on an account page, and rental preferences. Confirm      │
+ │       │                    │ masked identifiers and that undo is offered only for batch-backed settings.           │
  └───────┴────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
 
  Useful targeted tests:

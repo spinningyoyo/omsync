@@ -1,14 +1,14 @@
-{% extends "layouts/shell.html" %}
+{% extends "layouts/settings.html" %}
 {% from "layouts/shell_parts.html" import page_header %}
 {% from "components/button.html" import button %}
 {% from "components/tabs.html" import tabs %}
 {% from "categories/parts.html" import category_list, new_category_form, keyword_panel, rule_panel, payee_tester, triage_panel, import_form, categorize_body %}
 
 {# The categories table and the keyword table each scroll inside their column, under the page header,
-   so the controls around them stay in view (see layouts/shell.html). #}
+   so the controls around them stay in view (see layouts/shell.html and layouts/settings.html). #}
 {% set fill_viewport = "xl" %}
 
-{% block page %}
+{% block settings_page %}
 {# The page root listens for dialog and focus events. Each region reloads itself on
    categories-changed, which a successful write sends (see routes/categories.py).
 
@@ -27,13 +27,13 @@
     {{ category_list(rows, view, drafts, errors) }}
 
     {% set keywords_body %}
-    {{ keyword_panel(keywords.list_key, keywords.lists, keywords.conflicts, keywords.rows, keywords.choices, keywords.form) }}
+    {{ keyword_panel(keywords.list_key, keywords.lists, keywords.conflicts, keywords.rows, keywords.choices, keywords.form, keywords.query, keywords.total) }}
     {% endset %}
     {% set rules_body %}
-    {{ rule_panel(amount_rules.rows, amount_rules.choices, amount_rules.form) }}
+    {{ rule_panel(rules.rows, rules.choices, rules.contacts, rules.accounts, rules.form) }}
     {% endset %}
     {% set tester_body %}
-    {{ payee_tester(payee, amount, matches, names, payee_error, amount_rule) }}
+    {{ payee_tester(payee, amount, person, matches, names, payee_error, rule) }}
     {% endset %}
     {% set triage_body %}
     {{ triage_panel(triage.payees, triage.vendors, triage.choices) }}
@@ -41,10 +41,10 @@
     {% set import_body %}
     {{ import_form(lists) }}
     {% endset %}
-    <section class="fill-chain flex min-w-0 flex-col" aria-label="Keywords, amount rules, payee tester, triage, and import">
+    <section class="fill-chain flex min-w-0 flex-col" aria-label="Keywords, rules, payee tester, triage, and import">
       {{ tabs("categories", [
         {"id": "keywords", "label": "Keywords", "body": keywords_body},
-        {"id": "rules", "label": "Amount rules", "body": rules_body, "scroll": true},
+        {"id": "rules", "label": "Rules", "body": rules_body, "scroll": true},
         {"id": "test", "label": "Test a payee", "body": tester_body, "scroll": true},
         {"id": "triage", "label": "Triage", "body": triage_body, "scroll": true},
         {"id": "import", "label": "Import", "body": import_body, "scroll": true},
@@ -61,6 +61,10 @@
 
   <dialog id="icon-picker-dialog" class="m-auto w-full max-w-xl bg-transparent p-0 text-primary backdrop:bg-overlay" aria-label="Choose an icon" data-action="close->categories#restoreFocus">
     <div id="icon-picker-body" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs"></div>
+  </dialog>
+
+  <dialog id="move-category-dialog" class="m-auto w-full max-w-md bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="move-category-title" data-action="close->categories#restoreFocus">
+    <div id="move-category-body" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-live="polite"></div>
   </dialog>
 
   <dialog id="categorize-dialog" class="m-auto w-full max-w-md bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="categorize-title" data-action="close->categories#restoreFocus">

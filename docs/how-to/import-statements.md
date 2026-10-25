@@ -78,7 +78,7 @@ Check account balance issues after import. Open the interval's transactions and 
 source evidence before deciding that an apparent duplicate or missing movement is real.
 “No statement balances” means there is no balance evidence to compare, not a proven balance.
 
-Open Categories to triage payees and preview categorization. The terminal equivalent is:
+Open Settings → Categories to triage payees and preview categorization. The terminal equivalent is:
 
 ```sh
 uv run omsync categorize

@@ -14,7 +14,6 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from omsync.ledger.counterparties import load_matchers
 from omsync.ledger.links import RejectedProposal
 from omsync.ledger.sources import Account, Institution
 from omsync.reconcile.history import demoted_rules
@@ -27,10 +26,10 @@ from omsync.reconcile.model import (
     pair_signature,
 )
 from omsync.reconcile.not_matched import assess
+from omsync.reconcile.own_names import own_name_literals
 from omsync.reconcile.patterns import build_patterns
 from omsync.reconcile.pool import Pool, load_pool
 from omsync.reconcile.rules.base import CONFIDENCE_BY_QUEUE, DESCRIPTIONS, Emitter
-from omsync.reconcile.rules.counterparty import WINDOW_AFTER_DAYS, rule_counterparties
 from omsync.reconcile.rules.joint import BILL_WINDOW_DAYS, rule_joint_settlement
 from omsync.reconcile.rules.merchant_returns import (
     MERCHANT_RETURN_WINDOW_DAYS,
@@ -54,7 +53,6 @@ from omsync.reconcile.rules.transfers import (
     rule_2b,
     rule_3,
 )
-from omsync.reconcile.self_names import get_self_names
 
 
 @dataclass(frozen=True)
@@ -78,7 +76,6 @@ RULES: tuple[Rule, ...] = (
     Rule("ru", rule_untracked_round_trip, DESCRIPTIONS["ru"]),
     Rule("7a", rule_7a, DESCRIPTIONS["7a"]),
     Rule("7c", rule_7c, DESCRIPTIONS["7c"]),
-    Rule("cp", rule_counterparties, DESCRIPTIONS["cp"]),
     Rule("7b", rule_7b, DESCRIPTIONS["7b"]),
     Rule("7d", rule_7d, DESCRIPTIONS["7d"]),
 )
@@ -92,7 +89,6 @@ CONTEXT_DAYS = max(
     ROUND_TRIP_WINDOW_DAYS,
     UNTRACKED_ROUND_TRIP_WINDOW_DAYS,
     MERCHANT_RETURN_WINDOW_DAYS,
-    WINDOW_AFTER_DAYS,
 )
 
 
@@ -135,12 +131,11 @@ def run(
 
     Rejected pairs are skipped, so they neither appear nor block a candidate. A rule whose links
     you removed twice (see history.py) proposes in the review queue, never the automatic one, and
-    its drafts say so. Payee patterns use
-    your own names from the self_names preference, and named counterparties from the ledger.
+    its drafts say so. Payee patterns use the owner's names and your accounts' nicknames.
     Descriptions that name an account are read against every tracked account, not only those with
     transactions in the range. A transaction no proposal involves, and that the transfer, card
-    payment, and P2P wording says should have a counterpart, is Not matched unless you or a
-    forward to a joint account explains it.
+    payment, and P2P wording says should have a counterpart, is Not matched unless its other side
+    is known (see not_matched.py).
 
     The rules read CONTEXT_DAYS beyond each end of the range, and the result keeps the proposals
     with a side posted in the range, and the Not matched and Explained rows posted in it.
@@ -157,8 +152,7 @@ def run(
     rejected = frozenset(session.scalars(select(RejectedProposal.signature)))
     emit = Emitter(
         rejected,
-        patterns=build_patterns(get_self_names(session)),
-        counterparties=load_matchers(session),
+        patterns=build_patterns(own_name_literals(session)),
         accounts=_account_refs(session),
     )
 
@@ -186,9 +180,8 @@ def run(
         for draft in emit.drafts
         if pair_signature(draft.out_txn_id, draft.in_txn_id, draft.amount_cents) not in rejected
     )
-    not_matched, explained = assess(
-        session, candidates=open_at_start, pool=pool, drafts=drafts, emit=emit, start=start, end=end
-    )
+    candidates = (*open_at_start, *(txn for txn in pool.parked() if in_range(txn.id)))
+    not_matched, explained = assess(session, candidates=candidates, drafts=drafts, emit=emit)
     return RunResult(
         run_id=str(uuid4()),
         start=start,

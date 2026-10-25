@@ -66,7 +66,8 @@ def rule_untracked_round_trip(pool: Pool, emit: Emitter) -> None:
     or a card number on a purchase, is not a reference. The amounts are exactly opposite and the
     dates at most 30 days apart, in either order. Every pair is automatic: the payments share an
     account, an amount, and the other account, so of several, the nearest pairs are linked first,
-    by date gap and then IDs. Saved counterparties are left out, as in the P2P round trip.
+    by date gap and then IDs. Payments whose stored other side is the owner or the co-owner are left
+    out, as in the P2P round trip.
     """
     tracked = {digits for account in emit.accounts for digits in account.digits}
     by_reference: dict[tuple[int, int, str], list[TxnView]] = defaultdict(list)
@@ -74,8 +75,7 @@ def rule_untracked_round_trip(pool: Pool, emit: Emitter) -> None:
         reads_as_transfer = (
             is_transfer_like(txn, emit) if txn.amount_cents < 0 else is_own_inflow(txn, emit)
         )
-        saved = any(m.matches(txn.description, txn.amount_cents) for m in emit.counterparties)
-        if not reads_as_transfer or saved:
+        if not reads_as_transfer or txn.with_household:
             continue
         for digits in account_mentions(txn.description) - tracked:
             by_reference[(txn.account_id, abs(txn.amount_cents), digits)].append(txn)

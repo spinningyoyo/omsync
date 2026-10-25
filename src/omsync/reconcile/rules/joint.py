@@ -97,11 +97,9 @@ def rule_joint_settlement(pool: Pool, emit: Emitter) -> None:
         extra: dict[str, object] = {"bill_txn_id": bill.id, "bill_month": month}
         partner = partners[0] if len(partners) == 1 else None
         if partner is not None:
-            extra["partner_contributions"] = [
-                {"txn_id": partner.id, "memo": f"Partner contribution: joint card bill {month}"}
-            ]
+            extra["partner_contributions"] = [{"txn_id": partner.id}]
         elif partners:
-            # Several possible partner inflows: do not guess which one carries the memo.
+            # Several possible partner inflows: do not guess which one is the contribution.
             extra["partner_candidates"] = [t.id for t in partners]
         if fit.card_named:
             extra["card_named"] = True
@@ -121,8 +119,8 @@ def rule_joint_settlement(pool: Pool, emit: Emitter) -> None:
             extra=extra,
         )
         if emitted:
-            # Partner inflows are labeled or left unlabeled, never linked: take every candidate
-            # out of the pool so no later rule can propose one as a reimbursement.
+            # Partner inflows are never linked: take every candidate out of the pool so no later
+            # rule can propose one as a reimbursement.
             for candidate in partners:
                 pool.take_partner(candidate.id)
 
@@ -184,8 +182,7 @@ def _take_partner_inflows(
 ) -> None:
     """Take the partner inflows of a bill whose settlement is already approved, out of the pool.
 
-    No pair is proposed and no memo is written here: the approved link already holds the
-    partner's record, and a late inflow has no proposal to carry a memo.
+    No pair is proposed here: the approved link already holds the partner's record.
     """
     for candidate in inflows:
         if (

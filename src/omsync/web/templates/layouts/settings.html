@@ -2,14 +2,18 @@
    Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/layouts/settings.html.erb and
    app/views/settings/_settings_nav.html.erb (the section headings, rules, and active item). Sure
    hides its app sidebar on settings pages; omsync keeps the shell, so the accounts panel stays.
-   Pages extend this and fill the `settings_page` block. #}
+   Pages extend this and fill the `settings_page` block.
+
+   A page may set `fill_viewport` to "xl" (see layouts/shell.html), as Categories does. From xl the
+   row then takes the window's height and the content column joins the fill chain, while the sub-nav
+   stays beside it. The row is not itself a fill-chain element, because that class would stack it. #}
 {% extends "layouts/shell.html" %}
 {% from "settings/parts.html" import settings_nav with context %}
 
 {% block page %}
-<div class="flex flex-col gap-6 md:flex-row md:items-start">
+<div class="flex flex-col gap-6 md:flex-row md:items-start{% if fill_viewport == "xl" %} xl:min-h-0 xl:flex-1 xl:items-stretch{% endif %}">
   {{ settings_nav(nav, active_href) }}
-  <div class="flex min-w-0 flex-1 flex-col gap-6">
+  <div class="flex min-w-0 flex-1 flex-col gap-6{% if fill_viewport == "xl" %} fill-chain{% endif %}">
     {% block settings_page %}{% endblock %}
   </div>
 </div>

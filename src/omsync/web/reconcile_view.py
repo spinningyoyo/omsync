@@ -22,6 +22,7 @@ from omsync.reconcile.model import Draft, Explained, NotMatched, Queue, signatur
 from omsync.reconcile.pool import load_pool
 from omsync.reconcile.rules.base import DESCRIPTIONS
 from omsync.web.amounts import money_html
+from omsync.web.contacts_view import ChoiceGroup, other_side_choices
 
 DEFAULT_LAST_DAYS = 90
 CANDIDATE_LIMIT = 25
@@ -62,10 +63,7 @@ _SECTION_TITLES: dict[str, str] = {
     "returns": "Merchant returns",
     "p2p": "P2P payments",
 }
-_P2P_SUBTITLES: dict[str, str] = {
-    "rt": "Round trip",
-    "cp": "Named counterparty",
-}
+_P2P_SUBTITLES: dict[str, str] = {"rt": "Round trip"}
 
 
 @dataclass(frozen=True)
@@ -159,12 +157,11 @@ class NotMatchedRow:
     description: str
     amount: str
     category: str
-    hint: str | None
 
 
 @dataclass(frozen=True)
 class ExplainedRow:
-    """A transaction that needs nothing from you, with the reason and the decision to undo."""
+    """A transaction that needs nothing from you, with its other side as the reason."""
 
     txn_id: int
     on: str
@@ -173,11 +170,8 @@ class ExplainedRow:
     amount: str
     category: str
     reason: str
-    shared_words: str
     by: str
-    acknowledgment_id: int | None
-    counterparty_id: int | None
-    remove_key: str
+    contact_id: int | None
 
 
 @dataclass(frozen=True)
@@ -228,6 +222,7 @@ class Results:
     vendors: tuple[VendorView, ...]
     not_matched: tuple[NotMatchedRow, ...]
     explained: tuple[ExplainedRow, ...]
+    side_choices: tuple[ChoiceGroup, ...]
     unmatched: tuple[OpenRow, ...]
     linked: tuple[LinkRow, ...]
     tally: tuple[TallyRow, ...]
@@ -281,7 +276,7 @@ def build_groups(session: Session, drafts: Iterable[Draft]) -> tuple[ProposalGro
         key, title = _group_of(draft)
         titles[key] = title
         buckets.setdefault(key, []).append(_row(draft, sides))
-    order = ("joint", "transfers", "returns", "p2p-rt", "p2p-cp", "p2p-p2p")
+    order = ("joint", "transfers", "returns", "p2p-rt", "p2p-p2p")
     return tuple(
         ProposalGroup(
             key=key,
@@ -334,10 +329,7 @@ def _row(draft: Draft, sides: dict[int, Side]) -> ProposalRow:
 def _evidence(draft: Draft) -> tuple[tuple[str, ...], tuple[str, ...]]:
     ev = draft.evidence
     chips: list[str] = []
-    if draft.rule_key == "cp" and ev.get("counterparty"):
-        chips.append(f"Counterparty: {ev['counterparty']}")
-    else:
-        chips.append(DESCRIPTIONS.get(draft.rule_key, draft.rule_key))
+    chips.append(DESCRIPTIONS.get(draft.rule_key, draft.rule_key))
     if ev.get("conf_number"):
         chips.append(f"Conf ending {str(ev['conf_number'])[-4:]}")
     gap = ev.get("date_gap_days")
@@ -364,9 +356,9 @@ def _evidence(draft: Draft) -> tuple[tuple[str, ...], tuple[str, ...]]:
             f"Not applied automatically: you removed {ev['rule_unlinked']} links this rule made"
         )
     for contribution in ev.get("partner_contributions", []):
-        notes.append(f"Partner contribution: memo “{contribution['memo']}” is set on approval")
+        notes.append(f"Partner contribution: transaction #{contribution['txn_id']}")
     if ev.get("partner_candidates"):
-        notes.append("Several partner inflows could carry the memo, so none is annotated")
+        notes.append("Several partner inflows could be the contribution, so none is named")
     return tuple(chips), tuple(notes)
 
 
@@ -446,7 +438,6 @@ def not_matched_rows(session: Session, found: Iterable[NotMatched]) -> list[NotM
             description=row.txn.description,
             amount=money_html(row.txn.amount_cents),
             category=row.txn.category_name or "",
-            hint=row.hint,
         )
         for row in found
     ]
@@ -463,11 +454,8 @@ def explained_rows(session: Session, found: Iterable[Explained]) -> list[Explain
             amount=money_html(row.txn.amount_cents),
             category=row.txn.category_name or "",
             reason=row.reason,
-            shared_words=", ".join(row.shared_words),
             by=row.by.value,
-            acknowledgment_id=row.acknowledgment_id,
-            counterparty_id=row.counterparty_id,
-            remove_key=uuid4().hex,
+            contact_id=row.contact_id,
         )
         for row in found
     ]
@@ -486,7 +474,7 @@ def unmatched_rows(
     pool = load_pool(session, start=start, end=end)
     aliases = _aliases(session)
     rows: list[OpenRow] = []
-    # Recorded partner contributions are unmatched too: they are labeled, never linked.
+    # Recorded partner contributions are unmatched too: they are never linked.
     for txn in sorted([*pool, *pool.parked()], key=lambda t: (t.posted_on, t.id)):
         rows.append(
             OpenRow(
@@ -689,6 +677,7 @@ def results_for(
         vendors=vendors,
         not_matched=tuple(not_matched_rows(session, result.not_matched)),
         explained=tuple(explained_rows(session, result.explained)),
+        side_choices=other_side_choices(session),
         unmatched=tuple(unmatched_rows(session, start=start, end=end, proposed=proposed)),
         linked=tuple(linked_rows(session, start=start, end=end)),
         tally=tuple(tally_rows(session)),
