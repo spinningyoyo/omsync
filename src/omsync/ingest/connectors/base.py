@@ -49,8 +49,8 @@ class ConnectorAccount:
 
     account_id is the omsync account. last4 is its ••last4 from Account.last4, which is "" for an
     account with none. statement_account_id is the ID the institution's files carry for it, taken
-    from the account's newest alias, or None when the account has no alias yet. type is the
-    account type, such as "checking".
+    from the account's current alias (see ledger.sources.current_alias_id), or None when the
+    account has no alias yet. type is the account type, such as "checking".
 
     A connector selects the account on the bank's site by statement_account_id when there is one,
     and by last4 otherwise (see banks.base.site_last4).

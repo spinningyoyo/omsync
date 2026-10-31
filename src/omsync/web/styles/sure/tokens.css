@@ -1,7 +1,9 @@
 /* Adapted from Sure (we-promise/sure), AGPL-3.0: app/assets/tailwind/sure-design-system/_generated.css */
 /*
  * Copied from Sure's generated token file (source: design/tokens/sure.tokens.json).
- * Changed here: --font-sans lists Noto Sans Thai after Geist. Keep other edits minimal.
+ * Changed here: --font-sans lists Noto Sans Thai after Geist, and light --utility-text-secondary is
+ * gray-600, not gray-500, so secondary text stays above 4.5:1 on the tinted page (styles/tint.css).
+ * Keep other edits minimal.
  */
 
 @theme {
@@ -210,7 +212,7 @@
   --utility-bg-overlay: --alpha(var(--color-gray-100) / 50%);
   --utility-text-primary: var(--color-gray-900);
   --utility-text-inverse: var(--color-white);
-  --utility-text-secondary: var(--color-gray-500);
+  --utility-text-secondary: var(--color-gray-600);
   --utility-text-subdued: var(--color-gray-400);
   --utility-shadow-border-xs: var(--shadow-xs), 0px 0px 0px 1px var(--color-alpha-black-50);
   --utility-shadow-border-sm: var(--shadow-sm), 0px 0px 0px 1px var(--color-alpha-black-50);

@@ -890,19 +890,19 @@ def update_series(
         changes: dict[str, Any] = {}
         if name is not None:
             if not name.strip():
-                raise ValueError("a series needs a name")
+                raise ValueError("Give the bill a name.")
             changes["name"] = name.strip()
         if cadence is not None:
             changes["cadence"] = Cadence(cadence)
         if amount_cents is not None:
             _check_int(amount_cents, "a series amount")
             if amount_cents == 0:
-                raise ValueError("a series amount cannot be zero")
+                raise ValueError("Enter an amount other than zero.")
             changes["amount_cents"] = amount_cents
         if amount_tolerance_cents is not None:
             _check_int(amount_tolerance_cents, "a series tolerance")
             if amount_tolerance_cents < 0:
-                raise ValueError("a series tolerance cannot be negative")
+                raise ValueError("The tolerance cannot be negative.")
             changes["amount_tolerance_cents"] = amount_tolerance_cents
         if not isinstance(category_id, _Unchanged):
             if category_id is not None and session.get(Category, category_id) is None:
@@ -1011,9 +1011,9 @@ def accept_new_amount(
             raise ValueError(f"{row.name} is {row.status.value}, not confirmed")
         txn = _series_charge_or_raise(session, row, transaction_id)
         if _is_rejected(session, series_id, transaction_id):
-            raise ValueError("that charge is marked Not this bill, so it cannot set the amount")
+            raise ValueError("That charge is marked Not this bill, so it cannot set the amount.")
         if any(price.effective_on == txn.posted_on for price in _prices(session, series_id)):
-            raise ValueError(f"a new amount is already set from {txn.posted_on.isoformat()}")
+            raise ValueError(f"A new amount is already set from {txn.posted_on.isoformat()}.")
         values = {
             "series_id": series_id,
             "effective_on": txn.posted_on,
@@ -1041,7 +1041,7 @@ def reject_charge(
         row = _series_or_raise(session, series_id)
         _series_charge_or_raise(session, row, transaction_id)
         if _is_rejected(session, series_id, transaction_id):
-            raise ValueError("that charge is already marked Not this bill")
+            raise ValueError("That charge is already marked Not this bill.")
         values = {"series_id": series_id, "transaction_id": transaction_id}
         return [Change("recurring_rejection", None, None, values)]
 
@@ -1105,17 +1105,17 @@ def add_series(
 
     def build() -> list[Change]:
         if not name.strip():
-            raise ValueError("a series needs a name")
+            raise ValueError("Give the bill a name.")
         if not payee_pattern:
-            raise ValueError("a series needs a payee pattern")
+            raise ValueError("Enter a payee pattern.")
         try:
             re.compile(payee_pattern)
         except re.error as exc:
-            raise ValueError(f"the payee pattern is not valid: {exc}") from None
+            raise ValueError(f"The payee pattern is not valid: {exc}.") from None
         kind = Cadence(cadence)
         _check_int(amount_cents, "a series amount")
         if amount_cents == 0:
-            raise ValueError("a series amount cannot be zero")
+            raise ValueError("Enter an amount other than zero.")
         tolerance = (
             fixed_tolerance_cents(amount_cents)
             if amount_tolerance_cents is None
@@ -1123,7 +1123,7 @@ def add_series(
         )
         _check_int(tolerance, "a series tolerance")
         if tolerance < 0:
-            raise ValueError("a series tolerance cannot be negative")
+            raise ValueError("The tolerance cannot be negative.")
         _check_date(starts_on, "the start date")
         if account_id is not None and session.get(Account, account_id) is None:
             raise ValueError(f"there is no account {account_id}")
@@ -1169,7 +1169,7 @@ def payee_pattern_for(payee_raw: str | None) -> str:
     matches the charges a suggestion would. Raises ValueError when the payee leaves no key."""
     key = payee_key(payee_raw)
     if not key:
-        raise ValueError("the transaction has no payee to build a pattern from")
+        raise ValueError("This transaction has no payee to build a pattern from.")
     return _escape(key)
 
 
@@ -1182,7 +1182,10 @@ def _series_charge_or_raise(
     if txn is None:
         raise ValueError(f"there is no transaction {transaction_id}")
     if (txn.amount_cents > 0) != (series.amount_cents > 0):
-        raise ValueError(f"that charge has the other sign from {series.name}")
+        raise ValueError(
+            f"That charge goes the other way from {series.name}: "
+            "one is money in, the other money out."
+        )
     if series.account_id is not None and txn.account_id != series.account_id:
         raise ValueError(f"that charge is not in the account of {series.name}")
     if re.compile(series.payee_pattern).fullmatch(payee_key(txn.payee_raw)) is None:

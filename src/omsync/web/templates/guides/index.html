@@ -1,0 +1,45 @@
+{# The Guides index: a hero with the way in, then the guides in their groups as cards. Each card's check
+   badge and the progress line are shown by guides_controller.js from the read list in this browser. #}
+{% extends "layouts/settings.html" %}
+{% from "components/icon.html" import icon with context %}
+{% from "components/button.html" import link_button %}
+
+{% block settings_page %}
+<div class="flex min-w-0 flex-col gap-8" data-controller="guides">
+  <section class="guide-hero" aria-labelledby="guides-title">
+    <div class="guide-hero__text">
+      <p class="guide-kicker">Guides</p>
+      <h1 id="guides-title" class="guide-hero__title">Learn omsync</h1>
+      <p class="guide-hero__summary">Short walkthroughs of each part of omsync, in the order most people need them. Each one ends with a place in the app to try what it describes.</p>
+      <div class="guide-hero__actions">
+        {{ link_button("Start with the tour", href="/settings/guides/tour", variant="primary", icon="arrow-right", icon_position="right") }}
+        <p class="guide-progress" data-guides-target="progress" hidden></p>
+      </div>
+    </div>
+    <div class="guide-hero__mascot" aria-hidden="true">{{ mascot_svg(88) }}</div>
+  </section>
+
+  {%- for group, guides in groups %}
+  <section class="@container flex min-w-0 flex-col gap-3" aria-labelledby="guides-group-{{ loop.index }}">
+    <h2 id="guides-group-{{ loop.index }}" class="guide-group__title">{{ group.title }}</h2>
+    <ul class="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
+      {%- for guide in guides %}
+      <li>
+        <a href="/settings/guides/{{ guide.slug }}" class="guide-card focus-ring">
+          <span class="guide-card__icon guide-tone--{{ group.tone }}" aria-hidden="true">{{ icon(guide.icon, 20) }}</span>
+          <span class="guide-card__body">
+            <span class="guide-card__title">{{ guide.title }}</span>
+            <span class="guide-card__summary">{{ guide.summary }}</span>
+            <span class="guide-card__meta">{{ guide.minutes }} min read</span>
+          </span>
+          <span class="guide-card__read" data-guides-target="check" data-slug="{{ guide.slug }}" hidden>
+            {{ icon("circle-check", 18) }}<span class="sr-only">Read</span>
+          </span>
+        </a>
+      </li>
+      {%- endfor %}
+    </ul>
+  </section>
+  {%- endfor %}
+</div>
+{% endblock %}

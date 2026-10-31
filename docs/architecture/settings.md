@@ -84,6 +84,20 @@ keyword import, and categorize; their behavior is in [categories](categories.md)
 long-table layout inside Settings: from xl the tables scroll under their headers beside the
 sub-nav. The old `/categories` address redirects to it.
 
+## Guides
+
+Settings opens with a Learn section, whose Guides page lists walkthroughs of the app in four
+groups: start here, everyday work, planning, and peace of mind. Each guide is a page with an
+"On this page" list, numbered steps, and a link into the page it describes. The guides are written
+into the app's templates and listed in `web/guides.py`, which also holds each guide's title, read
+time, and icon. They are documentation, not data, so they change no financial state and no batch.
+
+Read marks are a presentation preference: the browser keeps the slugs of guides marked as read under
+`omsync-guides-read` in local storage, so they are per browser and never shared. Without storage the
+marks last for one visit. In demo mode `/settings` opens on Guides rather than Bank sync, because the
+demo has no bank sync to set up. A guide's screenshots come from `static/img/guides` when the files
+exist, and a labelled placeholder takes their place when they do not.
+
 ## Contacts and rental settings
 
 The Contacts page holds the people and businesses on the other side of your money, and you (see

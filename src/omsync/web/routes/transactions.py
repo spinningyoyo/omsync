@@ -41,7 +41,11 @@ from omsync.web.register_state import (
     decode_filter,
     page_rows,
 )
-from omsync.web.routes.accounts import account_undo_reply, nicknames_undo_reply
+from omsync.web.routes.accounts import (
+    account_undo_reply,
+    nicknames_undo_reply,
+    numbers_undo_reply,
+)
 from omsync.web.routes.contacts import contacts_undo_reply
 from omsync.web.routes.other_side import transaction_undo_reply
 from omsync.web.routes.plan import plan_undo_reply
@@ -140,6 +144,7 @@ def save_cell(
             key=key,
             version=version,
             error=STALE_MESSAGE,
+            stale=True,
             status_code=409,
         )
     try:
@@ -171,6 +176,7 @@ def save_cell(
             key=key,
             version=version,
             error=STALE_MESSAGE,
+            stale=True,
             status_code=409,
         )
     return _row_fragment(
@@ -363,8 +369,9 @@ def undo_batch(
     is re-rendered out of band, a bulk edit or a saved filter re-renders the register, a review
     re-renders the review list, a reconcile or receipts batch re-runs the Reconcile results for the
     range in start and end, a contact batch re-renders the Contacts page, the transaction detail, or
-    the Reconcile results, by the source the toast was sent from, and a nickname batch re-renders
-    the nicknames card of the account in account."""
+    the Reconcile results, by the source the toast was sent from, a nickname batch re-renders
+    the nicknames card of the account in account, and a number added on the account page (source
+    "account") re-renders its numbers card, header, and the panel."""
     if db.get(Batch, batch_id) is None:
         raise HTTPException(status_code=404, detail="No such change")
     try:
@@ -404,6 +411,9 @@ def undo_batch(
     if batch.kind.startswith("account."):
         account_id = (batch.summary or {}).get("account_id")
         return account_undo_reply(request, db, account_id if isinstance(account_id, int) else None)
+    if batch.kind == "add_alias" and source == "account":
+        account_id = (batch.summary or {}).get("account_id")
+        return numbers_undo_reply(request, db, account_id if isinstance(account_id, int) else None)
     if batch.kind.startswith("recurring_"):
         return recurring_undo_reply(request, db)
     if batch.kind.startswith(("budget_", "goal.")):
@@ -547,10 +557,12 @@ def _cell_fragment(
     key: str = "",
     version: str = "",
     error: str = "",
+    stale: bool = False,
     status_code: int = 200,
 ) -> HTMLResponse:
     """One editable cell. `value` is what the person entered (a category's id), and None shows the
-    stored value. An empty `key` or `version` means a fresh key and the field's current token."""
+    stored value. An empty `key` or `version` means a fresh key and the field's current token.
+    `stale` marks a save refused because the cell is out of date, which offers a reload."""
     hint = ADD_CATEGORIES_HINT if error and field_name == "category" and not categories(db) else ""
     return _row_fragment(
         request,
@@ -564,6 +576,7 @@ def _cell_fragment(
         version=version,
         error=error,
         hint=hint,
+        stale=stale,
     )
 
 

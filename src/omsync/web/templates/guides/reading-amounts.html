@@ -1,0 +1,61 @@
+{% extends "layouts/guide.html" %}
+{% from "guides/parts.html" import section, subsection, figure, callout, compare_table, try_it with context %}
+
+{% set sections = [
+  ("signs", "Which way the signs run"),
+  ("balances", "Checking, cards, and balances"),
+  ("counts", "What counts in reports"),
+  ("privacy", "Hiding amounts"),
+] %}
+
+{% block guide_body %}
+{% call section("signs", "Which way the signs run") %}
+<p>Every amount is a signed number of cents, and its sign says which way the money moved. A <strong>negative</strong> amount is money out. A <strong>positive</strong> amount is money in.</p>
+<p>A credit card follows the same rule. A purchase on a card is money out of the card, so it is negative. A payment that clears the card is money in to the card, so it is positive. The same payment is money out of the checking account that sent it.</p>
+{{ compare_table(
+  ["Transaction", "Account", "Sign", "Why"],
+  [
+    ["Rent to Maple Court Apartments", "Everyday Checking", "Negative", "Money left checking."],
+    ["Sam Park's share of the rent, by Zelle", "Everyday Checking", "Positive", "Money came into checking."],
+    ["A purchase at a grocery store", "Sapphire Card", "Negative", "A charge on the card."],
+    ["The Sapphire Card autopay", "Everyday Checking, then Sapphire Card", "Negative, then positive", "Checking pays the card, and the card records the payment as money in."],
+  ],
+  "Examples of signs in the demo",
+) }}
+<p>The rent is $2,400 a month and Sam pays half, so checking shows a $2,400.00 charge and a $1,200.00 credit for the same month. Each one carries its sign, and the register shows both.</p>
+{{ figure("transactions-register", "The register: date, account, payee, memo, category, and amount, with amounts right-aligned.", "The register lists each transaction's signed amount in its own column.") }}
+{{ try_it("/transactions", "Open Transactions", "The register shows each amount with its sign, and the account it belongs to.") }}
+{% endcall %}
+
+{% call section("balances", "Checking, cards, and balances") %}
+<p>The balance omsync shows is the bank's <strong>ledger balance</strong> as reported on a date. It is not the available balance, which some banks also report, and omsync does not put one in its place. An account page shows the balance together with its date.</p>
+<p>A checking account's balance is money you have. A credit card's balance is what you owe, and it keeps the sign the statement reports. In the demo, a card you owe shows a negative balance, and it goes back toward zero when the autopay clears it.</p>
+<p>The Accounts panel groups accounts by type. Each group has a total, which sums the balances it knows. If you choose to group by institution instead, the panel shows no totals, because netting a card's debt against a checking balance would mean nothing.</p>
+{% endcall %}
+
+{% call section("counts", "What counts in reports") %}
+<p>Reports count money by its category. The category's type decides whether it is income, an expense, or left out. This is the same for every view that shows a total, so the dashboard, budgets, and reports agree.</p>
+{{ compare_table(
+  ["Type", "Examples in the demo", "What it counts as"],
+  [
+    ["Fixed", "Rent, Utilities, Subscriptions", "An expense, planned as a fixed budget"],
+    ["Flexible", "Groceries, Dining, Coffee", "An expense, planned against the flex number"],
+    ["Non-monthly", "Travel, Gifts, Home", "An expense, planned as a non-monthly budget, which can roll over"],
+    ["Income", "Paycheck, Interest", "Income"],
+    ["Excluded", "Transfer, Credit card payment", "Left out of reports"],
+    ["Owed", "Loans", "Left out of reports; contact balances count it"],
+    ["Unassigned", "Blue Bottle Coffee, until you categorize it", "Shown on its own, as net outflow"],
+  ],
+  "Category types and what they count as",
+) }}
+<p>Two details matter when you read a total. First, a transfer may be only partly explained. If a $100 outflow has $40 explained by a transfer link, reports count the remaining $60. Second, joint accounts count at half by default, which is the joint share setting. It applies once per transaction, and it changes reports, not the balance the bank reported.</p>
+{{ try_it("/reports", "Open Reports", "Reports show income, expenses, and net for a period, and spending by category.") }}
+{% endcall %}
+
+{% call section("privacy", "Hiding amounts") %}
+<p>The <strong>Privacy mode</strong> button in the top bar blurs the amounts and charts on the screen. Use it when someone is looking over your shoulder. It only changes what is drawn: the amounts are still on the page, and exports are still readable. It is not a lock, so it does not replace signing out.</p>
+{% call callout("tip", "Quick check") %}
+<p>If an amount looks wrong, look at its sign first. A transfer between your own accounts appears twice, as money out of one account and money in to the other. Its category is Transfer, which is Excluded, so reports leave it out and the money is counted once.</p>
+{% endcall %}
+{% endcall %}
+{% endblock %}

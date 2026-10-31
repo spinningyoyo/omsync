@@ -425,7 +425,7 @@ def copy_month(
     _check_month(from_month)
     _check_month(to_month)
     if from_month == to_month:
-        raise ValueError("copy the lines to a different month")
+        raise ValueError("Choose a different month to copy to.")
 
     def build() -> list[Change]:
         if session.scalar(select(BudgetLine.id).where(BudgetLine.month == to_month).limit(1)):

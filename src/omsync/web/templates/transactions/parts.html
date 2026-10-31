@@ -40,8 +40,9 @@
    without a mode switch. A change saves it, and the controller sends the field's value (a
    category's id) with the cell's key and version. The key makes a double submit apply once. The
    version is the field's token from when the cell was rendered. The server refuses a save made from
-   an older one. A split's category is read-only. #}
-{% macro cell_input(row, field_name, categories, value=none, key="", version="", error="", hint="", autofocus=false) -%}
+   an older one, and says so with a link that reloads the page, since only a reload brings the cell
+   up to date. A split's category is read-only. #}
+{% macro cell_input(row, field_name, categories, value=none, key="", version="", error="", hint="", autofocus=false, stale=false) -%}
 {%- set idem = key or new_key() -%}
 {%- set token = version or field_version(row, field_name) -%}
 <td class="cell-input" data-editable data-field="{{ field_name }}" data-txn-id="{{ row.id }}" data-key="{{ idem }}" data-version="{{ token }}">
@@ -53,7 +54,7 @@
   <input name="value" value="{{ value if value is not none else cell_value(row, field_name) }}" aria-label="{{ field_name|capitalize }}" autocomplete="off"{% if field_name == "category" %} readonly{% endif %}{% if autofocus %} data-autofocus{% endif %}{% if error %} aria-invalid="true"{% endif %}>
   {%- endif %}
   {%- if error %}
-  <span class="error" role="alert">{{ error }}</span>
+  <span class="error" role="alert">{{ error }}{% if stale %} <a href="" class="underline">Reload</a>{% endif %}</span>
   {%- elif hint %}
   <span class="hint">{{ hint }}</span>
   {%- endif %}
@@ -78,7 +79,7 @@
     {%- if show_account %}
     <th scope="col">Account</th>
     {%- endif %}
-    <th scope="col">Payee</th>
+    <th scope="col" class="payee">Payee</th>
     <th scope="col">Memo</th>
     <th scope="col">Category</th>
     <th scope="col" class="num">Amount</th>
@@ -249,7 +250,7 @@
    matches says so. #}
 {% macro table_body(state, rows, focus=none) -%}
 {%- if rows %}
-<div class="table-scroll fill-region shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Transactions">
+<div class="table-scroll register-scroll fill-region shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Transactions">
   <table class="register">
     {{ table_head(state.show_account) }}
     {{ register_rows(rows, state.show_account, state.categories) }}

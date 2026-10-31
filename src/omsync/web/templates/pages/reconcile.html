@@ -6,7 +6,7 @@
 {# The page root holds the link dialog and listens for htmx settles and close-dialogs. The results
    region swaps itself after each decision (see reconcile/parts.html). #}
 <div class="flex flex-col gap-6" data-controller="page-dialogs reconcile" data-action="htmx:afterSettle->page-dialogs#settled close-dialogs@window->page-dialogs#closeDialogs">
-  {{ page_header("Reconcile", "Find the links that explain your transactions: transfers, returns, P2P payments, and joint settlements. Review each proposal, then approve, reject, or link by hand. Anything that should have a counterpart and has no known other side is listed as not matched.") }}
+  {{ page_header("Reconcile", "Some transactions belong together: a transfer leaves one of your accounts and arrives in another, a refund answers a purchase, and a payment to or from a person has another side. Reconcile links them. omsync suggests links; you approve or reject each one, or link two transactions yourself. A transaction that should have another side and has none is listed under Not matched.") }}
   {{ range_picker(start, end, presets, active_preset) }}
   {{ results_region(results, notice, start, end) }}
 

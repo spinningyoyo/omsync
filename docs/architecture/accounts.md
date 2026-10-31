@@ -19,9 +19,11 @@ institution group shows the institution's logo beside its name (see
 
 An account page shows institution, type, joint and closed status, balance and its date,
 transaction count and range, balance history, balance-check results, recent institution
-sync attempts, and the account's nicknames, which it also edits (see
-[contacts](contacts.md#account-nicknames)). It links to the register scoped to that account. Closed accounts leave the
-normal panel without losing their history.
+sync attempts, the account's numbers, which it also adds to (see below), and the account's
+nicknames, which it also edits (see [contacts](contacts.md#account-nicknames)). It links to the register scoped to that account. Closed accounts leave the
+normal panel without losing their history. They are listed by name in a collapsed Closed group at the
+end of the panel, as YNAB and Actual Budget keep them, and each opens its page, where it can be
+reopened.
 
 Account edits change name, joint status, closed status, or the displayed last four digits
 through [batches](changes.md). The account page edits all four. Bank sync also renames an account from its row, as the same
@@ -34,9 +36,21 @@ ID as an alias keeps the history together and tells a bank connector which numbe
 it leaves the displayed last four unchanged, so the person changes that label on the account
 page when they choose. Until a file names the new card, its alias can be only its last four
 digits: the connector looks for the account by them, and the first file sync fetches for them is
-linked to the account. Wherever an account's digits appear, the last four of its newest alias
-follow when they differ from the label, as `••1234 · alias ••5678`, so a screen never hides
-which number the bank now knows the account by.
+linked to the account. The account page's Numbers card adds those digits as an alias batch that
+undo reverses, and lists each number by its last four with the date its statements reach.
+
+The account's **current number** is the one the bank uses now. omsync derives it from the
+statements rather than storing it: aliases are compared by their last four digits, because that
+is what a bank's site shows, and the digits whose statements reach the latest date are current. A
+file's date is its period end, or its latest row when the format has none. Digits that no
+statement carries yet are a new card the person has added, so they are current until its first
+statement arrives. Among aliases with the current digits, the one whose own statements are
+latest is the ID sync asks for. The order aliases were added in plays no part: importing or
+mapping an old card's statements later must not make the bank sync look for the old card.
+
+Sync looks for the current number, and wherever an account's digits appear, its last four follow
+when they differ from the label, as `••1234 · alias ••5678`, so a screen never hides which
+number the bank now knows the account by.
 
 ## Balance agreement
 

@@ -10,16 +10,21 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    Date,
     DateTime,
     ForeignKey,
+    Integer,
+    ScalarSelect,
     String,
     UniqueConstraint,
+    column,
     false,
     func,
     select,
+    table,
     true,
 )
-from sqlalchemy.orm import Mapped, column_property, mapped_column
+from sqlalchemy.orm import Mapped, aliased, column_property, mapped_column
 
 from omsync.core.db import Base
 from omsync.ledger.enums import string_enum
@@ -80,16 +85,68 @@ class AccountAlias(Base):
     statement_account_id: Mapped[str]
 
 
-# The last four of the account's newest statement account ID: the digits its bank shows now, which
-# differ from the displayed last4 once a card is reissued. None without an alias of four or more.
+# The statement tables, by name only: ledger.statements imports this module.
+_statement_file = table(
+    "statement_file",
+    column("id", Integer),
+    column("account_id", Integer),
+    column("statement_account_id", String),
+    column("period_end", Date),
+)
+_statement_row = table(
+    "statement_row", column("statement_file_id", Integer), column("posted_on", Date)
+)
+
+
+def current_alias_id(account_id: Any) -> ScalarSelect[int]:
+    """The id of the alias the bank knows the account by now, or None without an alias.
+
+    Aliases are compared by their last four digits, which is what a bank's site shows. The digits
+    whose statements reach the latest date win; a file's date is its period end, or its latest
+    posted row when it has no period end. Digits no statement carries yet are a new card the person
+    has told omsync about, so they win over any date. Among aliases with the winning digits, the
+    one whose own statements are latest is chosen, then the newest row. The order rows were added
+    in says nothing about when the bank used a number, so a merge of old files cannot change it."""
+    candidate = aliased(AccountAlias)
+    file_date = func.coalesce(
+        _statement_file.c.period_end,
+        select(func.max(_statement_row.c.posted_on))
+        .where(_statement_row.c.statement_file_id == _statement_file.c.id)
+        .scalar_subquery(),
+    )
+    latest = select(func.max(file_date)).where(_statement_file.c.account_id == candidate.account_id)
+    digits_latest = latest.where(
+        func.substr(_statement_file.c.statement_account_id, -4)
+        == func.substr(candidate.statement_account_id, -4)
+    ).scalar_subquery()
+    own_latest = latest.where(
+        _statement_file.c.statement_account_id == candidate.statement_account_id
+    ).scalar_subquery()
+    # SQLite sorts NULL lowest, so a descending date puts aliases without statements last.
+    return (
+        select(candidate.id)
+        .where(candidate.account_id == account_id)
+        .order_by(
+            digits_latest.is_(None).desc(),
+            digits_latest.desc(),
+            own_latest.desc(),
+            candidate.id.desc(),
+        )
+        .limit(1)
+        .correlate_except(candidate)
+        .scalar_subquery()
+    )
+
+
+# The last four of the account's current alias (see current_alias_id): the digits its bank shows
+# now, which differ from the displayed last4 once a card is reissued. None without an alias of four
+# or more.
 Account.alias_last4 = column_property(
     select(func.substr(AccountAlias.statement_account_id, -4))
     .where(
-        AccountAlias.account_id == Account.id,
+        AccountAlias.id == current_alias_id(Account.id),
         func.length(AccountAlias.statement_account_id) >= 4,
     )
-    .order_by(AccountAlias.id.desc())
-    .limit(1)
     .correlate_except(AccountAlias)
     .scalar_subquery()
 )

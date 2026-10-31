@@ -80,6 +80,8 @@ def parse_keyword_file(data: bytes, name: str) -> tuple[dict[str, list[str]], li
         raise KeywordFileError(
             f"{name} is not valid JSON: {exc.msg} at line {exc.lineno}, column {exc.colno}"
         ) from None
+    except RecursionError:
+        raise KeywordFileError(f"{name} is nested too deeply to be a keyword file") from None
     if not isinstance(parsed, dict):
         raise KeywordFileError(
             f"{name} must be a JSON object that maps category names to lists of patterns"
@@ -109,7 +111,7 @@ def parse_keyword_mapping(text: str) -> dict[str, list[str]]:
     patterns."""
     try:
         parsed = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
         raise KeywordFileError("the keyword mapping is not valid JSON") from None
     if not isinstance(parsed, dict) or not all(
         isinstance(name, str)
@@ -226,7 +228,7 @@ def apply_keyword_import(
 def _check_list_key(list_key: str) -> None:
     if is_list_key(list_key):
         return
-    raise ValueError("the list must be unique, generic, or a lowercase vendor key such as amazon")
+    raise ValueError("The list must be unique, generic, or a lowercase vendor key, such as amazon.")
 
 
 def _check_pattern(category: str, index: int, pattern: object) -> None:

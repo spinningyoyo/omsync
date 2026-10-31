@@ -406,12 +406,12 @@ def clean_person_name(
     parts = [" ".join(str(part or "").split()) for part in (given, middle, family)]
     clean_given, clean_middle, clean_family = parts
     if not _plain(clean_given):
-        raise ValueError("a name needs a given name")
+        raise ValueError("Enter a name.")
     if clean_middle and not clean_family:
-        raise ValueError("a middle name needs a family name")
+        raise ValueError("A middle name needs a family name too.")
     for part in parts:
         if len(part) > MAX_NAME_LENGTH:
-            raise ValueError(f"a name can be at most {MAX_NAME_LENGTH} characters")
+            raise ValueError(f"A name can be at most {MAX_NAME_LENGTH} characters.")
     return PersonName(clean_given, clean_middle or None, clean_family or None)
 
 
@@ -446,23 +446,25 @@ def check_pattern(pattern: str) -> None:
     """Raise ValueError unless the pattern is a valid regular expression of at most 200
     characters that cannot match the empty string, which would match every payee."""
     if not pattern:
-        raise ValueError("a pattern cannot be empty")
+        raise ValueError("Enter a pattern.")
     if len(pattern) > MAX_PATTERN_LENGTH:
-        raise ValueError(f"a pattern can be at most {MAX_PATTERN_LENGTH} characters")
+        raise ValueError(f"A pattern can be at most {MAX_PATTERN_LENGTH} characters.")
     try:
         compiled = re.compile(pattern, re.IGNORECASE)
     except re.error as exc:
         raise ValueError(f"{pattern!r} is not a valid pattern: {exc}") from exc
     if compiled.search(""):
-        raise ValueError(f"{pattern!r} would match every payee; make it more specific")
+        raise ValueError(f"{pattern!r} would match every payee. Make it more specific.")
 
 
 def _clean_label(value: str, what: str) -> str:
     clean = " ".join(str(value).split())
     if not clean:
-        raise ValueError(f"{what} cannot be empty")
+        raise ValueError(f"Enter {what}.")
     if len(clean) > MAX_NAME_LENGTH:
-        raise ValueError(f"{what} can be at most {MAX_NAME_LENGTH} characters")
+        raise ValueError(
+            f"{what[0].upper()}{what[1:]} can be at most {MAX_NAME_LENGTH} characters."
+        )
     return clean
 
 
@@ -619,13 +621,13 @@ def merge_contacts(session: Session, *, keep_id: int, merge_id: int, idempotency
     if replay is not None:
         return replay
     if keep_id == merge_id:
-        raise ValueError("a contact cannot be merged into itself")
+        raise ValueError("Choose a different contact to merge into.")
     keep = _snapshot_or_raise(session, "contact", keep_id)
     merged = _snapshot_or_raise(session, "contact", merge_id)
     if merged["role"] == ContactRole.owner.value:
-        raise ValueError("you cannot be merged into another contact")
+        raise ValueError("You cannot be merged into another contact.")
     if merged["role"] == ContactRole.co_owner.value and keep["role"] != merged["role"]:
-        raise ValueError("the co-owner can be merged only into another co-owner")
+        raise ValueError("The co-owner can be merged only into another co-owner.")
 
     changes = _merge_names(session, keep_id, merge_id)
     changes += _merge_patterns(session, keep_id, merge_id)
@@ -674,7 +676,7 @@ def add_name(
     stored = _stored_names(session, contact_id)
     _distinct_names([*stored, person])
     if len(stored) >= MAX_NAMES_PER_CONTACT:
-        raise ValueError(f"at most {MAX_NAMES_PER_CONTACT} names")
+        raise ValueError(f"A contact can have at most {MAX_NAMES_PER_CONTACT} names.")
     name_id = next_primary_key(session, ContactName.__table__)
     position = max((row.position for row in _name_rows(session, contact_id)), default=-1) + 1
     return _write(
@@ -761,7 +763,7 @@ def add_pattern(
     if contact_account_id is not None:
         account = snapshot(session, "contact_account", contact_account_id)
         if account is None or account["contact_id"] != contact_id:
-            raise ValueError("a pattern can name only an account of the same contact")
+            raise ValueError("A pattern can name only an account of the same contact.")
     clean = str(pattern).strip()
     check_pattern(clean)
     stored = [
@@ -775,7 +777,7 @@ def add_pattern(
     if clean in stored:
         raise ValueError(f"{clean!r} is already a {side} pattern")
     if len(stored) >= MAX_PATTERNS_PER_SIDE:
-        raise ValueError(f"at most {MAX_PATTERNS_PER_SIDE} {side} patterns")
+        raise ValueError(f"A contact can have at most {MAX_PATTERNS_PER_SIDE} {side} patterns.")
     pattern_id = next_primary_key(session, ContactPattern.__table__)
     values = {
         "id": pattern_id,
@@ -827,14 +829,14 @@ def add_contact_account(
     clean_label = _clean_label(label, "an account label")
     digits = (last4 or "").strip() or None
     if digits is not None and not (len(digits) == 4 and digits.isascii() and digits.isdigit()):
-        raise ValueError("last four digits are four digits")
+        raise ValueError("Enter the last four digits, such as 4821.")
     held = session.scalar(
         select(func.count())
         .select_from(ContactAccount)
         .where(ContactAccount.contact_id == contact_id)
     )
     if held >= MAX_ACCOUNTS_PER_CONTACT:
-        raise ValueError(f"at most {MAX_ACCOUNTS_PER_CONTACT} accounts")
+        raise ValueError(f"A contact can have at most {MAX_ACCOUNTS_PER_CONTACT} accounts.")
     account_id = next_primary_key(session, ContactAccount.__table__)
     values = {"id": account_id, "contact_id": contact_id, "label": clean_label, "last4": digits}
     return _write(
@@ -901,7 +903,7 @@ def add_account_nickname(
     if any(clean.casefold() == other.casefold() for other in stored):
         raise ValueError(f"{clean!r} is already a nickname of this account")
     if len(stored) >= MAX_NICKNAMES_PER_ACCOUNT:
-        raise ValueError(f"at most {MAX_NICKNAMES_PER_ACCOUNT} nicknames per account")
+        raise ValueError(f"An account can have at most {MAX_NICKNAMES_PER_ACCOUNT} nicknames.")
     nickname_id = next_primary_key(session, AccountNickname.__table__)
     values = {"id": nickname_id, "account_id": account_id, "nickname": clean}
     return _write(
@@ -992,7 +994,7 @@ def _merge_names(session: Session, keep_id: int, merge_id: int) -> list[Change]:
         )
         position += 1
     if held > MAX_NAMES_PER_CONTACT:
-        raise ValueError(f"the merged contact would have more than {MAX_NAMES_PER_CONTACT} names")
+        raise ValueError(f"The merged contact would have more than {MAX_NAMES_PER_CONTACT} names.")
     return changes
 
 
@@ -1109,7 +1111,7 @@ def _clean_contact_name(session: Session, name: str, *, except_id: int | None) -
     clean = _clean_label(name, "a contact name")
     for row in session.scalars(select(Contact)):
         if row.id != except_id and row.name.casefold() == clean.casefold():
-            raise ValueError(f"a contact named {row.name!r} already exists")
+            raise ValueError(f'A contact named "{row.name}" already exists.')
     return clean
 
 

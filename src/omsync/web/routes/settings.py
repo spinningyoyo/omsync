@@ -16,11 +16,14 @@ router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
 ABOUT_PAGE = "pages/settings_about.html"
 PROVIDERS_PATH = "/settings/providers"
+GUIDES_PATH = "/settings/guides"
 
 
 @router.get("/settings")
-def settings_root() -> RedirectResponse:
-    return RedirectResponse(PROVIDERS_PATH, status_code=303)
+def settings_root(request: Request) -> RedirectResponse:
+    # The demo has no bank sync to set up, so its Settings opens on the Guides.
+    in_demo = getattr(request.app.state, "demo", None) is not None
+    return RedirectResponse(GUIDES_PATH if in_demo else PROVIDERS_PATH, status_code=303)
 
 
 @router.get("/settings/about", response_class=HTMLResponse)
@@ -33,6 +36,8 @@ def about_page(request: Request, db: DbSession) -> HTMLResponse:
         page_title="About",
         version=__version__,
         data_dir=str(settings.data_dir),
-        checks=run_checks(settings),
+        # The demo reads no Bitwarden CLI or keychain entry (docs/architecture/access.md), and its
+        # data directory is a temporary one, so the checks for a real ledger do not apply.
+        checks=[] if request.app.state.demo is not None else run_checks(settings),
     )
     return request.app.state.templates.TemplateResponse(request, ABOUT_PAGE, context)

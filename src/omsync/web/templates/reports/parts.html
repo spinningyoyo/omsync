@@ -81,9 +81,9 @@
 {% macro export_menu(export) -%}
 <div id="export-menu">
   {%- call menu(id="export-menu-items", label="Export", trigger="Export") %}
-  {{ menu_item("Transactions for " ~ export.year ~ " (.xlsx)", href="/reports/export/transactions?year=" ~ export.year) }}
+  {{ menu_item("Transactions for " ~ export.year ~ " (.xlsx)", href="/reports/export/transactions?year=" ~ export.year, attrs={"download": ""}) }}
   {%- if export.rental_ready %}
-  {{ menu_item("Rental report for " ~ export.year ~ " (.xlsx)", href="/reports/export/rental?year=" ~ export.year) }}
+  {{ menu_item("Rental report for " ~ export.year ~ " (.xlsx)", href="/reports/export/rental?year=" ~ export.year, attrs={"download": ""}) }}
   {%- else %}
   {{ unavailable_item("Rental report for " ~ export.year ~ " (.xlsx)", "Set up rental properties in Settings") }}
   {%- endif %}

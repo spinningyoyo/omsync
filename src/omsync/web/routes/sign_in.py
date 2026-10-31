@@ -8,11 +8,12 @@ import logging
 import math
 from typing import Annotated
 
-from fastapi import APIRouter, Form, Query, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from omsync.core.vault import VaultError
-from omsync.web.auth import SESSION_COOKIE, SIGN_IN_PATH, safe_next
+from omsync.demo.site import DEMO_EMAIL
+from omsync.web.auth import DEMO_SIGN_IN_PATH, SESSION_COOKIE, SIGN_IN_PATH, safe_next
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -38,6 +39,9 @@ def sign_in(
     target = safe_next(next_)
     limiter = state.login_limiter
 
+    if state.demo is not None:
+        # The demo has no Bitwarden account to check, so the form is never the way in.
+        return _render(request, next_path=target)
     if limiter.is_blocked():
         retry = str(math.ceil(limiter.retry_after()))
         return _render(
@@ -63,7 +67,21 @@ def sign_in(
         )
 
     limiter.reset()
-    token = state.sessions.create(email)
+    return _signed_in(request, email, target)
+
+
+@router.post(DEMO_SIGN_IN_PATH)
+def demo_sign_in(
+    request: Request, next_: Annotated[str, Form(alias="next")] = "/"
+) -> RedirectResponse:
+    """Enter the demo as its made-up person. The session is the same kind a sign-in makes."""
+    if request.app.state.demo is None:
+        raise HTTPException(status_code=404)
+    return _signed_in(request, DEMO_EMAIL, safe_next(next_))
+
+
+def _signed_in(request: Request, email: str, target: str) -> RedirectResponse:
+    token = request.app.state.sessions.create(email)
     response = RedirectResponse(target, status_code=303)
     # No Secure flag: the server listens on 127.0.0.1 over plain HTTP.
     response.set_cookie(

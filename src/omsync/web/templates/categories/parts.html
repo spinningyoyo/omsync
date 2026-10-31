@@ -271,7 +271,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 {# One keyword in the table. Edit opens the edit row in place. #}
 {% macro keyword_row(row) -%}
 <tr id="keyword-{{ row.id }}" class="border-t border-subdued align-middle{% if not row.enabled %} opacity-60{% endif %}">
-  <td class="font-mono break-all">{{ row.pattern }}</td>
+  <td class="min-w-[10rem] font-mono wrap-anywhere">{{ row.pattern }}</td>
   <td>{{ row.category_name }}{% if row.category_hidden %} <span class="text-secondary">(hidden)</span>{% endif %}</td>
   <td class="text-right tabular-nums">{{ row.priority }}</td>
   <td>{{ "Regex" if row.is_regex else "Plain" }}</td>

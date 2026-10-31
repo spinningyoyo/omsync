@@ -40,6 +40,7 @@ choices. Code expresses implementation. Operating guides explain how to use the 
 | Package | Architecture pages |
 | --- | --- |
 | `core/` | [system](architecture/system.md); `batches.py` [changes](architecture/changes.md); `vault.py`, `sessions.py` [access](architecture/access.md); `settings.py` [settings](architecture/settings.md); `backups.py`, `recovery.py` [backups](architecture/backups.md) |
+| `demo/` | [access](architecture/access.md#demo-mode) (demo mode); [system](architecture/system.md) |
 | `ingest/` | [import](architecture/import.md); `sync.py`, `providers.py`, `connectors/` [sync](architecture/sync.md) |
 | `ledger/` | [ledger](architecture/ledger.md), [transactions](architecture/transactions.md), [categories](architecture/categories.md), [accounts](architecture/accounts.md); `contacts.py`, `other_side.py` [contacts](architecture/contacts.md) |
 | `reconcile/` | [reconciliation](architecture/reconciliation.md) |
@@ -54,6 +55,8 @@ choices. Code expresses implementation. Operating guides explain how to use the 
 - [Import and review statements](how-to/import-statements.md)
 - [Run sync and obtain receipts](how-to/sync-and-receipts.md)
 - [Back up and restore](how-to/back-up-and-restore.md)
+- Guides in the app, under Settings → Guides (`/settings/guides`): their text is in
+  [templates/guides](../src/omsync/web/templates/guides/), and the registry is `web/guides.py`.
 
 ## Architecture decisions
 

@@ -3,6 +3,19 @@
 import calendar
 from datetime import date
 
+# The dates a person can enter. Periods compare with the one before and reconciliation looks a few
+# days either side, so a typed date stays well inside the calendar's years 1 to 9999.
+FIRST_DAY = date(1900, 1, 1)
+LAST_DAY = date(2199, 12, 31)
+
+
+def parse_day(text: str) -> date:
+    """A date written YYYY-MM-DD between FIRST_DAY and LAST_DAY. Anything else is a ValueError."""
+    day = date.fromisoformat(text.strip())
+    if not FIRST_DAY <= day <= LAST_DAY:
+        raise ValueError(f"date out of range: {day}")
+    return day
+
 
 def shift_month_start(day: date, months: int) -> date:
     """The first day of the month `months` away from the month of `day`. Negative goes back."""

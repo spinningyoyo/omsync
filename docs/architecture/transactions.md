@@ -25,8 +25,11 @@ the Categories page are. Leaving the memo, Tab, or Enter saves it, and Escape re
 value. Category lists Uncategorized and every visible category by name. A choice made with the
 pointer saves at once. A choice made with the keyboard, including type-ahead, saves when the
 field is left, so stepping through options is one change. The payee is shown as stored and is not
-edited in the register. The memo column is a fixed 350px; the payee column takes the remaining
-width and clamps to two lines, with the full payee as a tooltip. A user category has manual
+edited in the register. The memo column is 350px when the register is wide enough for every column
+at that width; on a narrower register it gives up room first, so category and amount stay in view.
+The payee column takes the remaining width and clamps to two lines, with the full payee as a
+tooltip. On a phone the register scrolls sideways and the payee stays at its left edge, so the row
+being edited is always named. A user category has manual
 origin; clearing it returns the transaction to unset. A split's category is read-only, because its
 lines hold the categories. Split transactions are classified through their splits rather than a
 second parent category. Hidden or unknown categories cannot be assigned through ordinary pickers,

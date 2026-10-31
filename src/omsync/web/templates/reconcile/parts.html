@@ -48,13 +48,16 @@
   {%- for group in results.groups %}
   {{ proposal_group(group, start, end) }}
   {%- endfor %}
+  {%- elif results.not_matched %}
+  {%- set count = results.not_matched|length %}
+  {{ alert("Nothing to review. " ~ count ~ " transaction" ~ (" has" if count == 1 else "s have") ~ " no other side yet: link " ~ ("it" if count == 1 else "each one") ~ " by hand, or say what is on the other side, under Not matched below.", title="Next step", variant="info") }}
   {%- else %}
   {{ empty_state("No proposals in this range", "The rules found no links to propose. Transactions that should have a counterpart and do not are listed under Not matched.", mascot=true) }}
   {%- endif %}
 
   {{ not_matched_card(results.not_matched, start, end, results.side_choices) }}
 
-  {%- for vendor in results.vendors %}
+  {%- for vendor in results.vendors if vendor.files %}
   {{ receipts_card(vendor, start, end) }}
   {%- endfor %}
 
@@ -62,6 +65,11 @@
   {{ unmatched_card(results.unmatched, start, end) }}
   {{ linked_card(results.linked, start, end) }}
   {{ tally_card(results.tally) }}
+
+  {%- set no_exports = results.vendors|rejectattr("files")|map(attribute="title")|list %}
+  {%- if no_exports %}
+  <p class="text-sm text-secondary">No {{ no_exports|join(" or ") }} receipt exports yet. Put a vendor's files in its folder under receipts, then run again.</p>
+  {%- endif %}
 </section>
 {%- endmacro %}
 
@@ -221,7 +229,7 @@
     <input type="hidden" name="idempotency_key" value="{{ new_key() }}">
     <label class="form-field w-auto min-w-[16rem]">
       <span class="form-field__label">What is on the other side of the selected rows?</span>
-      <select name="target" class="form-field__input" required>
+      <select name="target" class="form-field__input">
         <option value="">Choose…</option>
         {%- for group in choices %}
         <optgroup label="{{ group.label }}">
@@ -245,6 +253,7 @@
       </select>
     </label>
     {{ button("Set other side", variant="primary", type="submit") }}
+    <div id="other-side-error" class="basis-full" aria-live="assertive"></div>
   </form>
   <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Not matched transactions">
     <table class="w-full border-separate border-spacing-0 text-sm text-primary">
@@ -462,7 +471,7 @@
 {% macro link_body(source, source_remaining, source_remaining_text, candidates, amount, kinds, default_kind, start, end, idempotency_key, txn) -%}
 <div class="flex flex-col gap-1">
   <h2 id="reconcile-link-title" class="font-medium text-primary">Link manually</h2>
-  <p class="text-sm text-secondary">{{ source.on }} · {{ source.account }} · {{ source.payee }} · {{ source.amount }}. {{ source_remaining_text }} is not linked yet.</p>
+  <p class="text-sm text-secondary">{{ source.on }} · {{ source.account }} · {{ source.payee }} · {{ source.amount }}. Choose the transaction on the other side of the ${{ source_remaining_text }} that is not linked yet.</p>
 </div>
 <form id="reconcile-link-form" class="flex flex-col gap-4" hx-post="/reconcile/link" hx-target="#reconcile-link-error" hx-swap="innerHTML" data-source-remaining="{{ source_remaining }}">
   <input type="hidden" name="txn" value="{{ txn }}">
@@ -502,7 +511,7 @@
 {% macro candidate_list(candidates) -%}
 {%- for c in candidates %}
 <label class="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-surface-hover">
-  <input type="radio" name="other" value="{{ c.txn_id }}" data-remaining="{{ c.remaining }}" class="form-field__radio mt-1"{% if loop.first %} checked{% endif %}>
+  <input type="radio" name="other" value="{{ c.txn_id }}" data-remaining="{{ c.remaining }}" class="form-field__radio mt-1">
   <span class="flex min-w-0 flex-1 flex-col text-sm">
     <span class="truncate text-primary">{{ c.payee }}</span>
     <span class="text-xs text-secondary">{{ c.on }} · {{ c.account }} · {{ c.remaining_text }} not linked</span>

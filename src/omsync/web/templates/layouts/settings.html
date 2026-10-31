@@ -4,16 +4,16 @@
    hides its app sidebar on settings pages; omsync keeps the shell, so the accounts panel stays.
    Pages extend this and fill the `settings_page` block.
 
-   A page may set `fill_viewport` to "xl" (see layouts/shell.html), as Categories does. From xl the
+   A page may set `fill_viewport` to "2xl" (see layouts/shell.html), as Categories does. From 2xl the
    row then takes the window's height and the content column joins the fill chain, while the sub-nav
    stays beside it. The row is not itself a fill-chain element, because that class would stack it. #}
 {% extends "layouts/shell.html" %}
 {% from "settings/parts.html" import settings_nav with context %}
 
 {% block page %}
-<div class="flex flex-col gap-6 md:flex-row md:items-start{% if fill_viewport == "xl" %} xl:min-h-0 xl:flex-1 xl:items-stretch{% endif %}">
+<div class="flex flex-col gap-6 md:flex-row md:items-start{% if fill_viewport == "2xl" %} 2xl:min-h-0 2xl:flex-1 2xl:items-stretch{% endif %}">
   {{ settings_nav(nav, active_href) }}
-  <div class="flex min-w-0 flex-1 flex-col gap-6{% if fill_viewport == "xl" %} fill-chain{% endif %}">
+  <div class="flex min-w-0 flex-1 flex-col gap-6{% if fill_viewport == "2xl" %} fill-chain{% endif %}">
     {% block settings_page %}{% endblock %}
   </div>
 </div>

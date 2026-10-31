@@ -1,9 +1,16 @@
 """doctor reports missing setup. serve runs the web app. The db commands manage the file."""
 
+import dataclasses
 import logging
+import shutil
+import signal
 import sqlite3
-from contextlib import closing
+import tempfile
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
+from datetime import date
 from pathlib import Path
+from types import FrameType
 from typing import Annotated
 
 import typer
@@ -19,6 +26,10 @@ from omsync.core.doctor import run_checks
 from omsync.core.locks import SERVE_LOCK_NAME, LockBusy, exclusive_lock
 from omsync.core.schema import alembic_config, head_revision
 from omsync.core.settings import Settings, load_settings
+from omsync.demo import is_demo_dir
+from omsync.demo.build import build_demo
+from omsync.demo.site import DemoSite
+from omsync.demo.vault import DemoVault
 from omsync.reconcile.auto import reconcile_after_import
 from omsync.web.app import create_app
 
@@ -42,18 +53,35 @@ def doctor() -> None:
 
 
 @app.command()
-def serve() -> None:
-    """Upgrade the database as `db upgrade` does, run the automatic step once, then run the web
-    app on the configured host.
+def serve(
+    demo: Annotated[
+        bool,
+        typer.Option("--demo", help="Serve the made-up demo, even when a ledger exists."),
+    ] = False,
+) -> None:
+    """Run the web app on the configured host.
 
+    With a ledger, upgrade it as `db upgrade` does, run the automatic step once, then serve it.
     The automatic step is the one that follows an import (see omsync.reconcile.auto). It runs
     here so that what a migration or an edit made outside the app left undone is caught up before
     the first page. A failure is logged and never stops the server.
 
     Holds serve.lock while it runs, so `omsync backup restore` refuses to replace the data under a
     running server. A second server exits 1 instead of starting.
+
+    Without a ledger, or with --demo, serve the demo: a made-up person's year of money, built in a
+    temporary directory that is deleted when the server stops. The configured data directory is
+    never created, opened, migrated, or locked in demo mode.
     """
     settings = load_settings_or_exit()
+    if demo or not settings.db_path.is_file():
+        if not demo:
+            typer.echo(
+                f"No ledger was found at {settings.db_path}, so this is the demo, with made-up "
+                "data. To start a real ledger, see Settings → Guides → Start your own ledger."
+            )
+        _serve_demo(settings)
+        return
     try:
         with exclusive_lock(settings.data_dir / SERVE_LOCK_NAME):
             upgrade_database(settings)
@@ -61,6 +89,45 @@ def serve() -> None:
             uvicorn.run(create_app(settings), host=settings.host, port=settings.port)
     except LockBusy:
         fail("omsync serve is already running, or a restore is in progress. Stop it first.")
+
+
+def _serve_demo(settings: Settings) -> None:
+    """Build the demo in a temporary directory and serve a copy of it. The directory, and every
+    change made in the demo, is deleted when the server stops."""
+    with tempfile.TemporaryDirectory(prefix="omsync-demo-") as tmp, _exit_on_terminate():
+        root = Path(tmp)
+        pristine = root / "pristine"
+        typer.echo("Building the demo…")
+        try:
+            build_demo(pristine, today=date.today())
+        except (RuntimeError, ValueError) as exc:
+            fail(f"the demo could not be built: {exc}")
+        shutil.copytree(pristine, root / "data")
+        demo_settings = dataclasses.replace(settings, data_dir=root / "data", email=None)
+        if not is_demo_dir(demo_settings.data_dir):
+            fail("the demo copy is not a demo directory; refusing to serve it")
+        site = DemoSite(pristine=pristine)
+        uvicorn.run(
+            create_app(demo_settings, vault=DemoVault(), demo=site),
+            host=settings.host,
+            port=settings.port,
+        )
+
+
+@contextmanager
+def _exit_on_terminate() -> Iterator[None]:
+    """Make SIGTERM unwind the stack while the demo runs. Uvicorn re-raises a signal it caught with
+    the handler that was in place, and the default one ends the process without running cleanup,
+    which would leave the demo's directory behind."""
+
+    def stop(_signum: int, _frame: FrameType | None) -> None:
+        raise SystemExit(0)
+
+    previous = signal.signal(signal.SIGTERM, stop)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
 
 
 def _run_automatic_step(settings: Settings) -> None:

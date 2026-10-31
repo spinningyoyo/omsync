@@ -1,0 +1,44 @@
+{% extends "layouts/guide.html" %}
+{% from "guides/parts.html" import section, figure, callout, term, glossary, try_it with context %}
+
+{% set sections = [
+  ("looks", "What reconciliation looks for"),
+  ("automatic", "Links that apply themselves"),
+  ("decide", "Links that wait for you"),
+  ("unmatched", "Not matched and explained"),
+] %}
+
+{% block guide_body %}
+{% call section("looks", "What reconciliation looks for") %}
+<p>Some movements of money explain each other. A transfer leaves one of your accounts and arrives in another. A card payment leaves checking and clears the card. A payment goes to a person and, later, comes back from them. Reconciliation proposes a <strong>link</strong> for each of these pairs, and each link says what the movement was.</p>
+<p>A link explains money. It never changes an amount the bank reported. And a false link costs more than a missing one: a wrong link can hide real spending, or misstate a reimbursement. So omsync asks you when it is unsure, and equal amounts alone are never enough.</p>
+{{ figure("reconcile-page", "The Reconcile page for the year so far: the date range at the top, a note that no proposals are in it, then the Not matched row for a Zelle payment from KUNCHORN OMSIN.", "The Reconcile page for the year so far, with one transaction under Not matched.") }}
+{% endcall %}
+
+{% call section("automatic", "Links that apply themselves") %}
+<p>After each import and each sync, omsync applies the proposals that need no review. These are the exact, unambiguous matches, and the queue labelled <strong>Auto</strong> holds them. They go on as one batch named as automatic, so you do not have to approve each one.</p>
+<p>In the demo, every card payment and every savings transfer links this way, so the Review and Manual queues are empty.</p>
+<p><strong>Undo</strong> on that batch reverses its links, and the import stays. Those proposals come back, and the next import applies them again unless you unlink them one by one. A pair you unlink is remembered, so it is never proposed again.</p>
+{% endcall %}
+
+{% call section("decide", "Links that wait for you") %}
+<p>Two queues wait for a decision:</p>
+{% call glossary("The queues") %}
+  {{ term("Review", "Proposals that are less certain than the automatic ones. Read the evidence, then approve or reject each one.") }}
+  {{ term("Manual", "Transactions you link yourself. Some show a proposed partner, and Link manually lets you choose the other transaction.") }}
+{% endcall %}
+<p>Each proposal shows its evidence: confirmation numbers, the signs, the dates, the amounts, and any account a description names. You can approve or reject one at a time. You can also select several, then use <strong>Approve selected</strong> or <strong>Reject selected</strong>. A rejected pair is not proposed again.</p>
+{% call callout("careful", "Rules that lose trust") %}
+<p>If you unlink two links that a rule made, that rule stops applying itself. Its later proposals move to Review, with a note that says why, and wait there for your decision.</p>
+{% endcall %}
+{{ try_it("/reconcile", "Open Reconcile", "The page shows the range you choose, with the queues and the Not matched list below them.") }}
+{% endcall %}
+
+{% call section("unmatched", "Not matched and explained") %}
+<p>Some money should have a partner and does not. A transfer or card payment with no partner is <strong>Not matched</strong>, and it is listed on Reconcile so it does not go unnoticed. A Zelle payment from a person is different: it is explained by the name, as the next paragraph describes.</p>
+<p>When the other side is known, the row is <strong>explained</strong> instead, and it shows who it was with. A Zelle payment from a person with no saved contact is explained by the name as written, such as <em>Other side: TAYLOR KIM</em>. Saving that person as a contact stores their payments with the contact at once. The explained list is collapsed by default, and each row links to its transaction, so you can change its other side.</p>
+{% call callout("demo", "In the demo") %}
+<p>Taylor Kim's $45 Zelle payment is explained by its name, as the Contacts guide describes. The one row that stays under Not matched is a $500 Zelle payment from Kunchorn Omsin, from a bank omsync does not track. It reads as Kunchorn's own money, so no name explains it. Choose your own account outside the ledger as its other side.</p>
+{% endcall %}
+{% endcall %}
+{% endblock %}

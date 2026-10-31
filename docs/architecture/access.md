@@ -29,6 +29,24 @@ institution logins used by connectors. omsync does not maintain a second master 
 - Failed sign-ins have a shared rate limit. Wrong email and wrong password produce the
   same public error; the email can remain in the form, but the password cannot.
 
+## Demo mode
+
+`omsync serve` runs the demo when no ledger exists at the configured database path, or when it is
+run with `--demo`. Demo mode is for trying omsync with made-up data, and it never touches the
+configured data directory.
+
+- The demo is built into a temporary directory, which is deleted when the server stops. The
+  directory carries a marker file, and reset and the copy at startup refuse any directory without it.
+- The vault is replaced by a stand-in that is always locked and refuses to unlock. Bank sync is off,
+  and no Bitwarden CLI or keychain entry is read.
+- Sign-in shows "Explore the demo" in place of the Bitwarden form. It starts an application session
+  for the made-up person, the same kind a sign-in starts, and reads no password. A posted password
+  form gets the demo page back and never reaches the vault.
+- Reset demo, in the user menu, rebuilds the made-up data from the pristine copy. The session is
+  kept.
+- Nothing in demo mode creates, opens, migrates, or locks anything under the configured data
+  directory, and the serve lock is not taken.
+
 ## Access boundaries
 
 ```mermaid

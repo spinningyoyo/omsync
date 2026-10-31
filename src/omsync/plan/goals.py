@@ -357,7 +357,7 @@ def _projected_date(today: date, remaining: int, contribution: int) -> date | No
         return None
     try:
         return shift_months(today, _ceil_div(remaining, contribution))
-    except ValueError:  # past year 9999: no date to show, so the goal is never reached
+    except (ValueError, OverflowError):  # past year 9999: no date to show, never reached
         return None
 
 

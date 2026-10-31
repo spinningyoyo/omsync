@@ -104,7 +104,7 @@
     data-action="dragstart->dashboard-sortable#dragStart dragend->dashboard-sortable#dragEnd keydown->dashboard-sortable#handleKeyDown">
     <div class="flex items-center gap-2">
       <button type="button"
-        class="inline-flex size-6 items-center justify-center rounded-md text-secondary hover:bg-container-inset-hover hover:text-primary focus-ring"
+        class="inline-flex size-6 items-center justify-center rounded-md text-secondary hover:bg-container-inset-hover hover:text-primary focus-ring pointer-coarse:size-11"
         aria-label="Toggle {{ section.title }}"
         aria-controls="{{ section.key }}-body"
         aria-expanded="{{ 'false' if section.collapsed else 'true' }}"

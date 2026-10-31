@@ -1,9 +1,11 @@
 {% extends "layouts/shell.html" %}
 {% from "layouts/shell_parts.html" import page_header %}
 {% from "transactions/detail_parts.html" import detail_region %}
+{% from "components/button.html" import link_button %}
 
 {% block page %}
 <div class="flex flex-col gap-6">
+  <div>{{ link_button("Back", href=back_href, variant="ghost", size="sm", icon="chevron-left") }}</div>
   {{ page_header("Transaction", "What this payment is, and who is on the other side of it.") }}
   <div id="toast-region" aria-live="polite"></div>
   {{ detail_region(detail) }}

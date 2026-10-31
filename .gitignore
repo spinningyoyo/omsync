@@ -34,3 +34,6 @@ __pycache__/
 
 # Design system tooling: the Tailwind standalone CLI (scripts/build-css.sh)
 /.tools/
+
+# Forest studio edits (scripts/forest-studio.py)
+/.forest-studio/

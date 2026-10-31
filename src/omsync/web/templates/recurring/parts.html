@@ -240,48 +240,48 @@
   <table class="w-full border-separate border-spacing-0 text-sm text-primary">
     <thead>
       <tr>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Next due</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Category</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary"><span class="sr-only">Transactions</span></th>
+        <th scope="col" class="border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
+        <th scope="col" class="border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
+        <th scope="col" class="border-b border-divider px-3 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
+        <th scope="col" class="border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Next due</th>
+        <th scope="col" class="border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Category</th>
+        <th scope="col" class="border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
+        <th scope="col" class="border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary"><span class="sr-only">Transactions</span></th>
       </tr>
     </thead>
     <tbody>
       {%- for row in body.series %}
       {%- set rule = "" if loop.first else " border-t border-subdued" %}
       <tr>
-        <td class="px-4 py-3{{ rule }}">
-          <button type="button" class="whitespace-nowrap text-left font-medium text-primary hover:underline focus-ring rounded-sm" hx-get="/recurring/series/{{ row.id }}/drawer" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.name }}</button>
+        <td class="px-3 py-3{{ rule }}">
+          <button type="button" class="line-clamp-2 max-w-[18rem] min-w-[8rem] wrap-anywhere text-left font-medium text-primary hover:underline focus-ring rounded-sm" title="{{ row.name }}" hx-get="/recurring/series/{{ row.id }}/drawer" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.name }}</button>
           {%- if row.transfer %}
           <span class="block text-xs text-secondary">Not in totals</span>
           {%- endif %}
         </td>
-        <td class="px-4 py-3{{ rule }}">{{ row.cadence }}</td>
-        <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap{{ rule }}">
+        <td class="px-3 py-3{{ rule }}">{{ row.cadence }}</td>
+        <td class="px-3 py-3 text-right tabular-nums whitespace-nowrap{{ rule }}">
           {{ row.amount_text|sensitive }}
           {%- if row.monthly_text %}
           <span class="block text-xs text-secondary">≈ {{ row.monthly_text|sensitive }}/mo</span>
           {%- endif %}
         </td>
-        <td class="px-4 py-3 whitespace-nowrap{{ rule }}">{{ row.next_due_text }}</td>
-        <td class="px-4 py-3{{ rule }}">{{ row.category }}</td>
-        <td class="px-4 py-3{{ rule }}">{{ row.account }}</td>
-        <td class="px-4 py-3{{ rule }}"><a href="{{ row.link }}" class="text-link underline-offset-2 hover:underline focus-ring rounded-sm">Transactions</a></td>
+        <td class="px-3 py-3 whitespace-nowrap{{ rule }}">{{ row.next_due_text }}</td>
+        <td class="px-3 py-3{{ rule }}">{{ row.category }}</td>
+        <td class="px-3 py-3{{ rule }}">{{ row.account }}</td>
+        <td class="px-3 py-3{{ rule }}"><a href="{{ row.link }}" class="text-link underline-offset-2 hover:underline focus-ring rounded-sm">Transactions</a></td>
       </tr>
       {%- endfor %}
     </tbody>
     <tfoot>
       <tr>
-        <th scope="row" colspan="2" class="border-t border-divider px-4 py-3 text-left font-medium text-secondary">Bills per month</th>
-        <td class="border-t border-divider px-4 py-3 text-right tabular-nums font-medium text-primary">{{ body.monthly_cents|money }}</td>
+        <th scope="row" colspan="2" class="border-t border-divider px-3 py-3 text-left font-medium text-secondary">Bills per month</th>
+        <td class="border-t border-divider px-3 py-3 text-right tabular-nums font-medium text-primary">{{ body.monthly_cents|money }}</td>
         <td colspan="4" class="border-t border-divider"></td>
       </tr>
       <tr>
-        <th scope="row" colspan="2" class="px-4 py-3 text-left font-medium text-secondary">Bills per year</th>
-        <td class="px-4 py-3 text-right tabular-nums font-medium text-primary">{{ body.yearly_cents|money }}</td>
+        <th scope="row" colspan="2" class="px-3 py-3 text-left font-medium text-secondary">Bills per year</th>
+        <td class="px-3 py-3 text-right tabular-nums font-medium text-primary">{{ body.yearly_cents|money }}</td>
         <td colspan="4"></td>
       </tr>
     </tfoot>
@@ -307,7 +307,7 @@
       {%- for row in rows %}
       {%- set rule = "" if loop.first else " border-t border-subdued" %}
       <tr>
-        <td class="px-4 py-3{{ rule }}"><button type="button" class="whitespace-nowrap text-left font-medium text-primary hover:underline focus-ring rounded-sm" hx-get="/recurring/series/{{ row.id }}/drawer" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.name }}</button></td>
+        <td class="px-4 py-3{{ rule }}"><button type="button" class="line-clamp-2 max-w-[18rem] min-w-[8rem] wrap-anywhere text-left font-medium text-primary hover:underline focus-ring rounded-sm" title="{{ row.name }}" hx-get="/recurring/series/{{ row.id }}/drawer" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.name }}</button></td>
         <td class="px-4 py-3{{ rule }}">{{ row.cadence }}</td>
         <td class="px-4 py-3 text-right tabular-nums{{ rule }}">{{ row.amount_text|sensitive }}</td>
         <td class="px-4 py-3 whitespace-nowrap{{ rule }}">{{ row.ended_text }}</td>

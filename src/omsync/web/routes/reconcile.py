@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from omsync.core.batch_models import Batch
 from omsync.core.batches import BatchError, StalePreview, applied_batch_for_key
 from omsync.core.money import to_cents
+from omsync.core.months import parse_day
 from omsync.ledger.contacts import ContactKind, create_contact, starting_names
 from omsync.ledger.links import LinkKind
 from omsync.ledger.other_side import set_other_side
@@ -36,7 +37,6 @@ from omsync.web.reconcile_view import (
     MANUAL_KIND_LABELS,
     Results,
     active_preset,
-    default_amount,
     default_range,
     link_candidates,
     open_remaining,
@@ -71,10 +71,10 @@ def parse_range(start: str | None, end: str | None, today: date) -> tuple[date, 
     if not start and not end:
         return default_range(today)
     try:
-        first = date.fromisoformat(start or "")
-        last = date.fromisoformat(end or "")
+        first = parse_day(start or "")
+        last = parse_day(end or "")
     except ValueError:
-        raise RangeError("Enter both dates, such as 2026-07-01.") from None
+        raise RangeError("Enter both dates between 1900 and 2199, such as 2026-07-01.") from None
     if last < first:
         raise RangeError("The end date is before the start date.")
     return first, last
@@ -262,9 +262,9 @@ def set_other_side_rows(
     except RangeError as exc:
         return _notice(request, str(exc), 422)
     if not txn:
-        return _region(
-            request, db, start_date, end_date, notice="Choose at least one transaction.", status=422
-        )
+        return _form_error(request, "Tick at least one row in the table below first.")
+    if not target:
+        return _form_error(request, "Choose what is on the other side of the ticked rows.")
     key = idempotency_key or uuid4().hex
     try:
         if target == NEW_CONTACT:
@@ -336,7 +336,7 @@ def link_dialog(
             end_date,
             remaining,
             candidates,
-            amount=_default_amount_text(remaining, candidates),
+            amount=_default_amount_text(remaining),
         ),
     )
 
@@ -364,7 +364,7 @@ def link_search(
         request,
         "frag_link_candidates",
         candidates=candidates,
-        amount=_default_amount_text(remaining, candidates),
+        amount=_default_amount_text(remaining),
         remaining=remaining,
     )
 
@@ -467,10 +467,10 @@ def _transaction_or_404(db: Session, txn_id: int) -> tuple[Transaction, Account]
     return row[0], row[1]
 
 
-def _default_amount_text(remaining: int, candidates: list[Any]) -> str:
-    if not candidates:
-        return plain_amount(remaining)
-    return plain_amount(default_amount(remaining, candidates[0].remaining))
+def _default_amount_text(remaining: int) -> str:
+    """The amount a new link starts at: all of the source's open part. Choosing a candidate lowers
+    it to that candidate's open part when it is smaller (reconcile_controller.js)."""
+    return plain_amount(remaining)
 
 
 def _link_context(
@@ -557,6 +557,15 @@ def _notice(request: Request, message: str, status: int) -> HTMLResponse:
 
 def _dialog_error(request: Request, message: str, status: int) -> HTMLResponse:
     return _fragment(request, "frag_dialog_error", status=status, message=message)
+
+
+def _form_error(request: Request, message: str) -> HTMLResponse:
+    """A refusal of the Set other side form, shown beside its button. The form otherwise swaps the
+    whole results region, so the reply retargets itself and the page does not move."""
+    response = _fragment(request, "frag_dialog_error", status=422, message=message)
+    response.headers["HX-Retarget"] = "#other-side-error"
+    response.headers["HX-Reswap"] = "innerHTML"
+    return response
 
 
 def _fragment(

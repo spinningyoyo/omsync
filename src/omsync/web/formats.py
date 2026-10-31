@@ -4,6 +4,8 @@ a form field holds them."""
 import re
 from datetime import date
 
+from omsync.core.months import FIRST_DAY, LAST_DAY
+
 MONTH_RE = re.compile(r"(\d{4})-(\d{2})")
 
 
@@ -32,6 +34,6 @@ def parse_month(text: str) -> date | None:
     if match is None:
         return None
     year, month = int(match[1]), int(match[2])
-    if not (1 <= year <= 9999 and 1 <= month <= 12):
+    if not (FIRST_DAY.year <= year <= LAST_DAY.year and 1 <= month <= 12):
         return None
     return date(year, month, 1)

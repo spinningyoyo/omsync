@@ -117,7 +117,9 @@
    sit beside that form rather than inside it. unlock_hidden is the markup of the hidden fields the
    unlock form posts, and unlock_target is the element its reply replaces. #}
 {% macro vault_results(locked, logins, unlock_message="", message="", unlock_action="", unlock_target="", unlock_hidden="", form_id="login-form", choice_required=true) -%}
-{%- if locked %}
+{%- if locked and demo_mode %}
+<p class="rounded-lg border border-divider p-4 text-sm text-secondary">In the demo there is no vault to unlock, so bank sync and vault logins are off. Nothing you type here is needed.</p>
+{%- elif locked %}
 <form class="flex flex-col gap-3 rounded-lg border border-divider p-4" hx-post="{{ unlock_action }}" hx-target="{{ unlock_target }}" hx-swap="outerHTML">
   <p class="text-sm text-primary">The vault is locked. Unlock it with your master password to search your logins. The password is not kept.</p>
   {{ unlock_hidden }}

@@ -10,6 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from omsync.core import money
+from omsync.core.months import parse_day
 from omsync.core.settings import Settings
 from omsync.ledger.links import Link, LinkKind
 from omsync.ledger.sources import Account, account_digits
@@ -563,13 +564,14 @@ def link_candidates(
     start: date,
     end: date,
 ) -> list[Candidate]:
-    """Transactions that could be the other side of a manual link, newest first.
+    """Transactions that could be the other side of a manual link.
 
     With no query, the candidates are the open transactions in the range on the other side of
-    the source: money in when the source is money out, and the reverse. A search looks at every
-    date and sign: a date (2026-08-01) finds that day, an amount finds that absolute amount, and
-    anything else finds payees that contain the text. Only transactions with an open amount
-    qualify, so a transaction a link already explains is never offered.
+    the source: money in when the source is money out, and the reverse, closest in amount first.
+    A search looks at every date and sign, newest first: a date (2026-08-01) finds that day, an
+    amount finds that absolute amount, and anything else finds payees that contain the text. Only
+    transactions with an open amount qualify, so a transaction a link already explains is never
+    offered.
     """
     stmt = (
         select(Transaction, Account)
@@ -581,13 +583,15 @@ def link_candidates(
         )
     )
     text = query.strip()
+    closest_first = ()
     if not text:
         other_side = (
             Transaction.amount_cents > 0 if source_amount < 0 else Transaction.amount_cents < 0
         )
         stmt = stmt.where(other_side, Transaction.posted_on >= start, Transaction.posted_on <= end)
+        closest_first = (func.abs(func.abs(Transaction.amount_cents) - abs(source_amount)),)
     elif _is_iso_date(text):
-        stmt = stmt.where(Transaction.posted_on == date.fromisoformat(text))
+        stmt = stmt.where(Transaction.posted_on == parse_day(text))
     elif _is_amount(text):
         stmt = stmt.where(func.abs(Transaction.amount_cents) == abs(money.to_cents(text)))
     else:
@@ -597,9 +601,8 @@ def link_candidates(
                 Transaction.payee_raw.contains(text, autoescape=True),
             )
         )
-    rows = session.execute(
-        stmt.order_by(Transaction.posted_on.desc(), Transaction.id.desc()).limit(200)
-    ).all()
+    newest_first = (Transaction.posted_on.desc(), Transaction.id.desc())
+    rows = session.execute(stmt.order_by(*closest_first, *newest_first).limit(200)).all()
     candidates: list[Candidate] = []
     for txn, account in rows:
         remaining = abs(txn.amount_cents) - coverage(session, txn.id)
@@ -629,14 +632,9 @@ def open_remaining(session: Session, txn_id: int) -> int:
     return abs(txn.amount_cents) - coverage(session, txn_id)
 
 
-def default_amount(source_remaining: int, other_remaining: int) -> int:
-    """A new link explains the smaller of the two open remainders."""
-    return min(source_remaining, other_remaining)
-
-
 def _is_iso_date(text: str) -> bool:
     try:
-        date.fromisoformat(text)
+        parse_day(text)
     except ValueError:
         return False
     return len(text) == 10

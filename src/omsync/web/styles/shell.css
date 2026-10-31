@@ -61,8 +61,8 @@
  * that is hidden (a tab panel) stays hidden. Below lg these rules do not apply and the page scrolls
  * as a whole.
  *
- * A page whose columns sit side by side only from xl sets fill_viewport to "xl" and gets the same
- * rules from xl up (.fill-viewport-xl), so its stacked columns are not squeezed into the window.
+ * A page whose columns sit side by side only from 2xl sets fill_viewport to "2xl" and gets the same
+ * rules from 2xl up (.fill-viewport-2xl), so its stacked columns are not squeezed into the window.
  */
 @media (min-width: 1024px) {
   .fill-viewport {
@@ -84,22 +84,35 @@
   }
 }
 
-@media (min-width: 1280px) {
-  .fill-viewport-xl {
+@media (min-width: 1536px) {
+  .fill-viewport-2xl {
     flex: 1 1 0%;
     min-height: 30rem;
   }
 
-  .fill-viewport-xl .fill-chain:not(.hidden) {
+  .fill-viewport-2xl .fill-chain:not(.hidden) {
     display: flex;
     flex-direction: column;
     flex: 1 1 0%;
     min-height: 0;
   }
 
-  .fill-viewport-xl .fill-region {
+  .fill-viewport-2xl .fill-region {
     flex: 0 1 auto;
     min-height: 0;
     overflow-y: auto;
+  }
+}
+
+/* On a touch screen a period choice is a 44 pixel target, and the choices wrap onto a second row
+   rather than hiding off the edge, where nothing shows there are more. */
+@media (pointer: coarse) {
+  .segmented-control {
+    flex-wrap: wrap;
+  }
+
+  .segmented-control__segment {
+    min-height: 2.75rem;
+    padding-inline: 0.75rem;
   }
 }

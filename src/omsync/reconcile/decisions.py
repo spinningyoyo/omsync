@@ -22,6 +22,7 @@ from omsync.core.batches import (
     make_preview,
     snapshot,
 )
+from omsync.core.money import format_cents
 from omsync.ledger.links import Link, LinkKind, RejectedProposal, RejectionReason
 from omsync.ledger.transactions import Transaction
 from omsync.reconcile.engine import run
@@ -64,7 +65,7 @@ def approve(
         return replay
     wanted = list(dict.fromkeys(signatures))
     if not wanted:
-        raise ValueError("choose at least one proposal to approve")
+        raise ValueError("Choose at least one proposal to approve.")
 
     current = {signature(draft): draft for draft in run(session, start=start, end=end).drafts}
     missing = [sig for sig in wanted if sig not in current]
@@ -127,7 +128,7 @@ def reject(
         chosen.setdefault(pair_signature_of(sig), sig)
     wanted = list(chosen)
     if not wanted:
-        raise ValueError("choose at least one proposal to reject")
+        raise ValueError("Choose at least one proposal to reject.")
     already = set(
         session.scalars(
             select(RejectedProposal.signature).where(RejectedProposal.signature.in_(wanted))
@@ -178,21 +179,21 @@ def manual_link(
         return replay
     link_kind = LinkKind(kind)
     if link_kind not in MANUAL_KINDS:
-        raise ValueError(f"a {link_kind.value} link cannot be made by hand")
+        raise ValueError(f"A {link_kind.value} link cannot be made by hand.")
     if out_txn_id == in_txn_id:
-        raise ValueError("a link needs two different transactions")
+        raise ValueError("Choose a different transaction for the other side.")
     if isinstance(amount_cents, bool) or not isinstance(amount_cents, int) or amount_cents <= 0:
-        raise ValueError("the amount must be a positive whole number of cents")
+        raise ValueError("Enter an amount more than zero, such as 25.00.")
     out = _transaction_or_raise(session, out_txn_id)
     inn = _transaction_or_raise(session, in_txn_id)
     if out.amount_cents >= 0:
-        raise ValueError("the money-out transaction must be negative")
+        raise ValueError("One side must be money out and the other money in.")
     if inn.amount_cents <= 0:
-        raise ValueError("the money-in transaction must be positive")
+        raise ValueError("One side must be money out and the other money in.")
     for txn in (out, inn):
         unlinked = abs(txn.amount_cents) - coverage(session, txn.id)
         if amount_cents > unlinked:
-            raise ValueError(f"only {unlinked} cents of transaction {txn.id} are unlinked")
+            raise ValueError(f"Only {format_cents(unlinked)} of {txn.payee} is not linked yet.")
 
     values: dict[str, Any] = {
         "kind": link_kind.value,
@@ -206,7 +207,7 @@ def manual_link(
         session,
         "reconcile.manual_link",
         [Change("link", None, None, values)],
-        summary={"label": f"Linked {out.id} to {inn.id} by hand"},
+        summary={"label": f"Linked {out.payee} and {inn.payee} by hand"},
     )
     return apply(session, preview, idempotency_key=idempotency_key)
 

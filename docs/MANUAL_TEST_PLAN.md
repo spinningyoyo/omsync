@@ -65,7 +65,7 @@ Here’s a feature-by-feature verification plan, mapped to the new documentation
  │       │ access.md          │ Inspect separate application/vault lifetimes, rate limiting, and cross-origin         │
  │       │                    │ protection through tests.                                                             │
  ├───────┼────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┤
- │ 5     │ Interface —        │ Inspect light/dark/system themes, keyboard focus, validation feedback, narrow         │
+ │ 5     │ Interface —        │ Inspect day/night/auto themes, keyboard focus, validation feedback, narrow            │
  │       │ interface.md       │ layouts, privacy mode, and reduced motion. Reload to verify presentation preferences  │
  │       │                    │ persist.                                                                              │
  ├───────┼────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┤

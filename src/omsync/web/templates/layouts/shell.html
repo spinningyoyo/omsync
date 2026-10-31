@@ -15,37 +15,46 @@
    the `fill-region` class. Its sticky header row stays in view while the rows scroll. From lg up
    the page wrapper then fills the window; below lg the page scrolls as a whole, because a table
    scrolling inside a phone-sized window leaves little room to read it. A page whose columns stack
-   below xl sets `fill_viewport` to "xl" instead, and the page scrolls as a whole until then. See
+   below 2xl sets `fill_viewport` to "2xl" instead, and the page scrolls as a whole until then. See
    styles/shell.css. #}
 {% extends "layouts/app.html" %}
 {% from "components/icon.html" import icon with context %}
 {% from "components/brand.html" import wordmark, mascot with context %}
 {% from "components/menu.html" import menu, menu_item, menu_separator with context %}
-{% from "components/segmented_control.html" import segmented_control with context %}
+{% from "components/pill.html" import pill with context %}
 {% from "layouts/shell_parts.html" import nav_item, accounts_panel %}
+{% from "layouts/appearance.html" import scenes, themes %}
 
 {% block head %}
 {{ super() }}
 {# Sets the accounts panel's width and collapsed state before first paint. The same keys are
-   written by accounts_panel_controller.js. Storage can be blocked, so every access is guarded. #}
+   written by accounts_panel_controller.js. Storage can be blocked, so every access is guarded.
+   It also sets the scene whose colour tints the page background (styles/tint.css). The scene is
+   the one picked on the sign-in page or in the user menu, and defaults to meadow. #}
 <script>
   (function () {
     var root = document.documentElement;
     var width = 320;
     var collapsed = false;
+    var tint = "meadow";
     try {
       var saved = parseInt(localStorage.getItem("omsync-accounts-width"), 10);
       if (saved >= 240 && saved <= 320) width = saved;
       collapsed = localStorage.getItem("omsync-accounts-collapsed") === "true";
+      var scene = localStorage.getItem("omsync-scene");
+      if ({{ scenes | map("first") | list | tojson }}.indexOf(scene) >= 0) tint = scene;
     } catch (e) {}
     root.style.setProperty("--accounts-width", width + "px");
     root.dataset.accountsCollapsed = String(collapsed);
+    root.dataset.tint = tint;
   })();
 </script>
 {% endblock %}
 
-{# The user menu: the signed-in email, Settings, the theme switch and sign-out. The rail holds one on
-   wide screens and the phone header holds another, so each has its own id. #}
+{# The user menu: the signed-in email, Settings, the scene and theme choices and sign-out. The rail
+   holds one on wide screens and the phone header holds another, so each has its own id. The scene
+   choices slide out from a Scene item, and the theme switch is the same as the sign-in page's, in
+   the same order (layouts/appearance.html). The scene and theme controllers keep both menus in step. #}
 {% macro user_menu(id, placement, email) -%}
 {% call menu(id=id, label="User menu", placement=placement) %}
 <div class="px-3 pb-1 pt-2">
@@ -53,18 +62,53 @@
   <p class="truncate text-sm text-primary">{{ email }}</p>
 </div>
 {{ menu_separator() }}
+{{ menu_item("Guides", icon_name="book-open", href="/settings/guides") }}
 {{ menu_item("Settings", icon_name="settings", href="/settings") }}
 {{ menu_item("Bank sync", icon_name="banknote-arrow-down", href="/settings/providers") }}
 {{ menu_separator() }}
-<div class="flex flex-col gap-2 px-3 py-2">
-  <p class="text-xs text-secondary">Theme</p>
-  {{ segmented_control([
-    {"label": "Light", "active": false, "attrs": {"data-action": "click->theme#choose", "data-theme-target": "option", "data-theme-choice": "light"}},
-    {"label": "Dark", "active": false, "attrs": {"data-action": "click->theme#choose", "data-theme-target": "option", "data-theme-choice": "dark"}},
-    {"label": "System", "active": true, "attrs": {"data-action": "click->theme#choose", "data-theme-target": "option", "data-theme-choice": "system"}},
-  ], label="Theme", attrs={"data-controller": "theme"}) }}
+{# The Scene item slides the scene choices out beside the menu on the rail, or below it in the phone
+   header (controllers/scene_slide_controller.js). The scene buttons' icons and pressed state are set
+   by controllers/scene_controller.js, the theme buttons' pressed state by controllers/theme_controller.js. #}
+<div data-controller="scene-slide">
+  <div class="px-1" role="none">
+    <button type="button" role="menuitem" tabindex="-1" aria-haspopup="true" aria-expanded="false"
+            class="flex w-full items-center gap-2 rounded-md p-2 hover:bg-container-hover focus-ring"
+            data-scene-slide-target="toggle" data-action="scene-slide#toggle">
+      {{ icon("palette", 20) }}
+      <span class="text-sm text-primary">Scene</span>
+      <span class="ml-auto">{{ icon("chevron-right" if placement == "right-end" else "chevron-down", 16, "text-secondary") }}</span>
+    </button>
+  </div>
+  <div class="scene-slide {{ 'scene-slide--side' if placement == 'right-end' else 'scene-slide--below' }} hidden" data-scene-slide-target="panel">
+    <div class="forest-scenes" role="group" aria-label="Scene">
+      {% for scene_id, label in scenes %}
+      <button type="button" class="forest-scene" aria-label="{{ label }}" data-tip="{{ label }}" aria-pressed="false"
+              data-scene-target="scene" data-scene-id-param="{{ scene_id }}" data-action="scene#choose"></button>
+      {% endfor %}
+    </div>
+  </div>
 </div>
 {{ menu_separator() }}
+<div class="flex flex-col gap-3 px-3 py-2">
+  <div class="flex flex-col gap-2">
+    <p class="text-xs text-secondary">Theme</p>
+    <div class="forest-scenes self-start" role="group" aria-label="Theme">
+      {% for theme in themes %}
+      <button type="button" class="forest-scene forest-scene--small" aria-label="{{ theme.label }}" data-tip="{{ theme.label }}" aria-pressed="false"
+              data-theme-target="option" data-theme-choice="{{ theme.id }}" data-action="theme#choose">{{ icon(theme.icon, 20) }}</button>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{{ menu_separator() }}
+{% if demo_mode %}
+<form method="post" action="/demo/reset" class="px-1" data-confirm="Put the made-up data back to its first state? Everything you changed in the demo is lost.">
+  <button type="submit" role="menuitem" tabindex="-1" class="flex w-full items-center gap-2 rounded-md p-2 hover:bg-container-hover focus-ring">
+    {{ icon("rotate-ccw", 20) }}
+    <span class="text-sm text-primary">Reset demo</span>
+  </button>
+</form>
+{% endif %}
 <form method="post" action="/sign-out" class="px-1">
   <button type="submit" role="menuitem" tabindex="-1" class="flex w-full items-center gap-2 rounded-md p-2 hover:bg-container-hover focus-ring">
     {{ icon("log-out", 20) }}
@@ -77,14 +121,14 @@
 {# The privacy toggle. The eye-off icon shows while amounts are clear, and the eye icon while they
    are blurred (styles/privacy-mode.css). aria-pressed says which state is on. #}
 {% macro privacy_toggle() -%}
-<button type="button" class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-container-inset-hover hover:text-primary focus-ring" aria-label="Privacy mode" aria-pressed="false" title="Privacy mode: blur amounts" data-privacy-mode-target="toggle" data-action="privacy-mode#toggle">
+<button type="button" class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-container-inset-hover hover:text-primary focus-ring pointer-coarse:h-11 pointer-coarse:w-11" aria-label="Privacy mode" aria-pressed="false" title="Privacy mode: blur amounts" data-privacy-mode-target="toggle" data-action="privacy-mode#toggle">
   <span class="privacy-toggle__off">{{ icon("eye-off", 20) }}</span>
   <span class="privacy-toggle__on">{{ icon("eye", 20) }}</span>
 </button>
 {%- endmacro %}
 
 {% block content %}
-<div class="flex h-dvh flex-col overflow-hidden bg-surface text-primary lg:flex-row" data-controller="accounts-panel" data-action="keydown.esc@window->accounts-panel#closeOverlay">
+<div class="flex h-dvh flex-col overflow-hidden bg-surface text-primary lg:flex-row" data-controller="accounts-panel theme scene" data-action="keydown.esc@window->accounts-panel#closeOverlay">
   <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-container focus:px-3 focus:py-2 focus:text-primary focus:shadow-border-xs">Skip to main content</a>
 
   <div class="relative flex w-full shrink-0 flex-row border-t border-divider py-1 pb-[calc(env(safe-area-inset-bottom)+0.25rem)] max-lg:order-last max-lg:bg-surface lg:w-[84px] lg:flex-col lg:border-r lg:border-t-0 lg:py-4 lg:pb-4">
@@ -117,18 +161,24 @@
      main's overflow clips it and it cannot widen the page. #}
   <main id="main" class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
     <div class="flex items-center gap-2 px-4 pt-3 lg:px-6 lg:pt-4" data-controller="privacy-mode">
-      <button type="button" class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-container-inset-hover hover:text-primary focus-ring" aria-controls="accounts-panel" aria-expanded="true" aria-label="Accounts panel" data-accounts-panel-target="toggle" data-action="accounts-panel#toggle">
+      <button type="button" class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-container-inset-hover hover:text-primary focus-ring pointer-coarse:h-11 pointer-coarse:w-11" aria-controls="accounts-panel" aria-expanded="true" aria-label="Accounts panel" data-accounts-panel-target="toggle" data-action="accounts-panel#toggle">
         {{ icon("panel-left", 20) }}
       </button>
       <div class="flex min-w-0 flex-1 justify-center lg:hidden">{{ wordmark("sm") }}</div>
       <div class="ml-auto flex shrink-0 items-center gap-1">
+        {% if demo_mode %}{{ pill("Demo", tone="amber", title="Made-up data. Reset it from the user menu.") }}{% endif %}
+        {#- On a phone the word would crowd the wordmark, so only the book shows there. #}
+        <a href="/settings/guides" class="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg px-2 text-sm font-medium text-primary hover:bg-container-inset-hover focus-ring pointer-coarse:h-11" title="Short walkthroughs of each page">{{ icon("book-open", 16, "text-secondary") }}<span class="max-sm:sr-only">Guides</span></a>
         {{ privacy_toggle() }}
         <div class="lg:hidden">{{ user_menu("user-menu-mobile", "bottom-end", email) }}</div>
       </div>
     </div>
-    <div class="flex flex-col gap-6 px-4 pb-10 pt-4 lg:px-6{% if fill_viewport == "xl" %} fill-viewport-xl xl:pb-4{% elif fill_viewport %} fill-viewport lg:pb-4{% endif %}">
+    <div class="flex flex-col gap-6 px-4 pb-10 pt-4 lg:px-6{% if fill_viewport == "2xl" %} fill-viewport-2xl 2xl:pb-4{% elif fill_viewport %} fill-viewport lg:pb-4{% endif %}">
       {% block page %}{% endblock %}
     </div>
   </main>
+  {%- if demo_mode and request.query_params.get("demo") == "reset" %}
+  <div id="flash-region" aria-live="polite"><div class="toast" role="status" data-controller="toast">The demo is back to its first state.</div></div>
+  {%- endif %}
 </div>
 {% endblock %}

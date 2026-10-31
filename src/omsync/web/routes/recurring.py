@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from omsync.core.batch_models import Batch
 from omsync.core.batches import BatchError, StalePreview, applied_batch_for_key
 from omsync.core.money import format_cents, to_cents
+from omsync.core.months import parse_day
 from omsync.ledger.categories_admin import category_choices
 from omsync.ledger.models import Account, Category, Transaction
 from omsync.ledger.plan_models import Cadence, RecurringSeries
@@ -511,14 +512,14 @@ def _name_of(db: Session, series_id: int) -> str:
 
 def _day(text: str | None) -> date | None:
     try:
-        return date.fromisoformat(text) if text else None
+        return parse_day(text) if text else None
     except ValueError:
         return None
 
 
 def _date(text: str, message: str) -> date:
     try:
-        return date.fromisoformat(text)
+        return parse_day(text)
     except ValueError:
         raise ValueError(message) from None
 

@@ -13,8 +13,10 @@ from fastapi.responses import RedirectResponse, Response
 
 SESSION_COOKIE = "omsync_session"
 SIGN_IN_PATH = "/sign-in"
+# The demo's sign-in: 404 unless the server runs in demo mode, and it signs in no one's account.
+DEMO_SIGN_IN_PATH = "/sign-in/demo"
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-PUBLIC_PATHS = frozenset({SIGN_IN_PATH, "/health"})
+PUBLIC_PATHS = frozenset({SIGN_IN_PATH, DEMO_SIGN_IN_PATH, "/health"})
 # /dev and /prototype serve fake data only, so they need no session.
 PUBLIC_PREFIXES = ("/static/", "/dev/", "/prototype/")
 _MAX_NEXT_LENGTH = 2048

@@ -319,7 +319,7 @@ class BankConnector(BrowserSession):
     def account_not_shown(self, last4: str) -> ConnectorError:
         return ConnectorError(
             f"{self.display_name} did not show the account ••{last4}. If its card was reissued, "
-            "give the account the new card's last four with `omsync accounts alias`"
+            "add the new card's last four under Numbers on the account's page"
         )
 
     @staticmethod

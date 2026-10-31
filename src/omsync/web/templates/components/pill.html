@@ -16,7 +16,7 @@
 } %}
 {% set TONE_ALIASES = {"success": "green", "warning": "amber", "error": "red", "destructive": "red", "info": "indigo", "neutral": "gray"} %}
 
-{% macro pill(label, tone="violet", style="soft", size="sm", marker=false, show_dot=none, icon_name=none, truncate=false) -%}
+{% macro pill(label, tone="violet", style="soft", size="sm", marker=false, show_dot=none, icon_name=none, truncate=false, title=none) -%}
 {%- set key = TONE_ALIASES.get(tone, tone) -%}
 {%- set p = PALETTE.get(key, PALETTE.violet) -%}
 {%- set dot_show = marker if show_dot is none else show_dot -%}
@@ -35,7 +35,7 @@
 {%- else -%}
   {%- set shape = "rounded-full " ~ ("px-2 py-1 text-sm gap-1.5" if size == "md" else "px-1.5 py-0.5 text-xs gap-1") -%}
 {%- endif -%}
-<span class="inline-flex items-center align-middle font-medium border leading-none {{ shape }} {{ 'max-w-full min-w-0' if truncate else 'whitespace-nowrap shrink-0' }}" style="{{ box_style }}" title="{{ label }}">
+<span class="inline-flex items-center align-middle font-medium border leading-none {{ shape }} {{ 'max-w-full min-w-0' if truncate else 'whitespace-nowrap shrink-0' }}" style="{{ box_style }}" title="{{ title or label }}">
   {%- if icon_name %}<span class="shrink-0">{{ icon(icon_name, 12, "") }}</span>
   {%- elif dot_show %}<span class="inline-block shrink-0 rounded-full" style="width: {{ 6 if size == 'md' else 5 }}px; height: {{ 6 if size == 'md' else 5 }}px; background-color: {{ dot_color }};"></span>
   {%- endif -%}

@@ -6,13 +6,15 @@
 
 {# The categories table and the keyword table each scroll inside their column, under the page header,
    so the controls around them stay in view (see layouts/shell.html and layouts/settings.html). #}
-{% set fill_viewport = "xl" %}
+{# The two columns need about 1500 pixels beside the rail, the accounts panel and the settings
+   menu, so they sit side by side, and the page fills the window, only from 2xl. #}
+{% set fill_viewport = "2xl" %}
 
 {% block settings_page %}
 {# The page root listens for dialog and focus events. Each region reloads itself on
    categories-changed, which a successful write sends (see routes/categories.py).
 
-   The grid is the one row of columns that the fill chain passes through. From xl it takes the
+   The grid is the one row of columns that the fill chain passes through. From 2xl it takes the
    height left under the header, and each column passes the row's height on to its table. #}
 <div class="fill-chain flex flex-col gap-6" data-controller="categories" data-action="htmx:afterSettle->categories#settled close-dialogs@window->categories#closeDialogs">
   <div class="flex flex-wrap items-end justify-between gap-3">
@@ -23,7 +25,7 @@
     </div>
   </div>
 
-  <div class="grid gap-6 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(27rem,1fr)_minmax(0,1.6fr)] xl:grid-rows-[minmax(0,1fr)]">
+  <div class="grid gap-6 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[minmax(27rem,1fr)_minmax(0,1.6fr)] 2xl:grid-rows-[minmax(0,1fr)]">
     {{ category_list(rows, view, drafts, errors) }}
 
     {% set keywords_body %}

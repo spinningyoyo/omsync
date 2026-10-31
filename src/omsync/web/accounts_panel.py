@@ -1,7 +1,8 @@
 """The accounts panel's view: open accounts grouped by type or by institution. Type groups carry a
 subtotal, its latest balance, a sparkline, a joint badge, and a warning when its balance check has
 issues. Institution groups carry no subtotal, because netting a card's debt against a checking
-balance means nothing.
+balance means nothing. Closed accounts follow in a last, collapsed group with only their names, as
+YNAB and Actual Budget keep them, so a closed account can be found and reopened from its page.
 
 The sparkline is an inline SVG polyline computed here, so the panel needs no JavaScript.
 """
@@ -12,10 +13,15 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from omsync.core.money import format_cents
-from omsync.ledger.accounts_view import AccountSummary, account_summaries, group_totals
+from omsync.ledger.accounts_view import (
+    AccountSummary,
+    account_summaries,
+    closed_accounts,
+    group_totals,
+)
 from omsync.ledger.models import AccountType
 from omsync.ledger.preferences import get_pref, set_pref
-from omsync.ledger.sources import account_digits
+from omsync.ledger.sources import Account, account_digits
 
 TYPE_LABELS: dict[AccountType, str] = {
     AccountType.checking: "Checking",
@@ -53,6 +59,7 @@ class PanelGroup:
     institution_key: str | None  # set on an institution group, for its logo
     total: str | None  # formatted subtotal, an em dash when no account has a balance, or None
     rows: list[PanelRow]
+    closed: bool = False  # the group of closed accounts, drawn collapsed
 
 
 def panel_grouping(session: Session) -> str:
@@ -66,11 +73,17 @@ def save_panel_grouping(session: Session, grouping: str) -> None:
 
 
 def account_groups(db: Session, *, active_id: int | None = None) -> list[PanelGroup]:
-    """Open accounts in the chosen grouping. Empty when there are no accounts."""
+    """Open accounts in the chosen grouping, then the closed group when any account is closed.
+    Empty when there are no accounts."""
     summaries = account_summaries(db)
     if panel_grouping(db) == GROUP_BY_INSTITUTION:
-        return _by_institution(summaries, active_id)
-    return _by_type(summaries, active_id)
+        groups = _by_institution(summaries, active_id)
+    else:
+        groups = _by_type(summaries, active_id)
+    closed = [_closed_row(account, active_id) for account in closed_accounts(db)]
+    if closed:
+        groups.append(PanelGroup("closed", "Closed", None, None, closed, closed=True))
+    return groups
 
 
 def _by_type(summaries: list[AccountSummary], active_id: int | None) -> list[PanelGroup]:
@@ -154,6 +167,20 @@ def _row(summary: AccountSummary, active_id: int | None) -> PanelRow:
         spark_color=spark_color(values),
         warning=not summary.status.ok,
         active=summary.id == active_id,
+    )
+
+
+def _closed_row(account: Account, active_id: int | None) -> PanelRow:
+    return PanelRow(
+        id=account.id,
+        name=account.name,
+        digits=account_digits(account.last4, account.alias_last4),
+        joint=bool(account.joint),
+        balance="",
+        spark=None,
+        spark_color="",
+        warning=False,
+        active=account.id == active_id,
     )
 
 

@@ -1,0 +1,57 @@
+{% extends "layouts/guide.html" %}
+{% from "guides/parts.html" import section, glossary, term, figure, try_it, callout with context %}
+
+{% set sections = [
+  ("what", "What omsync is"),
+  ("screen", "The screen"),
+  ("kunchorn", "Meet Kunchorn"),
+  ("words", "Words you will meet"),
+] %}
+
+{% block guide_body %}
+{% call section("what", "What omsync is") %}
+<p>omsync is a personal finance tracker that runs on this Mac, and your data stays here. Signing in uses your Bitwarden account, and bank sync, if you set it up, visits your bank's website. You bring in the statement files your banks give you. omsync keeps a <strong>ledger</strong>, one record for each movement of money in your accounts, and builds on it: where money went, how transfers between your own accounts line up, and what you plan to spend.</p>
+<p>It follows one rule: <strong>trust before convenience</strong>. An import keeps the evidence from each statement. Automation never replaces a choice you made. When omsync is unsure, it asks you instead of guessing. The server listens on <code>127.0.0.1</code>, so only this Mac can reach it.</p>
+<p>Most of the time you do two things: bring in statements, then categorize what they contain. Reconciling related money is a separate, less frequent review, and you do not have to finish it before the ledger is useful.</p>
+{% endcall %}
+
+{% call section("screen", "The screen") %}
+<p>Every page has the same frame. On a wide screen it is three parts:</p>
+<ul class="guide-list">
+  <li><strong>The rail</strong>, down the left edge. It holds Home, Reports, Transactions, Recurring, Reconcile, and Plan. On a phone the same items sit in a bar along the bottom.</li>
+  <li><strong>The Accounts panel</strong>, beside the page. It lists every open account with its latest balance, grouped by type or by institution. The button at the top left of the page opens and closes it.</li>
+  <li><strong>The page itself</strong>, with the top bar above it. The top bar has a <strong>Guides</strong> link back to these walkthroughs, a <strong>Privacy mode</strong> button, which blurs amounts, and, on a phone, the user menu.</li>
+</ul>
+<p>The user menu sits at the foot of the rail, or in the top bar on a phone. It holds <strong>Guides</strong>, <strong>Settings</strong>, <strong>Bank sync</strong>, a Scene item that slides out the scene choices, which also tint the page, the auto, day, and night theme choice, and <strong>Sign out</strong>. Configuration you set up once, such as your categories and keywords, lives under Settings rather than on the rail.</p>
+{{ figure("tour-home", "The Home page with the Accounts panel open beside it.", "Home, with the Accounts panel beside it.") }}
+{{ try_it("/", "Open Home", "Home shows what needs your attention and a summary of your money.") }}
+{% endcall %}
+
+{% call section("kunchorn", "Meet Kunchorn") %}
+<p>The demo follows <strong>Kunchorn Omsin</strong>, a made-up person, through a year of money. Everything in it is invented: the names, the numbers, and the banks' descriptions. Kunchorn has:</p>
+<ul class="guide-list">
+  <li>a Bank of America checking account, <em>Everyday Checking</em>, and two savings accounts, <em>Emergency Fund</em> and <em>Travel Savings</em>;</li>
+  <li>a Chase card, <em>Sapphire Card</em>, and a Citi card, <em>Double Cash</em>, both paid from checking each month;</li>
+  <li>a paycheck every other Friday from Northwind Labs, and a roommate, Sam Park, who pays half the rent by Zelle;</li>
+  <li>a friend, Priya Nair, who borrowed $300 and has paid back $150;</li>
+  <li>a summer trip to Portland, paid on the Double Cash card.</li>
+</ul>
+<p>The other guides point at these examples, so you can see each idea on real-looking data before you use your own.</p>
+{% call callout("demo", "This is the demo") %}
+<p>Nothing here leaves this Mac. Everyone using this server sees the same demo, and it starts over when the server stops. The <strong>Demo</strong> pill in the top bar is a reminder of that. Use <strong>Reset demo</strong> in the user menu to put Kunchorn's year back as it was after you have changed things.</p>
+{% endcall %}
+{{ try_it("/transactions", "Open Transactions", "Transactions lists every movement of money, newest first, with the account, payee, category, and amount.") }}
+{% endcall %}
+
+{% call section("words", "Words you will meet") %}
+<p>These words appear across the app. Each guide uses them in the same sense.</p>
+{% call glossary("Words you will meet") %}
+  {{ term("Statement", "The file an institution gives you for one account and one period. omsync reads it and keeps its rows as evidence.") }}
+  {{ term("Ledger", "omsync's record of every transaction, built from statements. Your choices, such as categories and links, sit on top of the statement evidence.") }}
+  {{ term("Batch", "Everything one action changes in the database. Undo reverses a batch, and a preview shows what a batch would change before anything is written.") }}
+  {{ term("Category", "What money was for, such as Groceries or Rent. Its type says how budgets and reports treat the money.") }}
+  {{ term("Contact", "A person or business you know by name, such as Sam Park. You are the owner, and your own page is a contact too.") }}
+  {{ term("Other side", "The contact, or the account outside omsync, that money moved to or from.") }}
+{% endcall %}
+{% endcall %}
+{% endblock %}

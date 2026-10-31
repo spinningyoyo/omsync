@@ -34,6 +34,7 @@ dev = [
     "httpx",
     "pytest-playwright>=0.10.0",
     "import-linter>=2.15",
+    "pillow>=13.0.0",
 ]
 
 [tool.ruff]
@@ -57,6 +58,7 @@ root_package = "omsync"
 name = "Domain packages never import the web or CLI layers"
 type = "forbidden"
 source_modules = [
+    "omsync.demo",
     "omsync.ingest",
     "omsync.ledger",
     "omsync.plan",

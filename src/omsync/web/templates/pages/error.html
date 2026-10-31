@@ -1,0 +1,15 @@
+{# A page for a request that failed outside a page's own handling: an unknown address, a value the
+   server cannot use, or a fault. It has no shell, because building the shell may be what failed. #}
+{% extends "layouts/app.html" %}
+{% from "components/button.html" import link_button %}
+
+{% block content %}
+<main class="flex min-h-screen items-center justify-center bg-surface p-4">
+  <section class="flex w-full max-w-md flex-col gap-3 rounded-xl bg-container p-8 shadow-border-xs">
+    <div class="text-primary">{{ mascot_svg(72) }}</div>
+    <h1 class="text-xl font-medium text-primary">{{ title }}</h1>
+    <p class="text-sm text-secondary">{{ message }}</p>
+    <div class="mt-2">{{ link_button("Go to Home", href="/") }}</div>
+  </section>
+</main>
+{% endblock %}

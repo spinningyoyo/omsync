@@ -25,7 +25,9 @@ Neither routine depends on finishing the other before the ledger is usable.
 - Transactions come from statement files, not manual transaction entry. Supported formats
   are explicit institution formats, not an arbitrary CSV-mapping interface.
 - Personal data stays outside the repository. Tests and development use synthetic data
-  in disposable directories, never the user's data directory, home, or keychain.
+  in disposable directories, never the user's data directory, home, or keychain. The demo that
+  `omsync serve` shows without a ledger is synthetic data built in a temporary directory, and
+  it never touches the user's data directory either (see [access](access.md#demo-mode)).
 - Imports, categorization, receipt application, and reconciliation use the shared
   [change contract](changes.md). Fetching external files is separate from ledger writes.
 
@@ -65,7 +67,8 @@ domain behavior instead of maintaining separate financial implementations.
 
 `omsync serve` upgrades the database, then runs the [automatic step](contacts.md#running-it-automatically)
 that follows an import once before it serves, so a failure there is logged and never blocks
-startup.
+startup. With no ledger at the configured path, or with `--demo`, it serves the demo instead:
+a copy of made-up data in a temporary directory, which is deleted when the server stops.
 
 SQLite is the authority for ledger state. Source files retain the institution or vendor's
 evidence. Browser storage holds presentation preferences, not financial truth. External

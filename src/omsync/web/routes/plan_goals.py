@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
 from omsync.core.batches import BatchError
+from omsync.core.months import parse_day
 from omsync.ledger.models import Goal
 from omsync.plan import goals
 from omsync.web import goals_view
@@ -233,9 +234,9 @@ def _parse(values: dict[str, str]) -> tuple[dict[str, object], dict[str, str]]:
     target_date: date | None = None
     if values["target_date"].strip():
         try:
-            target_date = date.fromisoformat(values["target_date"].strip())
+            target_date = parse_day(values["target_date"])
         except ValueError:
-            errors["target_date"] = "Enter the target date as YYYY-MM-DD."
+            errors["target_date"] = "Enter a target date between 1900 and 2199, as YYYY-MM-DD."
     account: int | None = None
     if values["account_id"].strip():
         if values["account_id"].strip().isdigit():

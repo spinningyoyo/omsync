@@ -56,7 +56,11 @@ def toast(batch: Batch, *, label: str | None = None) -> dict[str, Any]:
 
 
 def whole_number(text: str, message: str) -> int:
+    """`text` as an int that fits a database column, or ValueError(message)."""
     try:
-        return int(text.strip())
+        number = int(text.strip())
     except ValueError:
         raise ValueError(message) from None
+    if abs(number) > 2**31 - 1:
+        raise ValueError(message)
+    return number

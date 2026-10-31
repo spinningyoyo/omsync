@@ -1,12 +1,63 @@
-{# Layout for the sign-in page: one centred column on the page surface, so it reads correctly in
-   both themes. Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/layouts/auth.html.erb.
-   The sign-up tabs and footer are left out. Extends layouts/app.html for its head. #}
+{# Layout for the sign-in page: one centred column over a pale grid backdrop with a pixel scene
+   along the bottom (styles/landing.css, static/js/forest_scene.js). The backdrop and the scene
+   are decorative and hidden from screen readers; the status line announces watering and scene
+   changes, light, dark or auto, and reset.
+   Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/layouts/auth.html.erb. The sign-up
+   tabs and footer are left out. Extends layouts/app.html for its head, which applies the theme.
+   The day, night and auto buttons set the same theme choice as the user menu. #}
 {% extends "layouts/app.html" %}
+{% from "components/icon.html" import icon %}
+{% from "layouts/appearance.html" import scenes, themes %}
 
 {% block content %}
-<div class="flex min-h-dvh flex-col items-center justify-center bg-surface px-6 py-12">
-  <div class="flex w-full max-w-sm flex-col gap-6">
-    {% block auth %}{% endblock %}
+{# data-scene picks the backdrop colours (styles/landing.css) and the scene (forest_scene.js). The
+   script runs before first paint: the saved pick, or a random scene for a first visit. #}
+<div class="relative min-h-dvh max-sm:overflow-x-clip" data-controller="forest" data-scene="{{ scenes[0][0] }}">
+  <script>
+    (function () {
+      var ids = {{ scenes | map("first") | list | tojson }};
+      var id = null;
+      try { id = localStorage.getItem("omsync-scene"); } catch (e) {}
+      if (ids.indexOf(id) < 0) {
+        id = ids[Math.floor(Math.random() * ids.length)];
+        try { localStorage.setItem("omsync-scene", id); } catch (e) {}
+      }
+      document.currentScript.parentElement.dataset.scene = id;
+    })();
+  </script>
+  <div class="landing-backdrop" aria-hidden="true">
+    <div class="landing-backdrop__wash"></div>
+    <div class="landing-backdrop__bloom" data-forest-target="bloom"></div>
+    <div class="landing-backdrop__grid"></div>
+    <div class="landing-backdrop__dots"></div>
+    <canvas class="landing-forest" data-forest-target="ground"></canvas>
   </div>
+  <canvas class="landing-water" aria-hidden="true" data-forest-target="water"></canvas>
+  <div class="landing-content relative z-10 flex min-h-dvh flex-col items-center justify-center px-6 py-12">
+    <div class="flex w-full max-w-sm flex-col gap-6">
+      {% block auth %}{% endblock %}
+    </div>
+  </div>
+  <div class="forest-controls">
+    <div class="forest-scenes" role="group" aria-label="Scene">
+      {% for id, label in scenes %}
+      <button type="button" class="forest-scene" aria-label="{{ label }}" data-tip="{{ label }}" aria-pressed="false"
+              data-forest-target="scene" data-forest-id-param="{{ id }}" data-action="forest#scene"></button>
+      {% endfor %}
+    </div>
+    <div class="forest-controls__row">
+      <div class="forest-scenes" role="group" aria-label="Appearance">
+        {% for theme in themes %}
+        <button type="button" class="forest-scene forest-scene--small" aria-label="{{ theme.label }}" data-tip="{{ theme.label }}" aria-pressed="false"
+                data-forest-target="mode" data-forest-mode-param="{{ theme.id }}" data-action="forest#setMode">{{ icon(theme.icon, 20) }}</button>
+        {% endfor %}
+      </div>
+      <div class="forest-scenes" role="group" aria-label="Reset">
+        <button type="button" class="forest-scene forest-scene--small" aria-label="Reset this scene" data-tip="Reset this scene"
+                data-forest-target="reset" data-action="forest#reset">{{ icon("rotate-ccw", 20) }}</button>
+      </div>
+    </div>
+  </div>
+  <p class="sr-only" role="status" data-forest-target="status"></p>
 </div>
 {% endblock %}

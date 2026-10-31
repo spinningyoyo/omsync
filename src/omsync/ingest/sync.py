@@ -53,6 +53,7 @@ from omsync.ledger.models import (
     Transaction,
 )
 from omsync.ledger.other_side import apply_other_side, plan_other_side
+from omsync.ledger.sources import current_alias_id
 
 LOOKBACK = timedelta(days=45)
 MESSAGE_LIMIT = 200
@@ -349,7 +350,7 @@ def _link_statement_accounts(
 
     A link is made only when exactly one open account at the institution ends in those digits, it
     is one this provider fetches, and the provider asked the bank for it by exactly those digits:
-    it has no link yet, or its newest alias is only those four, as the person adds for a reissued
+    it has no link yet, or its current alias is only those four, as the person adds for a reissued
     card. The file it got back is that account's. A reissued card with no such alias, or digits
     that two accounts share, is left for the person to link. Returns the digits linked.
     """
@@ -400,31 +401,29 @@ def _prepare(session: Session, provider_key: str) -> _Plan:
 
 def _connector_accounts(session: Session, provider_id: int) -> list[ConnectorAccount]:
     """One entry per open account the provider fetches. last4 is the account's own, and
-    statement_account_id is its newest alias, or None while it has none. An account is not left out
-    for lacking an alias, so a bank can be synced before any statement file names it."""
+    statement_account_id is its current alias (see current_alias_id), or None while it has none.
+    An account is not left out for lacking an alias, so a bank can be synced before any statement
+    file names it."""
+    current = (
+        select(AccountAlias.statement_account_id)
+        .where(AccountAlias.id == current_alias_id(Account.id))
+        .correlate_except(AccountAlias)
+        .scalar_subquery()
+    )
     accounts = session.execute(
-        select(Account.id, Account.last4, Account.type)
+        select(Account.id, Account.last4, Account.type, current)
         .join(ProviderAccount, ProviderAccount.account_id == Account.id)
         .where(ProviderAccount.provider_id == provider_id, Account.closed.is_(False))
         .order_by(Account.id)
     ).all()
-    account_ids = [account_id for account_id, _last4, _type in accounts]
-    newest: dict[int, str] = {}
-    aliases = session.execute(
-        select(AccountAlias.account_id, AccountAlias.statement_account_id)
-        .where(AccountAlias.account_id.in_(account_ids))
-        .order_by(AccountAlias.id)
-    ).all()
-    for account_id, statement_account_id in aliases:
-        newest[account_id] = statement_account_id
     return [
         ConnectorAccount(
             account_id=account_id,
             last4=last4 or "",
             type=AccountType(account_type).value,
-            statement_account_id=newest.get(account_id),
+            statement_account_id=statement_account_id,
         )
-        for account_id, last4, account_type in accounts
+        for account_id, last4, account_type, statement_account_id in accounts
     ]
 
 

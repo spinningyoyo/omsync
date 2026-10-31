@@ -2,7 +2,8 @@
 
 Reads are plain queries. Balances are the ledger balances from statements, one point per date,
 and the latest one is the account's balance. update_account is one batch, so it can be undone
-like every other bulk change. This module never imports omsync.web.
+like every other bulk change, and so is add_account_number, which maps a reissued card's new last
+four digits to the account. This module never imports omsync.web.
 """
 
 from collections.abc import Sequence
@@ -14,18 +15,23 @@ from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
 from omsync.core.batches import Change, applied_batch_for_key, apply, make_preview, snapshot
+from omsync.ingest.accounts import add_alias, find_account
 from omsync.ingest.balance_check import BalanceStatus, check_account
 from omsync.ledger.models import (
     Account,
+    AccountAlias,
     AccountType,
     BalanceKind,
     Institution,
     Provider,
     StatementBalance,
+    StatementFile,
+    StatementRow,
     SyncRun,
     SyncStatus,
     Transaction,
 )
+from omsync.ledger.sources import current_alias_id
 
 SPARKLINE_POINTS = 30
 RECENT_SYNCS = 5
@@ -92,6 +98,19 @@ class RecentSync:
 
 
 @dataclass(frozen=True)
+class AccountNumber:
+    """One number the bank and its statements know an account by, as its last four digits.
+
+    latest is the last date its statements reach, None while no statement carries it. current marks
+    the one sync looks for and screens show (see ledger.sources.current_alias_id).
+    """
+
+    last4: str
+    latest: date | None
+    current: bool
+
+
+@dataclass(frozen=True)
 class AccountDetail:
     summary: AccountSummary
     institution_key: str
@@ -117,6 +136,15 @@ def account_summaries(session: Session) -> list[AccountSummary]:
         for account, institution in rows
     ]
     return sorted(summaries, key=lambda s: (TYPE_ORDER.index(s.type), s.name.casefold(), s.id))
+
+
+def closed_accounts(session: Session) -> list[Account]:
+    """Every closed account, ordered by name. Read-only."""
+    return list(
+        session.scalars(
+            select(Account).where(Account.closed.is_(True)).order_by(Account.name, Account.id)
+        )
+    )
 
 
 def account_summary(session: Session, account_id: int) -> AccountSummary:
@@ -247,6 +275,80 @@ def update_account(
         summary={"label": _label(before, after), "account_id": account_id},
     )
     return apply(session, preview, idempotency_key=idempotency_key)
+
+
+def account_numbers(session: Session, account_id: int) -> tuple[AccountNumber, ...]:
+    """The account's numbers by their last four digits, the current one first, then the latest
+    statements first. Aliases shorter than four characters are left out. Read-only."""
+    aliases = session.scalars(
+        select(AccountAlias).where(
+            AccountAlias.account_id == account_id,
+            func.length(AccountAlias.statement_account_id) >= LAST4_LENGTH,
+        )
+    ).all()
+    current_id = session.scalar(select(current_alias_id(account_id)))
+    file_date = func.coalesce(
+        StatementFile.period_end,
+        select(func.max(StatementRow.posted_on))
+        .where(StatementRow.statement_file_id == StatementFile.id)
+        .scalar_subquery(),
+    )
+    digits = func.substr(StatementFile.statement_account_id, -LAST4_LENGTH)
+    latest: dict[str, date | None] = dict(
+        session.execute(
+            select(digits, func.max(file_date))
+            .where(StatementFile.account_id == account_id)
+            .group_by(digits)
+        ).all()
+    )
+    numbers: dict[str, AccountNumber] = {}
+    for alias in aliases:
+        last4 = alias.statement_account_id[-LAST4_LENGTH:]
+        current = alias.id == current_id or (last4 in numbers and numbers[last4].current)
+        numbers[last4] = AccountNumber(last4, latest.get(last4), current)
+    return tuple(
+        sorted(
+            numbers.values(),
+            key=lambda n: (not n.current, n.latest is None, -(n.latest or date.min).toordinal()),
+        )
+    )
+
+
+def add_account_number(
+    session: Session, account_id: int, last4: str, *, idempotency_key: str
+) -> Batch:
+    """Map a reissued card's new last four digits to the account, as one alias batch. With no
+    statement carrying them yet, they become the number sync looks for, and the first file sync
+    fetches for them is linked to the account (see ingest.sync).
+
+    Raises LookupError if there is no such account, and ValueError for anything but four digits or
+    digits the account or another account at its institution already has. The same key applies at
+    most once."""
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    row = session.execute(
+        select(Account, Institution.key)
+        .join(Institution, Institution.id == Account.institution_id)
+        .where(Account.id == account_id)
+    ).first()
+    if row is None:
+        raise LookupError(f"There is no account {account_id}.")
+    account, institution_key = row
+    clean = last4.strip()
+    if len(clean) != LAST4_LENGTH or not clean.isdigit():
+        raise ValueError(f"Give the {LAST4_LENGTH} digits the bank shows for the new card.")
+    if any(number.last4 == clean for number in account_numbers(session, account_id)):
+        raise ValueError(f"••{clean} is already one of this account's numbers.")
+    if find_account(session, institution_key, clean) is not None:
+        raise ValueError(f"••{clean} already belongs to another account.")
+    return add_alias(
+        session,
+        account_id=account.id,
+        institution_key=institution_key,
+        statement_account_id=clean,
+        idempotency_key=idempotency_key,
+    )
 
 
 def _label(before: dict[str, object], after: dict[str, object]) -> str:

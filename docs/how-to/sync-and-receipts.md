@@ -47,7 +47,8 @@ The institution may return statement-based periods rather than exactly that rang
 If another sync, receipt download, or backup holds the operation lock, wait for it to finish
 and retry. For verification or session problems, complete the institution's requested
 interaction and rerun. For an account not shown, check configured labels and aliases. When
-a card was reissued, give the account the new card's last four, then sync:
+a card was reissued, open the account's page, add the new card's last four under Numbers, then
+sync. From the terminal:
 
 ```sh
 uv run omsync accounts list

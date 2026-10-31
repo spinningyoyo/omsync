@@ -1,0 +1,63 @@
+{# A guide page inside Settings: the breadcrumb, the title and summary, an "On this page" list, the text,
+   and at the foot a mark for reading it and the guides before and after it.
+
+   A guide template extends this layout. At its top level it sets `sections`, a list of (id, title)
+   pairs in the order of its sections, which the "On this page" list reads, and it fills `guide_body`.
+   From 2xl the list is a sticky column beside the text. The text column stays at a comfortable line
+   length. The Stimulus controller guides_controller.js marks the section in view and the read state. #}
+{% extends "layouts/settings.html" %}
+{% from "components/icon.html" import icon with context %}
+
+{% block settings_page %}
+<div class="flex min-w-0 flex-col gap-6 guide-page" data-controller="guides" data-guides-slug-value="{{ guide.slug }}">
+  <nav aria-label="Breadcrumb" class="text-sm text-secondary">
+    <ol class="flex min-w-0 flex-wrap items-center gap-1.5">
+      <li><a href="/settings/guides" class="rounded-sm focus-ring hover:text-primary">Guides</a></li>
+      <li aria-hidden="true" class="flex items-center">{{ icon("chevron-right", 14) }}</li>
+      <li aria-current="page" class="min-w-0 truncate text-primary">{{ guide.title }}</li>
+    </ol>
+  </nav>
+
+  <header class="guide-header">
+    <p class="guide-kicker">{{ guide.group.title }} · {{ guide.minutes }} min read</p>
+    <h1 class="guide-title">{{ guide.title }}</h1>
+    <p class="guide-summary">{{ guide.summary }}</p>
+  </header>
+
+  <div class="guide-layout">
+    <nav class="guide-toc" aria-labelledby="guide-toc-title">
+      <h2 id="guide-toc-title" class="guide-toc__title">On this page</h2>
+      <ol class="guide-toc__list">
+        {%- for id, title in sections %}
+        <li><a href="#{{ id }}" class="guide-toc__link focus-ring" data-id="{{ id }}" data-guides-target="tocLink">{{ title }}</a></li>
+        {%- endfor %}
+      </ol>
+    </nav>
+
+    <article class="guide-body">
+      {% block guide_body %}{% endblock %}
+    </article>
+  </div>
+
+  <footer class="guide-footer">
+    <button type="button" class="guide-mark focus-ring" aria-pressed="false" data-action="guides#toggleRead" data-guides-target="mark">
+      <span class="guide-mark__icon" aria-hidden="true">{{ icon("check", 16) }}</span>
+      <span data-guides-target="markLabel">Mark as read</span>
+    </button>
+    <nav aria-label="Previous and next guides" class="guide-pager">
+      {%- if previous_guide %}
+      <a href="/settings/guides/{{ previous_guide.slug }}" class="guide-pager__link focus-ring">
+        <span class="guide-pager__label">{{ icon("chevron-left", 14) }}<span>Previous</span></span>
+        <span class="guide-pager__title">{{ previous_guide.title }}</span>
+      </a>
+      {%- endif %}
+      {%- if next_guide %}
+      <a href="/settings/guides/{{ next_guide.slug }}" class="guide-pager__link guide-pager__link--next focus-ring">
+        <span class="guide-pager__label"><span>Next</span>{{ icon("chevron-right", 14) }}</span>
+        <span class="guide-pager__title">{{ next_guide.title }}</span>
+      </a>
+      {%- endif %}
+    </nav>
+  </footer>
+</div>
+{% endblock %}

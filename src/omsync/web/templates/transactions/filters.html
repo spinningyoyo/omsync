@@ -51,7 +51,7 @@
 {% macro filter_search(state, oob=false) -%}
 <label id="filter-search-field" class="form-field w-64 max-w-full shrink-0 flex-row items-center gap-2 py-1.5"{% if oob %} hx-swap-oob="true"{% endif %}>
   {{ icon("search", 16, "shrink-0 text-secondary") }}
-  <input id="filter-search" type="search" name="q" value="{{ state.search or '' }}" placeholder="Search payee or memo" aria-label="Search transactions" autocomplete="off" class="form-field__input placeholder:text-secondary placeholder-shown:opacity-100" hx-get="/transactions/table" hx-include="#register-state" hx-vals='{"page": 1}' hx-trigger="input changed delay:250ms, search" hx-swap="none">
+  <input id="filter-search" type="search" name="q" value="{{ state.search or '' }}" maxlength="200" placeholder="Search payee or memo" aria-label="Search transactions" autocomplete="off" class="form-field__input placeholder:text-secondary placeholder-shown:opacity-100" hx-get="/transactions/table" hx-include="#register-state" hx-vals='{"page": 1}' hx-trigger="input changed delay:250ms, search" hx-swap="none">
 </label>
 {%- endmacro %}
 

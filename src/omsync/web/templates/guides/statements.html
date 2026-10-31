@@ -1,0 +1,73 @@
+{% extends "layouts/guide.html" %}
+{% from "guides/parts.html" import section, subsection, steps, step, figure, callout, try_it with context %}
+
+{% set sections = [
+  ("folders", "Where statement files go"),
+  ("wizard", "Add a provider"),
+  ("preview", "Preview, then import"),
+  ("checks", "Balance checks and review"),
+  ("sync", "Bank sync, when you want it"),
+] %}
+
+{% block guide_body %}
+{% call section("folders", "Where statement files go") %}
+<p>A <strong>statement</strong> is the file your bank gives you for one account and one period. omsync reads OFX and QFX files, the formats that bank and card statements come in, and the supported Bank of America CSV layouts.</p>
+<p>Put each file in the folder for its institution, inside your data directory. That is <code>~/omsync-data</code> unless your configuration says otherwise. The folder is the institution's key in capitals:</p>
+<pre class="guide-code"><code>~/omsync-data/statements/BOA/4821/activity.csv
+~/omsync-data/statements/CHASE/activity.ofx</code></pre>
+<p>A Bank of America CSV does not name its account, so its folder does: the last four digits sit in the folder's name. An OFX file carries its account ID inside the file.</p>
+<p>omsync keeps each statement file as the institution wrote it. Each row keeps the fields the file reported, and a file already in the folder is never overwritten.</p>
+{{ figure("statements-bank-sync", "The Bank sync page in the demo: a notice that bank sync is off, then 'No providers yet' and each bank's accounts marked Not synced.", "In the demo no provider is set up, so each bank's accounts show as Not synced.") }}
+{% endcall %}
+
+{% call section("wizard", "Add a provider") %}
+<p>In the app, <strong>Settings</strong> has <strong>Bank sync</strong>. Its <strong>Add provider</strong> button starts a five-step wizard. Each step checks what it receives before it saves anything.</p>
+{% call steps() %}
+  {% call step("Institution, provider and bank") %}
+  <p>Give the institution a key, such as <code>boa</code>, and a display name. A provider key names this login's fetching and defaults to the institution key. Choose the bank that fetches the statements.</p>
+  {% endcall %}
+  {% call step("Vault login") %}
+  <p>Choose the Bitwarden login that the provider uses to fetch statements. omsync keeps only a reference to it, never the password.</p>
+  {% endcall %}
+  {% call step("Accounts to sync") %}
+  <p>Name each account you want omsync to fetch, with its last four digits and type, and mark it as joint if it is shared. You can add more later.</p>
+  {% endcall %}
+  {% call step("Map accounts") %}
+  <p>Each statement account found in the folders needs a home. Choose a new account, an alias for an existing account (for a reissued card), or skip it for now.</p>
+  {% endcall %}
+  {% call step("Import") %}
+  <p>Preview what the files would do, then import. Nothing is written until you press <strong>Import</strong>.</p>
+  {% endcall %}
+{% endcall %}
+{% call callout("note", "Accounts without a provider") %}
+<p>A statement for an account that no provider fetches still imports from its institution's folder. In a terminal, <code>uv run omsync import</code> previews those files and <code>uv run omsync import --apply</code> imports them.</p>
+{% endcall %}
+{{ try_it("/settings/providers", "Open Bank sync", "Bank sync is where providers, their accounts, and the wizard live.") }}
+{% endcall %}
+
+{% call section("preview", "Preview, then import") %}
+<p>A preview reads each file and sorts every row into one of three outcomes:</p>
+<ul class="guide-list">
+  <li><strong>Joined</strong> to a transaction omsync already has, when the evidence agrees.</li>
+  <li><strong>Created</strong> as a new transaction, when the row is a movement of money it has not seen.</li>
+  <li><strong>Sent to review</strong>, when the row may be an existing transaction but the evidence is unclear.</li>
+</ul>
+<p>A preview writes nothing. Importing writes one batch for each file, so Undo can reverse one file on its own. Importing a file that is already in the ledger changes nothing. After an import that brings in anything new, omsync also links the matches that need no review, as a separate batch you can undo.</p>
+{{ try_it("/transactions/review", "Open Needs review", "Rows that are waiting for a decision are listed here, with the transactions they might be.") }}
+{% endcall %}
+
+{% call section("checks", "Balance checks and review") %}
+<p>Each statement carries the bank's balance on a date. After an import, omsync compares those balances with the transactions between them. When they disagree, the account shows a small warning dot in the Accounts panel, and its page shows the check.</p>
+<p>The check only reports. It never adds a transaction to make a difference disappear. Open the transactions in the interval, compare them with the statement, and decide what is missing.</p>
+<p>Some rows wait under <strong>Needs review</strong> on Transactions. Open one and look at the source row next to the transactions it might be. Choose <strong>Same as</strong> the existing transaction if it is the same movement, or <strong>Add as new transaction</strong> if it is genuinely separate. Do not add a transaction just to empty the list.</p>
+{% endcall %}
+
+{% call section("sync", "Bank sync, when you want it") %}
+<p>Bank sync can fetch the statement files for you. A sync runs one provider's connector, keeps the files it obtained next to your others, and imports them, one batch for each file. The Bank sync page has <strong>Sync all</strong>, and a <strong>Sync</strong> button on each provider card.</p>
+<p>A sync needs your Bitwarden account, the Bitwarden command-line tool, and Chrome, because the bank connectors open a Chrome window for each bank. Keep that window open until the sync finishes. If a bank asks for a one-time code, the question appears on the page.</p>
+{% call callout("demo", "In the demo, bank sync is off") %}
+<p>It needs a Bitwarden vault and your bank logins, so the demo does not run it. Kunchorn's accounts were filled from statement files, the same way you would bring in your own.</p>
+{% endcall %}
+{{ try_it("/settings/providers", "Open Bank sync", "The provider cards show each bank, its vault login by name when the vault is unlocked, and its latest sync.") }}
+{% endcall %}
+{% endblock %}

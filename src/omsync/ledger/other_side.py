@@ -340,7 +340,7 @@ def set_other_side(
         return replay
     ids = list(dict.fromkeys(transaction_ids))
     if not ids:
-        raise ValueError("choose at least one transaction")
+        raise ValueError("Choose at least one transaction.")
     target = _target(session, contact_id, contact_account_id)
     changes = _manual_changes(session, "transaction", Transaction, ids, target)
     if not changes:
@@ -403,7 +403,7 @@ class _Target:
 def _target(session: Session, contact_id: int | None, contact_account_id: int | None) -> _Target:
     if contact_id is None:
         if contact_account_id is not None:
-            raise ValueError("an account needs a contact")
+            raise ValueError("Choose the contact this account belongs to.")
         return _Target(None, None, "")
     contacts = {contact.id: contact for contact in load_contacts(session)}
     contact = contacts.get(contact_id)
@@ -413,7 +413,7 @@ def _target(session: Session, contact_id: int | None, contact_account_id: int | 
         return _Target(contact_id, None, contact.name)
     account = next((a for a in contact.accounts if a.id == contact_account_id), None)
     if account is None:
-        raise ValueError(f"that account is not an account of {contact.name}")
+        raise ValueError(f"That account is not one of {contact.name}'s accounts.")
     if contact.role is ContactRole.owner:
         return _Target(contact_id, account.id, f"your account {account.label}")
     return _Target(contact_id, account.id, f"{contact.name}, {account.label}")

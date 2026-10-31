@@ -5,15 +5,16 @@
    items: list of {id, label, body}. body is HTML (use a {% set %} block for markup).
    active: the id of the tab shown first. id: a prefix that keeps DOM ids unique on the page.
    fill: set on a page in fill mode (see layouts/shell.html). The wrapper and the panels join its
-   chain, and a panel whose item sets scroll is itself the scrolling region. #}
+   chain, and a panel whose item sets scroll is itself the scrolling region. The tabs wrap onto a
+   second row when their labels do not fit. #}
 
 {% macro tabs(id, items, active, label, fill=false) -%}
 {%- set active_class = "tab-item-active text-primary shadow-sm" -%}
 {%- set inactive_class = "text-secondary hover:bg-surface-inset-hover" -%}
 <div{% if fill %} class="fill-chain"{% endif %} data-controller="tabs" data-tabs-active-value="{{ active }}" data-tabs-active-class="{{ active_class }}" data-tabs-inactive-class="{{ inactive_class }}">
-  <div role="tablist" aria-label="{{ label }}" class="flex bg-surface-inset p-1 rounded-lg mb-4">
+  <div role="tablist" aria-label="{{ label }}" class="flex flex-wrap gap-0.5 bg-surface-inset p-1 rounded-lg mb-4">
     {%- for item in items %}
-    <button type="button" role="tab" id="{{ id }}-tab-{{ item.id }}" aria-controls="{{ id }}-panel-{{ item.id }}" data-id="{{ item.id }}" data-tabs-target="tab" data-action="click->tabs#select keydown->tabs#keydown" class="w-full inline-flex justify-center items-center text-sm font-medium px-2 py-1 rounded-md motion-safe:transition-colors motion-safe:duration-200 focus-ring {{ active_class if item.id == active else inactive_class }}">{{ item.label }}</button>
+    <button type="button" role="tab" id="{{ id }}-tab-{{ item.id }}" aria-controls="{{ id }}-panel-{{ item.id }}" data-id="{{ item.id }}" data-tabs-target="tab" data-action="click->tabs#select keydown->tabs#keydown" class="flex-1 inline-flex justify-center items-center whitespace-nowrap text-sm font-medium px-2 py-1 rounded-md motion-safe:transition-colors motion-safe:duration-200 focus-ring {{ active_class if item.id == active else inactive_class }}">{{ item.label }}</button>
     {%- endfor %}
   </div>
   {%- for item in items %}

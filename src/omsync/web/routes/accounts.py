@@ -6,6 +6,10 @@ The account's nicknames are added and removed on the page too, as batches from l
 with the automatic step after each (see omsync.web.automatic). Their card is re-rendered by the
 reply, and undo calls nicknames_undo_reply here.
 
+A reissued card's new last four digits are added in the numbers card, as an alias batch from
+ledger.accounts_view. The reply re-renders the card, and the header and the panel out of band,
+because the digits they show can change; undo calls numbers_undo_reply here.
+
 A refused edit answers 422 with its message, and a stale one 409, so the dialog shows the message
 and keeps what was typed. A saved or undone change re-renders the header and the accounts panel out
 of band (accounts/fragments.html).
@@ -20,7 +24,13 @@ from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
 from omsync.core.batches import BatchError
-from omsync.ledger.accounts_view import AccountDetail, account_detail, update_account
+from omsync.ledger.accounts_view import (
+    AccountDetail,
+    account_detail,
+    account_numbers,
+    add_account_number,
+    update_account,
+)
 from omsync.ledger.contacts import (
     add_account_nickname,
     list_nicknames,
@@ -76,6 +86,8 @@ def account_page(
         connector=connector_label(detail.connector_key, detail.connector_enabled),
         syncs=sync_views(detail.recent_syncs),
         **nickname_context(db, account_id),
+        numbers=account_numbers(db, account_id),
+        number_key=uuid4().hex,
     )
     return request.app.state.templates.TemplateResponse(request, PAGE, context)
 
@@ -155,6 +167,44 @@ def remove_nickname_route(
     return _nicknames_saved(request, db, account_id, batch)
 
 
+@router.post("/accounts/{account_id}/numbers", response_class=HTMLResponse)
+def add_number_route(
+    request: Request,
+    db: DbSession,
+    account_id: int,
+    last4: Annotated[str, Form()] = "",
+    idempotency_key: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """Add a reissued card's new last four digits, which sync then looks for."""
+    try:
+        batch = add_account_number(
+            db, account_id, last4, idempotency_key=idempotency_key or uuid4().hex
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="No such account") from None
+    except (ValueError, BatchError) as exc:
+        return _fragment(
+            request,
+            "frag_numbers",
+            status_code=422,
+            account_id=account_id,
+            error=str(exc),
+            numbers=account_numbers(db, account_id),
+            number_key=uuid4().hex,
+        )
+    detail = account_detail(db, account_id)
+    return _fragment(
+        request,
+        "frag_numbers",
+        account_id=account_id,
+        message=f"Added ••{last4.strip()}",
+        batch_id=batch.id,
+        numbers=account_numbers(db, account_id),
+        number_key=uuid4().hex,
+        **_header_and_panel(db, account_id, detail),
+    )
+
+
 @router.post("/accounts/panel/grouping/{grouping}", response_class=HTMLResponse)
 def set_panel_grouping(
     request: Request, db: DbSession, grouping: str, active: int | None = None
@@ -203,6 +253,26 @@ def nicknames_undo_reply(
         message=message,
         account_id=account_id,
         **context,
+    )
+
+
+def numbers_undo_reply(request: Request, db: Session, account_id: int | None) -> HTMLResponse:
+    """After an undo of an added number: the toast, then the numbers card, the header, and the
+    panel as they are now. An account that no longer exists gets the toast and the panel only."""
+    detail = None
+    if account_id is not None:
+        try:
+            detail = account_detail(db, account_id)
+        except LookupError:
+            detail = None
+    return _fragment(
+        request,
+        "frag_numbers_undone",
+        message="Undone",
+        account_id=account_id,
+        numbers=account_numbers(db, account_id) if detail is not None else (),
+        number_key=uuid4().hex,
+        **_header_and_panel(db, account_id, detail),
     )
 
 

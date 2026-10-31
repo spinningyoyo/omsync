@@ -1,0 +1,126 @@
+{# The parts a guide is written with: sections, numbered steps, callouts, screenshots, glossary terms,
+   comparison tables, and the link into the app that ends each section. Guide pages import them with
+   context, because the figure macro reads `figures` (the screenshots that exist, see web/guides.py).
+   Text inside these macros is plain HTML written by hand; there is no Markdown step. #}
+{% from "components/icon.html" import icon with context %}
+{% from "components/button.html" import link_button %}
+
+{# A section of the guide. The id is what the "On this page" list links to, so it must match the
+   guide's `sections` list. #}
+{% macro section(id, title) -%}
+<section id="{{ id }}" class="guide-section">
+  <h2 class="guide-h2">{{ title }}<a href="#{{ id }}" class="guide-anchor focus-ring" aria-label="Link to {{ title }}">{{ icon("link", 16) }}</a></h2>
+  {{ caller() }}
+</section>
+{%- endmacro %}
+
+{# A subsection inside a section. #}
+{% macro subsection(title) -%}
+<div class="guide-subsection">
+  <h3 class="guide-h3">{{ title }}</h3>
+  {{ caller() }}
+</div>
+{%- endmacro %}
+
+{# Numbered steps with a connecting line. Each step is a `step` call block. #}
+{% macro steps() -%}
+<ol class="guide-steps">
+  {{ caller() }}
+</ol>
+{%- endmacro %}
+
+{% macro step(title) -%}
+<li class="guide-step">
+  <h3 class="guide-step__title">{{ title }}</h3>
+  <div class="guide-step__body">{{ caller() }}</div>
+</li>
+{%- endmacro %}
+
+{# A note set apart from the text. kind is tip, note, demo, or careful. #}
+{% macro callout(kind, title) -%}
+{%- set icons = {"tip": "lightbulb", "note": "info", "demo": "sparkles", "careful": "triangle-alert"} -%}
+<aside class="guide-callout guide-callout--{{ kind }}" aria-label="{{ title }}">
+  <p class="guide-callout__title">{{ icon(icons[kind], 16, "shrink-0") }}<span>{{ title }}</span></p>
+  <div class="guide-callout__body">{{ caller() }}</div>
+</aside>
+{%- endmacro %}
+
+{# A screenshot in a frame. The light image shows by default and the dark one under the dark theme.
+   Until the images exist, a placeholder with the same description takes their place. #}
+{% macro figure(name, alt, caption) -%}
+{%- set found = figures.get(name, {}) -%}
+<figure class="guide-figure">
+  {%- if found %}
+  <div class="guide-figure__frame{% if found | length == 2 %} guide-figure__frame--dual{% endif %}">
+    {%- for theme in ("light", "dark") if theme in found %}
+    {%- set size = found[theme] %}
+    <img class="guide-figure__img guide-figure__img--{{ theme }}" src="/static/img/guides/{{ name }}-{{ theme }}.png" alt="{{ alt }}" loading="lazy" width="{{ size[0] }}" height="{{ size[1] }}">
+    {%- endfor %}
+  </div>
+  {%- else %}
+  <div class="guide-figure__placeholder" role="img" aria-label="{{ alt }}">
+    {{ icon("image", 24, "text-subdued") }}
+    <p class="guide-figure__placeholder-text">{{ alt }}</p>
+  </div>
+  {%- endif %}
+  <figcaption class="guide-figure__caption">{{ caption }}</figcaption>
+</figure>
+{%- endmacro %}
+
+{# The glossary box: a list of `term` rows. #}
+{% macro glossary(title) -%}
+<div class="guide-glossary" role="group" aria-label="{{ title }}">
+  <p class="guide-glossary__title">{{ icon("book-open", 16, "shrink-0") }}<span>{{ title }}</span></p>
+  <dl class="guide-glossary__list">
+    {{ caller() }}
+  </dl>
+</div>
+{%- endmacro %}
+
+{% macro term(word, meaning) -%}
+<div class="guide-term">
+  <dt>{{ word }}</dt>
+  <dd>{{ meaning }}</dd>
+</div>
+{%- endmacro %}
+
+{# A comparison table. Rows are lists of plain text; the first cell of each row is its label. #}
+{% macro compare_table(headers, rows, label) -%}
+<div class="table-scroll guide-table-wrap shadow-border-xs focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="{{ label }}">
+  <table class="guide-table">
+    <thead>
+      <tr>
+        {%- for header in headers %}
+        <th scope="col">{{ header }}</th>
+        {%- endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {%- for row in rows %}
+      <tr>
+        {%- for cell in row %}
+        {%- if loop.first %}
+        <th scope="row">{{ cell }}</th>
+        {%- else %}
+        <td>{{ cell }}</td>
+        {%- endif %}
+        {%- endfor %}
+      </tr>
+      {%- endfor %}
+    </tbody>
+  </table>
+</div>
+{%- endmacro %}
+
+{# The link into the app that ends a section. In the demo it reads as the demo's invitation. #}
+{% macro try_it(href, label, note="") -%}
+<div class="guide-try{% if demo_mode %} guide-try--demo{% endif %}">
+  <div class="guide-try__text">
+    <p class="guide-try__title">{% if demo_mode %}{{ icon("sparkles", 16, "shrink-0") }}<span>Try it in the demo</span>{% else %}<span>Try it</span>{% endif %}</p>
+    {%- if note %}
+    <p class="guide-try__note">{{ note }}</p>
+    {%- endif %}
+  </div>
+  {{ link_button(label, href=href, variant="secondary", size="md", icon="arrow-right", icon_position="right", class_="guide-try__button") }}
+</div>
+{%- endmacro %}

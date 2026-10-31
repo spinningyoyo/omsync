@@ -253,7 +253,7 @@
         {%- for row in rows %}
         <tr>
           <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
-            <a href="/settings/contacts/{{ row.id }}" class="text-primary underline-offset-2 hover:underline focus-ring">{{ row.name }}</a>
+            <a href="/settings/contacts/{{ row.id }}" class="line-clamp-2 max-w-[24rem] wrap-anywhere text-primary underline-offset-2 hover:underline focus-ring" title="{{ row.name }}">{{ row.name }}</a>
             {%- if row.role %} {{ pill(row.role, tone="indigo", style="soft") }}{% endif %}
           </td>
           <td class="px-3 py-3 align-top text-secondary{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.kind }}</td>

@@ -8,13 +8,17 @@ from decimal import Decimal
 _GROUPED = re.compile(r"[+-]?[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?")
 _PLAIN = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)")
 
+# The largest amount a str or Decimal may name: $1 trillion. Sums of many such amounts still fit
+# SQLite's 64-bit integers.
+MAX_CENTS = 100 * 10**12
+
 
 def to_cents(value: str | Decimal | int) -> int:
     """Convert a money value to integer cents.
 
     An int is already cents. A str or Decimal is dollars: at most two significant decimal
     places ("1.500" is fine, "1.005" is not). Commas are allowed as thousands separators in
-    strings. Floats are rejected with TypeError.
+    strings, and the amount may be at most MAX_CENTS either way. Floats are rejected with TypeError.
     """
     if isinstance(value, float):
         raise TypeError("money must not be a float; pass a str, Decimal, or int cents")
@@ -92,6 +96,8 @@ def _decimal_to_cents(value: Decimal) -> int:
         if coefficient % divisor:
             raise ValueError(f"more than 2 decimal places: {value}")
         cents = coefficient // divisor
+    if cents > MAX_CENTS:
+        raise ValueError(f"more than {format_cents(MAX_CENTS)}: {value}")
     return -cents if value.is_signed() else cents
 
 

@@ -34,9 +34,10 @@ automation: the user places files in the institution folder and uses the same im
   statements, and `omsync categorize` categorizes later.
 - Before importing, a sync links a statement account its files name to an account when the
   provider asked the institution for that account, exactly one open account at the institution
-  ends in the same four digits, and that account has no statement alias yet. The link is an
-  [alias batch](changes.md), and the result lists the digits linked. A reissued card, whose
-  account already has an alias, and any other case is not linked by guess. The files stay
+  ends in the same four digits, and that account has no statement alias yet or its
+  [current number](accounts.md) is only those four digits, as added for a reissued card. The link
+  is an [alias batch](changes.md), and the result lists the digits linked. A reissued card whose
+  new digits were not added, and any other case, is not linked by guess. The files stay
   pending, the result names the unlinked digits, and Bank sync offers the linking step so the
   person decides.
 - A sync that fails, or skips an account, closes its browser by default. The Bank sync page has

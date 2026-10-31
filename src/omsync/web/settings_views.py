@@ -44,6 +44,10 @@ class NavSection:
 
 SETTINGS_NAV: tuple[NavSection, ...] = (
     NavSection(
+        "Learn",
+        (NavItem("Guides", "/settings/guides", "book-open"),),
+    ),
+    NavSection(
         "General",
         (
             NavItem("Bank sync", "/settings/providers", "banknote-arrow-down"),

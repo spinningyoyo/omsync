@@ -4,7 +4,7 @@
 
 {% block frag_cell %}
 {% from "transactions/parts.html" import cell_input %}
-{{ cell_input(row, field, categories, value, key, version, error, hint) }}
+{{ cell_input(row, field, categories, value, key, version, error, hint, stale=stale) }}
 {% endblock %}
 
 {% block frag_cell_saved %}

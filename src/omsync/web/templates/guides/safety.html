@@ -1,0 +1,65 @@
+{% extends "layouts/guide.html" %}
+{% from "guides/parts.html" import section, subsection, figure, callout, steps, step, try_it with context %}
+
+{% set sections = [
+  ("undo", "Every change can be undone"),
+  ("limits", "What undo does not cover"),
+  ("backups", "Backups"),
+  ("restore", "Restoring"),
+  ("privacy", "Where your data lives and who can reach it"),
+] %}
+
+{% block guide_body %}
+{% call section("undo", "Every change can be undone") %}
+<p>omsync treats each change to your money as a <strong>batch</strong>: everything that one action changes, written together or not at all. Bulk edits, imports, categorizing, and rules each go through a preview first, so you see what would change before anything is written.</p>
+{% call steps() %}
+  {% call step("Preview") %}
+  <p>Shows the changes and writes nothing. If the data changes before you apply, the preview is refused, so you never approve something other than what you saw.</p>
+  {% endcall %}
+  {% call step("Apply") %}
+  <p>Writes the whole batch at once. Pressing the same button twice does not apply it twice.</p>
+  {% endcall %}
+  {% call step("Undo") %}
+  <p>Reverses the batch. The confirmation that follows a change has an <strong>Undo</strong> button for it. If a later change has touched the same data, undo says so and changes nothing, so later work is never overwritten.</p>
+  {% endcall %}
+{% endcall %}
+{{ figure("safety-undo", "A confirmation after a change, with an Undo button beside its message.", "The confirmation after a change offers Undo.") }}
+{{ try_it("/transactions", "Open Transactions", "Edit a category or a memo, then look at the confirmation that appears.") }}
+{% endcall %}
+
+{% call section("limits", "What undo does not cover") %}
+<p>Undo reverses your financial decisions. It does not reverse the following:</p>
+<ul class="guide-list">
+  <li><strong>Presentation choices</strong>, such as the theme, privacy mode, the width of the Accounts panel, and the joint share setting. These are saved directly and are not batches.</li>
+  <li><strong>Files</strong>. Undoing an import removes its effects on the ledger, not the statement file it came from.</li>
+  <li><strong>External things</strong>, such as a bank sign-in or a vault operation. Those happen outside omsync.</li>
+</ul>
+{% endcall %}
+
+{% call section("backups", "Backups") %}
+<p>A full backup is one archive that holds your database, your statement files, your receipts, and the configuration file in use. It leaves out the things that should not travel: keychain entries, vault state, browser sessions, exports, and older backups.</p>
+<p>Make one from a terminal, with <code>uv run omsync backup create</code>. Do it after a run of financial work and before a risky change. The command prints the archive's path, and <code>uv run omsync backup list</code> lists the archives you have.</p>
+{% call callout("careful", "Keep archives safe") %}
+<p>An archive is plain financial data. omsync does not encrypt it, and a checksum only shows the file is intact, not who made it. Keep archives on encrypted storage and a copy off this Mac.</p>
+{% endcall %}
+<p>Separately, starting the server or upgrading the database first copies the database itself as a safety copy. omsync keeps the newest ten of those.</p>
+{% endcall %}
+
+{% call section("restore", "Restoring") %}
+<p>A restore replaces your whole local data set with an archive's. It is not a merge, and it cannot pick out one transaction. Stop the server before you restore.</p>
+<p>The restore command first checks the archive, and describes what it would replace without changing anything. Only when you confirm does it go on. Before any replacement, your current data is saved as a pre-restore archive, so a restore can be reversed.</p>
+{% endcall %}
+
+{% call section("privacy", "Where your data lives and who can reach it") %}
+<p>Your data lives in one folder, <code>~/omsync-data</code> by default. It holds the database, the statement files, receipts, backups, and exports. The configuration file can point omsync at a different folder.</p>
+<p>The server listens on <code>127.0.0.1</code>, so only this Mac can reach it. You sign in with your Bitwarden vault email and master password. omsync never stores the password. The sign-in lasts while you are active, and it ends after twelve idle hours, when you sign out, or when the server restarts. Signing out also locks the vault.</p>
+<p>omsync sends nothing to its authors, and the pages load nothing from the internet. Two things reach outside this Mac: signing in and bank sync use the Bitwarden command-line tool, which talks to your Bitwarden vault, and bank sync opens your bank's website in Chrome.</p>
+<p>To remove everything, stop the server and delete the data folder. If you made them, also delete the configuration file, <code>~/.config/omsync/omsync.toml</code>, and the two keychain entries, with <code>uv run keyring del omsync bitwarden-client-id</code> and <code>uv run keyring del omsync bitwarden-client-secret</code>. Then delete the omsync folder you downloaded. Backups you moved elsewhere are yours to delete.</p>
+<p>Settings → About shows the version, the license, the data folder, and the checks that <code>omsync doctor</code> runs.</p>
+<p>Privacy mode is different from locking anything. It only blurs amounts on the screen. For how amounts read in the first place, see Reading amounts and balances.</p>
+{% call callout("demo", "In the demo") %}
+<p>Nothing here leaves this Mac. The demo is one made-up ledger in a temporary folder, shared by every browser that opens this server, and deleted when the server stops. The user menu has <strong>Reset demo</strong>, which puts Kunchorn's year back as it was, so you can try changes and then start over.</p>
+{% endcall %}
+{{ try_it("/settings/about", "Open About", "About shows the version, the data folder, and the checks.") }}
+{% endcall %}
+{% endblock %}

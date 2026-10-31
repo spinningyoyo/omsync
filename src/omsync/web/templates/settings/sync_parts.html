@@ -60,6 +60,9 @@
 {# The unlock form shown in place of a sync that needs the vault. The scope is "all" or a provider
    key, so the sync starts once the vault is unlocked. #}
 {% macro sync_unlock(scope, message="") -%}
+{%- if demo_mode %}
+<p class="rounded-lg border border-divider p-4 text-sm text-secondary">In the demo there is no vault to unlock, so bank sync and vault logins are off. Nothing you type here is needed.</p>
+{%- else %}
 <form class="flex flex-col gap-3 rounded-lg border border-divider p-4" hx-post="/settings/providers/sync/unlock" hx-target="#sync-status" hx-swap="outerHTML">
   <p class="text-sm text-primary">The vault is locked. Unlock it with your master password to start the sync. The password is not kept.</p>
   <input type="hidden" name="scope" value="{{ scope }}">
@@ -67,6 +70,7 @@
   {{ step_error(message) }}
   <div class="flex justify-end">{{ button("Unlock and sync", variant="secondary", type="submit") }}</div>
 </form>
+{%- endif %}
 {%- endmacro %}
 
 {# The question a connector asked, such as for an MFA code. A secret answer is a password field. The

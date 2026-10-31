@@ -1,10 +1,14 @@
 {% extends "layouts/settings.html" %}
 {% from "layouts/shell_parts.html" import page_header %}
+{% from "components/alert.html" import alert with context %}
 {% from "components/button.html" import link_button %}
 {% from "settings/provider_parts.html" import provider_list %}
 {% from "settings/sync_parts.html" import close_on_failure_control, sync_all_control, sync_region, sync_question %}
 
 {% block settings_page %}
+{% if demo_mode %}
+{{ alert("In the demo, bank sync is off: it needs a Bitwarden vault and your bank logins. The accounts below were filled from statement files.", variant="info") }}
+{% endif %}
 <div class="flex flex-wrap items-start justify-between gap-4">
   {{ page_header(page_title, "How omsync fetches each institution's statements: the providers that log in to its bank, and the accounts each one fetches.") }}
   <div class="flex flex-wrap items-center gap-2">

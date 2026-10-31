@@ -35,6 +35,7 @@ from omsync.core.batches import (
     snapshot,
 )
 from omsync.core.batches import apply as apply_batch
+from omsync.core.months import parse_day
 from omsync.ledger.categories import SavedFilter
 from omsync.ledger.transactions import CategoryOrigin, Split, Transaction
 
@@ -202,7 +203,7 @@ def _as_date(value: Any) -> date:
         return value
     if isinstance(value, str):
         try:
-            return date.fromisoformat(value)
+            return parse_day(value)
         except ValueError:
             pass
     raise FilterError(f"{value!r} is not a date. Use YYYY-MM-DD.")

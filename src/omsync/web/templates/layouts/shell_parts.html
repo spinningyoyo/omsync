@@ -17,7 +17,7 @@
     {{ icon(item.icon, 20) }}
     {%- if badge is not none %}{{ count_badge(item.key, badge) }}{% endif %}
   </span>
-  <span class="text-[11px] font-medium max-lg:whitespace-nowrap max-lg:text-[10px]{% if active %} text-primary{% else %} text-secondary{% endif %}">{{ item.label }}</span>
+  <span class="text-[11px] font-medium max-lg:whitespace-nowrap max-lg:text-[11px]{% if active %} text-primary{% else %} text-secondary{% endif %}">{{ item.label }}</span>
   {%- if active %}
   <span class="absolute left-0 top-1 bottom-1 w-1 rounded-r-sm bg-nav-indicator max-lg:bottom-auto max-lg:left-1/2 max-lg:top-0 max-lg:h-0.5 max-lg:w-6 max-lg:-translate-x-1/2 max-lg:rounded-b-sm max-lg:rounded-t-none" aria-hidden="true"></span>
   {%- endif %}
@@ -33,11 +33,39 @@
    resize handle and its state stay put. An out-of-band reply passes oob=true (see routes/accounts.py). #}
 {% macro accounts_panel(groups, grouping, active_account_id=none) -%}
 <aside id="accounts-panel" class="accounts-panel relative flex shrink-0 flex-col border-r border-divider py-4" aria-labelledby="accounts-panel-title" data-accounts-panel-target="panel">
-  <h2 id="accounts-panel-title" class="px-4 pb-3 text-sm font-medium text-primary">Accounts</h2>
+  <div class="flex items-center justify-between px-4 pb-3">
+    <h2 id="accounts-panel-title" class="text-sm font-medium text-primary">Accounts</h2>
+    {#- The panel floats over the page below lg, where this closes it. #}
+    <button type="button" class="inline-flex h-11 w-11 items-center justify-center rounded-lg text-secondary hover:bg-container-inset-hover hover:text-primary focus-ring lg:hidden" aria-label="Close accounts" data-action="accounts-panel#closeOverlay">{{ icon("x", 20) }}</button>
+  </div>
   {{ grouping_control(grouping, active_account_id) }}
   {{ panel_groups(groups) }}
   <div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize accounts panel" aria-valuemin="240" aria-valuemax="320" aria-valuenow="320" class="absolute inset-y-0 right-0 z-20 w-2 translate-x-1/2 cursor-col-resize focus-ring max-lg:hidden" data-accounts-panel-target="handle" data-action="pointerdown->accounts-panel#startResize pointermove->accounts-panel#resize pointerup->accounts-panel#endResize pointercancel->accounts-panel#endResize keydown->accounts-panel#resizeKey dblclick->accounts-panel#resetWidth"></div>
 </aside>
+{%- endmacro %}
+
+{# One account in the panel. A closed account's page opens only with ?closed=1, and it has no
+   balance or sparkline to show. #}
+{% macro panel_row(row, closed=false) -%}
+  <li class="relative flex items-center gap-2 rounded-lg px-2 py-1.5{% if row.active %} bg-container shadow-border-xs{% else %} hover:bg-surface-hover{% endif %}">
+    <div class="flex min-w-0 grow flex-col">
+      <a href="/accounts/{{ row.id }}{{ '?closed=1' if closed }}" title="{{ row.name }}" class="truncate text-sm text-primary after:absolute after:inset-0 after:rounded-lg focus-ring"{% if row.active %} aria-current="page"{% endif %}>{{ row.name }}</a>
+      <span class="flex min-w-0 items-center gap-1.5 text-xs text-secondary">
+        {%- if row.digits %}<span class="whitespace-nowrap">{{ row.digits }}</span>{% endif %}
+        {%- if row.joint %}{{ pill("Joint", tone="blue", size="sm") }}{% endif %}
+        <a href="/transactions?account={{ row.id }}" class="relative shrink-0 underline-offset-2 hover:underline focus-ring rounded-sm">Transactions</a>
+      </span>
+    </div>
+    {%- if row.spark %}
+    <svg class="h-5 w-14 shrink-0" viewBox="0 0 56 20" aria-hidden="true" focusable="false">
+      <polyline points="{{ row.spark }}" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" style="stroke: {{ row.spark_color }}"></polyline>
+    </svg>
+    {%- endif %}
+    <span class="whitespace-nowrap text-sm tabular-nums text-primary">{{ row.balance }}</span>
+    {%- if row.warning %}
+    <span class="size-2 shrink-0 rounded-full bg-warning" title="Balance check has issues"><span class="sr-only">Balance check has issues</span></span>
+    {%- endif %}
+  </li>
 {%- endmacro %}
 
 {# The choice of grouping: a two-option toggle. Each option posts to its own route, which saves the
@@ -56,6 +84,16 @@
 {% macro panel_groups(groups, oob=false) -%}
 <div id="accounts-panel-groups" class="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-6"{% if oob %} hx-swap-oob="true"{% endif %}>
   {%- for group in groups %}
+  {%- if group.closed %}
+  <details class="group flex flex-col gap-1"{% if group.rows|selectattr("active")|list %} open{% endif %}>
+    <summary class="flex cursor-pointer list-none items-center gap-1 rounded-sm text-xs font-medium text-secondary hover:text-primary focus-ring [&::-webkit-details-marker]:hidden">{{ icon("chevron-right", 14, "transition-transform group-open:rotate-90") }}Closed ({{ group.rows|length }})</summary>
+    <ul class="mt-1 flex flex-col">
+      {%- for row in group.rows %}
+      {{ panel_row(row, closed=true) }}
+      {%- endfor %}
+    </ul>
+  </details>
+  {%- else %}
   <section class="flex flex-col gap-1" aria-labelledby="accounts-group-{{ group.key }}">
     <h3 id="accounts-group-{{ group.key }}" class="flex items-baseline justify-between gap-2 text-xs font-medium text-secondary">
       {%- if group.institution_key is not none %}
@@ -72,28 +110,11 @@
     </h3>
     <ul class="flex flex-col">
       {%- for row in group.rows %}
-      <li class="relative flex items-center gap-2 rounded-lg px-2 py-1.5{% if row.active %} bg-container shadow-border-xs{% else %} hover:bg-surface-hover{% endif %}">
-        <div class="flex min-w-0 grow flex-col">
-          <a href="/accounts/{{ row.id }}" title="{{ row.name }}" class="truncate text-sm text-primary after:absolute after:inset-0 after:rounded-lg focus-ring"{% if row.active %} aria-current="page"{% endif %}>{{ row.name }}</a>
-          <span class="flex min-w-0 items-center gap-1.5 text-xs text-secondary">
-            {%- if row.digits %}<span class="whitespace-nowrap">{{ row.digits }}</span>{% endif %}
-            {%- if row.joint %}{{ pill("Joint", tone="blue", size="sm") }}{% endif %}
-            <a href="/transactions?account={{ row.id }}" class="relative shrink-0 underline-offset-2 hover:underline focus-ring rounded-sm">Transactions</a>
-          </span>
-        </div>
-        {%- if row.spark %}
-        <svg class="h-5 w-14 shrink-0" viewBox="0 0 56 20" aria-hidden="true" focusable="false">
-          <polyline points="{{ row.spark }}" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" style="stroke: {{ row.spark_color }}"></polyline>
-        </svg>
-        {%- endif %}
-        <span class="whitespace-nowrap text-sm tabular-nums text-primary">{{ row.balance }}</span>
-        {%- if row.warning %}
-        <span class="size-2 shrink-0 rounded-full bg-warning" title="Balance check has issues"><span class="sr-only">Balance check has issues</span></span>
-        {%- endif %}
-      </li>
+      {{ panel_row(row) }}
       {%- endfor %}
     </ul>
   </section>
+  {%- endif %}
   {%- endfor %}
   {%- if not groups %}
   <p class="text-sm text-secondary">No accounts yet</p>

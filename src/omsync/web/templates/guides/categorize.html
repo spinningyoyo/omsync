@@ -1,0 +1,99 @@
+{% extends "layouts/guide.html" %}
+{% from "guides/parts.html" import section, subsection, steps, step, figure, callout, compare_table, try_it with context %}
+
+{% set sections = [
+  ("types", "Category types"),
+  ("keywords", "Keywords"),
+  ("triage", "Triage: payees nobody has named"),
+  ("rules", "Rules, in order"),
+  ("precedence", "What outranks what"),
+  ("undo", "Preview, apply, and undo"),
+  ("receipts", "Receipts"),
+] %}
+
+{% block guide_body %}
+{% call section("types", "Category types") %}
+<p>A <strong>category</strong> says what money was for. Its <strong>type</strong> says how omsync treats that money. One field carries both, so a category cannot be income and also a budget line.</p>
+{{ compare_table(
+  ["Type", "What it means", "Examples in the demo"],
+  [
+    ["Fixed", "A regular bill, planned as a fixed budget", "Rent, Utilities, Phone & internet"],
+    ["Flexible", "Day-to-day spending you control", "Groceries, Dining, Coffee"],
+    ["Non-monthly", "Irregular costs, funded across months", "Travel, Gifts, Home"],
+    ["Unassigned", "An expense you have not classified yet", "Blue Bottle Coffee, until you choose"],
+    ["Income", "Money that counts as income in reports", "Paycheck, Interest"],
+    ["Excluded", "Money that reports leave out", "Transfer, Credit card payment"],
+    ["Owed", "Money between you and a contact, such as a loan", "Loans"],
+  ],
+  "Category types",
+) }}
+<p>Fixed, flexible, and non-monthly categories are what a budget plans. Excluded and Owed categories are left out of reports, and only contact balances read Owed money. A category can have an icon, which appears beside its name on the Categories page and in the budget.</p>
+{{ figure("categorize-categories", "The Categories page: a table of categories, each with its icon, name, and type.", "The Categories table, one row a category, with its icon and type.") }}
+{{ try_it("/settings/categories", "Open Categories", "Categories has the category table and the Keywords, Rules, Test a payee, Triage, and Import tabs.") }}
+{% endcall %}
+
+{% call section("keywords", "Keywords") %}
+<p>A <strong>keyword</strong> is a text pattern that assigns a category. In the demo, <code>NETFLIX</code> assigns Subscriptions, and <code>TRADER JOE</code> assigns Groceries. Keywords live in lists. <strong>Unique</strong> keywords are specific, and they outrank <strong>Generic</strong> ones. Generic keywords are loose fragments of payee text, such as <code>Zelle payment</code>, which can sit in many descriptions.</p>
+<p>Patterns ignore case. You choose whether a pattern is literal text or a regular expression. A pattern that is already in a list is refused, and a disabled keyword does nothing.</p>
+<p>Categorize applies the keywords to transactions that have no category, and to those whose category a keyword or a rule set before. It never changes what you set yourself.</p>
+{{ try_it("/settings/categories?tab=keywords", "Open the keywords", "The Keywords tab lists each keyword list, with a search across them.") }}
+{% endcall %}
+
+{% call section("triage", "Triage: payees nobody has named") %}
+<p>Triage groups the uncategorized payees that repeat, so one choice covers all of their transactions. In the demo, <strong>Blue Bottle Coffee</strong>, <strong>SQ *TARTINE BAKERY</strong>, and <strong>REI</strong> have no keyword, so they wait in triage.</p>
+{% call steps() %}
+  {% call step("Open triage") %}
+  <p>Choose the <strong>Triage</strong> tab on Categories.</p>
+  {% endcall %}
+  {% call step("Choose the pattern and the category") %}
+  <p>omsync suggests a pattern from the payee text. It is only a suggestion, so edit it if it is too wide or too narrow. Pick the category it should assign.</p>
+  {% endcall %}
+  {% call step("Add the keyword") %}
+  <p>Press <strong>Add keyword</strong>. That saves one keyword, and changes no transaction yet.</p>
+  {% endcall %}
+  {% call step("Categorize") %}
+  <p>Preview categorize on the Categories page shows which transactions the keywords would change. Applying it is a separate step.</p>
+  {% endcall %}
+{% endcall %}
+{{ try_it("/settings/categories?tab=triage", "Open Triage", "Start with Blue Bottle Coffee: add a keyword for it, then preview categorize to see how many transactions it changes.") }}
+{% endcall %}
+
+{% call section("rules", "Rules, in order") %}
+<p>A <strong>rule</strong> sets a category when all of its conditions hold. Rules are tried in order. The first rule that holds sets the category, and the rest are skipped. A rule can read four things about a transaction:</p>
+<ul class="guide-list">
+  <li>the category that its keyword assigned, and optionally only the Unique or Generic list;</li>
+  <li>the amount, as a size: under a limit, at least a minimum, or a range between them;</li>
+  <li>the other side: a payment with a person, one contact, or one of your own accounts;</li>
+  <li>the account the transaction is in.</li>
+</ul>
+<p>The demo has three rules, in this order:</p>
+<ol class="guide-list guide-list--numbered">
+  <li>A transfer whose other side is Sam Park becomes <strong>Rent</strong>, so his half of the rent is rent.</li>
+  <li>A transfer from the Generic list, of $100 or more, with a person becomes <strong>Loans</strong>. This is how the $300 to Priya Nair is a loan.</li>
+  <li>A transfer from the Generic list, under $40, with a person becomes <strong>Dining</strong>.</li>
+</ol>
+<p>Order matters. The first rule runs before the second, so Sam's $1,200 becomes Rent and not a loan. A transfer of $45 to or from Taylor Kim fits none of them, so it stays a transfer until you decide what it is.</p>
+{{ figure("categorize-rules", "The Rules tab: each rule as a sentence, with buttons to move it up or down, turn it off, edit it, or delete it.", "Rules are listed in order, each as its sentence.") }}
+<p>On the Rules tab you can preview a draft before you save it. The preview says how many transactions the rule would change and lists them, and it writes nothing. Saving, moving, or switching off a rule updates the categories at once.</p>
+{{ try_it("/settings/categories?tab=rules", "Open Rules", "Each rule is shown as a sentence, with the transactions it would change.") }}
+{% endcall %}
+
+{% call section("precedence", "What outranks what") %}
+<p>Your own choice outranks everything. A category you set by hand, and a split you make, stay until you change them. Receipts come next. Keywords and rules rank alike: each can replace the category the other set.</p>
+<p>On a transaction's detail page, <strong>Set by rule</strong> names the rule that set its category, and it shows the rule's sentence. If a rule set the category but no longer holds, the page says so.</p>
+{% call callout("note", "Splits") %}
+<p>A transaction can be split into parts, each with its own category and amount. The parts must add up to the transaction's amount exactly. A split belongs to you, so categorize leaves it alone.</p>
+{% endcall %}
+{% endcall %}
+
+{% call section("undo", "Preview, apply, and undo") %}
+<p>Categorize is always a preview first. It shows what would change, and nothing is written until you apply it. Applying it is one batch, so the confirmation's Undo reverses all of it at once.</p>
+<p>Undo refuses to overwrite later work. If you edited a transaction that categorize changed, the undo says so and changes nothing, so your edit is kept.</p>
+{{ try_it("/settings/categories", "Open Categories", "Preview categorize sits beside New category on the Categories page.") }}
+{% endcall %}
+
+{% call section("receipts", "Receipts") %}
+<p>A receipt explains what a purchase contained. A single Amazon or Costco charge can then be split into the categories of the items on its receipt. A receipt is matched to a charge that a tracked account paid, and applying it is a batch you can undo, like any other change.</p>
+<p>The demo has no receipts. The repository's how-to, Run sync and obtain receipts, explains the vendor logins and the commands.</p>
+{% endcall %}
+{% endblock %}

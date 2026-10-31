@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 from sqlalchemy.orm import Session
 
 from omsync.core.money import format_cents
+from omsync.core.months import parse_day
 from omsync.ledger.categories import TYPE_LABELS
 from omsync.ledger.filters import Condition, FilterSpec
 from omsync.ledger.preferences import joint_share_on
@@ -153,7 +154,7 @@ def select_period(key: str, start: str, end: str, today: date) -> Selection:
     if key == CUSTOM:
         fallback = Period.preset(DEFAULT_PRESET, today)
         try:
-            period = Period(date.fromisoformat(start), date.fromisoformat(end))
+            period = Period(parse_day(start), parse_day(end))
         except ValueError:
             return Selection(CUSTOM, fallback, start, end, CUSTOM_ERROR)
         return Selection(CUSTOM, period, period.start.isoformat(), period.end.isoformat())
@@ -210,13 +211,19 @@ def build_report(db: Session, selection: Selection, *, today: date) -> ReportVie
     )
 
 
+# A change under this many basis points shows as 0.0, with one decimal of a percent.
+ROUNDS_TO_ZERO_BP = 5
+
+
 def percent_text(bp: int) -> str:
     """A rate in basis points as a percentage with one decimal, e.g. 1234 is "12.3%"."""
     return f"{_tenths(bp)}%"
 
 
 def signed_percent(bp: int) -> str:
-    return _signed(bp, percent_text(bp))
+    """A change with its sign, e.g. "+12.3%". A change that rounds to 0.0% has no sign, since
+    "-0.0%" would read as a loss."""
+    return _signed(0 if abs(bp) < ROUNDS_TO_ZERO_BP else bp, percent_text(bp))
 
 
 def _tenths(bp: int) -> str:
@@ -276,8 +283,12 @@ def _cards(result: Summary) -> list[CardView]:
 def _money_card(
     label: str, cents: int, change: Change, *, good_when_up: bool, value_tone: str = ""
 ) -> CardView:
+    delta = change.delta_cents
     if change.pct_bp is None:
-        text = "No amount last period to compare" if change.delta_cents else "No change"
+        text = "No amount last period to compare" if delta else "No change"
+    elif abs(change.pct_bp) < ROUNDS_TO_ZERO_BP:
+        # "-0.0%" in red would read as a loss, so a change too small to show is no change.
+        text, delta = "About the same as the previous period", 0
     else:
         text = f"{signed_percent(change.pct_bp)} vs previous period"
     return CardView(
@@ -285,8 +296,8 @@ def _money_card(
         value=money_html(cents),
         value_tone=value_tone,
         change=text,
-        change_tone=_tone(change.delta_cents, good_when_up),
-        arrow=_arrow(change.delta_cents),
+        change_tone=_tone(delta, good_when_up),
+        arrow=_arrow(delta),
     )
 
 
@@ -295,6 +306,8 @@ def _rate_card(figures: Figures, result: Summary) -> CardView:
     rate = "—" if figures.savings_rate_bp is None else percent_text(figures.savings_rate_bp)
     if delta is None:
         return CardView("Savings rate", rate, "", None, "text-secondary", None)
+    if abs(delta) < ROUNDS_TO_ZERO_BP:
+        delta = 0
     return CardView(
         label="Savings rate",
         value=rate,

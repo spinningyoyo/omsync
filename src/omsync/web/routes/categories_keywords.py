@@ -55,7 +55,7 @@ def add_keyword(
             pattern,
             whole_number(category_id, "Pick a category."),
             is_regex=bool(is_regex),
-            priority=whole_number(priority, "Priority must be a whole number."),
+            priority=whole_number(priority, "Priority must be a whole number, such as 10."),
             idempotency_key=key,
         )
     except (ValueError, BatchError) as exc:
@@ -118,7 +118,7 @@ def save_keyword(
             pattern=pattern,
             is_regex=bool(is_regex),
             category_id=whole_number(category_id, "Pick a category."),
-            priority=whole_number(priority, "Priority must be a whole number."),
+            priority=whole_number(priority, "Priority must be a whole number, such as 10."),
         )
     except NothingChanged:
         return block(request, "frag_keyword_row", row=_keyword_or_404(db, keyword_id))

@@ -28,8 +28,18 @@
 }
 
 .register td.date,
-.register td.account,
 .register td.actions {
+  @apply whitespace-nowrap;
+}
+
+/* A long account name wraps rather than widening the table, and its last digits stay together. The
+   width is enough for "Everyday Checking" on one line with the digits under it, so an account is
+   never taller than a payee clamped to two lines and no row grows for it. */
+.register td.account {
+  min-width: 8.25rem;
+}
+
+.register td.account .muted {
   @apply whitespace-nowrap;
 }
 
@@ -50,7 +60,7 @@
 
 .register td.select input,
 .register th.select input {
-  @apply size-4;
+  @apply size-4 pointer-coarse:size-6;
 }
 
 .register .muted {
@@ -81,24 +91,62 @@
   @apply text-secondary;
 }
 
-/* The memo is a fixed 350px, and the payee takes the rest of the row. The payee clamps to two lines, so a
-   long statement description cannot grow the row; the full text is the cell's tooltip. */
+/* The payee takes the rest of the row and clamps to two lines, so a long statement description
+   cannot grow the row; the full text is the cell's tooltip. The memo is 350px when the register is
+   wide enough for every column at that width, and gives up room first when it is not, so category and
+   amount are never pushed out of view on a laptop. */
 .register td.payee {
-  min-width: 9rem;
+  min-width: 8rem;
 }
 
 .register td.payee .payee-text {
   @apply line-clamp-2 wrap-anywhere;
 }
 
+.register-scroll {
+  container-type: inline-size;
+}
+
 .register td.cell-input[data-field="memo"] {
-  width: 350px;
-  min-width: 350px;
+  min-width: 3.5rem;
   max-width: 350px;
 }
 
+@container (min-width: 76rem) {
+  .register td.cell-input[data-field="memo"] {
+    width: 350px;
+    min-width: 350px;
+  }
+}
+
+/* Wide enough for a long category name, such as "Credit card payment". */
 .register td.cell-input[data-field="category"] {
-  min-width: 8rem;
+  min-width: 11.5rem;
+}
+
+/* On a phone the table scrolls sideways, so the payee stays at the left edge: the row being edited is
+   always named beside its category and amount. */
+@container (max-width: 40rem) {
+  .register th.payee,
+  .register td.payee {
+    position: sticky;
+    left: 0;
+    max-width: 8.5rem;
+    box-shadow: 6px 0 6px -6px var(--color-shadow);
+  }
+
+  .register th.payee {
+    z-index: 11;
+  }
+
+  .register td.payee {
+    z-index: 1;
+    background-color: var(--table-scroll-bg);
+  }
+
+  .register tbody.txn-group:focus-within > tr.txn-row > td.payee {
+    background-color: var(--color-container-hover);
+  }
 }
 
 .register td.cell-input input:focus,
@@ -200,12 +248,67 @@
   @apply block text-xs text-secondary;
 }
 
-#toast-region {
+/* Toasts sit at the top centre, where Sure puts its notifications, clear of a table's pager and of
+   the bottom navigation on a small screen. A long message wraps rather than widening the toast. */
+#toast-region,
+#error-region,
+#flash-region {
   position: fixed;
   left: 50%;
-  bottom: 1.5rem;
+  top: calc(env(safe-area-inset-top) + 1rem);
   transform: translateX(-50%);
   z-index: 40;
+  width: max-content;
+  max-width: min(calc(100vw - 2rem), 28rem);
+  overflow-wrap: anywhere;
+}
+
+/* On a wide screen they centre over the page rather than the window, as Sure's notification tray
+   does, so they clear the rail and the accounts panel (its width and collapsed state are on <html>,
+   see styles/shell.css). */
+@media (min-width: 64rem) {
+  #toast-region,
+  #error-region,
+  #flash-region {
+    left: calc(50% + (84px + var(--accounts-width, 320px)) / 2);
+  }
+
+  :root[data-accounts-collapsed="true"] :is(#toast-region, #error-region, #flash-region) {
+    left: calc(50% + 42px);
+  }
+}
+
+#error-region {
+  z-index: 41;
+}
+
+/* Two classes, so it outranks .toast, which comes later and sets the text colour. */
+.toast.toast-error {
+  @apply text-destructive shadow-border-lg;
+}
+
+/* The bar along the top while a page loads (static/js/application.js). */
+html.navigating::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 3px;
+  z-index: 60;
+  background: var(--color-focus-ring);
+  transform-origin: left;
+  animation: navigating 8s cubic-bezier(0.1, 0.7, 0.2, 1) forwards;
+}
+
+@keyframes navigating {
+  from { transform: scaleX(0.05); }
+  to { transform: scaleX(0.9); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.navigating::before {
+    animation: none;
+    transform: scaleX(0.6);
+  }
 }
 
 .toast {
