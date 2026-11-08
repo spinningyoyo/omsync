@@ -54,8 +54,67 @@ automation: the user places files in the institution folder and uses the same im
   finished. A sync started from the web uses the vault the page unlocked, which keeps its idle
   timeout. Multi-factor authentication asks the user for the institution's code, in the terminal
   or on the Bank sync page. A connector declares how many digits its code has when it is not 6, and
-  the page sends the code once that many are entered. A CAPTCHA or incomplete verification returns control to the user
-  rather than bypassing it.
+  the page sends the code once that many are entered. A bank that asks for an approval in its app
+  instead shows its QR on the Bank sync page; the terminal says to scan the one in Chrome. A
+  CAPTCHA or incomplete verification returns control to the user rather than bypassing it.
+- Each step's duration is appended to `sync-timing.log` in the data folder, so a slow sync can be
+  explained. A line holds a connector or provider key, a step name, and seconds.
+
+## Signing in
+
+Banks often recognize omsync's browser profile and skip MFA, so a sign-in with no code is the
+common case and must not wait for anything.
+
+Signed in is a fact on the bank's server: it serves this browser's session. So a connector does not
+read it from the page. It asks the bank for the account list, the request every sync sends first,
+and the person is signed in once the bank answers with the list. That list is the one the downloads
+use. Addresses, menus, cookies and page text are not consulted, so a redesign cannot fake or hide a
+sign-in, and a page the bank puts between sign-in and its dashboard does not stop a sync.
+
+A bank must refuse the list until sign-in is complete, and each one does, as its
+[request page](bank-requests/README.md) records: Chase answers `401`, including while its identity
+check is pending, and Bank of America and Citi redirect a signed-out request to their public site.
+Fidelity's page keeps the list in session storage rather than requesting it, so its list counts as
+answered once the page has stored the token, the accounts and the partner details.
+
+After the sign-in click, a connector looks at the page several times a second for what needs the
+person, a CAPTCHA or an identity check, and asks for the list every five seconds, first five seconds
+after the click. While a code is being typed, nothing is asked.
+
+```mermaid
+flowchart TD
+    Type[Type the login] --> Watch{Bank answers the list, or the page needs the person?}
+    Watch -->|The list| Fetch[Fetch statements with that list]
+    Watch -->|CAPTCHA| Person[Return control to the person]
+    Watch -->|An identity check, list still refused| Ask[Ask the bank to check]
+    Watch -->|Neither after a minute| Again[End as needing the person]
+    Ask -->|A code| Code[Ask for the code and enter it]
+    Ask -->|An app approval| Approve[Show the QR and wait for the approval]
+    Code --> Signed{List answered within a minute?}
+    Signed -->|Yes| Fetch
+    Signed -->|No| Again
+    Approve --> Approved{List answered within five minutes?}
+    Approved -->|Yes| Fetch
+    Approved -->|No, or the screen closed| Again
+```
+
+Each connector names what an identity check looks like at its bank. A check that resembles an
+ordinary page, as Citi's does, must stay on the page for a few seconds before it counts. Before a
+check counts, the connector asks for the list once more, so a signed-in page that looks like a check
+is never taken for one.
+
+When the connector asks the bank to check, it says how the bank will: a code it sends, or an
+approval in the bank's app. Both Chase connectors choose by the screens Chase shows, which are the
+same for personal and Business. When Chase offers a
+code, it takes it, because a code is the check that has passed live the longest. Otherwise it takes
+the app approval, which has no code: the person scans the QR Chase shows and approves on the phone,
+and the page signs in by itself. The connector shows the QR to the person, again whenever Chase
+replaces it, and waits for the bank to answer the list. If the QR screen closes without a sign-in, the
+approval was declined or expired, and the sync ends as needing the person. Calling the bank is
+never chosen, since only a person can do it.
+
+Nothing clicks on a page after sign-in, so a pop-up over it, or a full page the bank puts before its
+dashboard, does not matter.
 
 ## Providers
 
@@ -70,6 +129,7 @@ automation: the user places files in the institution folder and uses the same im
   change never lands mid-sync.
 - Sync all runs every enabled provider, one at a time, in institution and then provider key
   order. A provider that fails or cannot run does not stop the others, and each gets a result.
+  Cancelling does stop them: no provider starts after it.
 
 ## Syncing from the web
 
@@ -86,6 +146,14 @@ page polls for its state and shows each provider's result when the job ends.
   The sync waits ten minutes for an answer. Without one, the connector gives up and the provider
   ends as needing you, and syncing again asks again. An answer goes to the connector and is not
   kept or shown again.
+- A connector can show a notice instead, such as a bank's QR for an approval in its app. It takes
+  the question's place and needs no answer, and it goes away when the connector moves on.
+- Cancel sync stops the running job, one provider's or Sync all. A question or QR on the page goes
+  away at once. The provider in progress stops at its next step, closes its browser whatever the
+  Close Chrome checkbox says, and keeps nothing it fetched, and its run is logged as cancelled.
+  Providers that have not started are marked cancelled and write no run. A provider whose download
+  has finished imports it before the job stops, so an import is never cut short, and providers that
+  finished earlier keep what they imported.
 - Chrome still opens a visible window for each bank, as it does from the terminal. Keep that
   window open until its sync finishes.
 - Job state is held in memory, so a restarted server shows no earlier job. The sync log keeps
@@ -112,7 +180,8 @@ operation refuses rather than waiting invisibly. Archive creation and restore us
 operation lock so they cannot race with downloaded files or sync imports.
 
 The sync log records provider, institution, connector, start and finish, fetched-file count,
-status, and a safe message. Status distinguishes running, succeeded, failed, and needs user action.
+status, and a safe message. Status distinguishes running, succeeded, failed, needs user action, and
+cancelled.
 The log survives undo of an import because the external attempt really happened. Messages
 never contain passwords, tokens, usernames, or full account numbers.
 
@@ -120,21 +189,30 @@ never contain passwords, tokens, usernames, or full account numbers.
 
 | Connector | Source and consequential behavior |
 |---|---|
-| Bank of America | Checking/savings use date-range CSV. Credit cards offer statement-based CSV downloads, so the connector obtains the available statements rather than pretending the site offers the same custom range. CSV account folders identify the account. |
-| Chase personal | QFX/OFX downloads use the personal verification interface. A purchase and its foreign transaction fee share one FITID, so [import](import.md) treats Chase FITIDs as untrusted. |
-| Chase Business | QFX/OFX downloads use a distinct connector and business verification interface, which can ask for the password again. Its FITIDs are untrusted like Chase personal's. Business card requests include the eligibility declaration Chase requires. |
-| Citi | OFX source files are retained. FITIDs can change between downloads; [import](import.md) treats them as untrusted. |
-| Fidelity Rewards | The website supplies a single-account QFX download. The file's account ID determines its ledger account. |
+| Bank of America | Checking/savings use date-range CSV. Credit cards offer statement-based CSV downloads, so the connector obtains the available statements rather than pretending the site offers the same custom range. Accounts come from the account overview, requested directly, matched by last four digits. CSV account folders identify the account. |
+| Chase personal | QFX/OFX downloads use the personal verification interface, which takes a code when Chase offers one and an approval in the Chase app otherwise. A purchase and its foreign transaction fee share one FITID, so [import](import.md) treats Chase FITIDs as untrusted. |
+| Chase Business | QFX/OFX downloads use a distinct connector. Its identity check is personal's, which on Business offers a code by text or call. The older Business screen, which also asked for the password again, is still followed if Chase shows it. Its FITIDs are untrusted like Chase personal's. |
+| Citi | OFX source files are retained. Cards come from the account list, requested directly, matched by last four digits. FITIDs can change between downloads; [import](import.md) treats them as untrusted. |
+| Fidelity Rewards | The website supplies a single-account QFX download, requested with the page's session token and the partner details, both read from the page's session storage. The file's account ID determines its ledger account. |
 
-Chase's download token is exposed by an activity-download request rather than ordinary
-page markup. A preliminary download over a wider period obtains it; that preliminary file
-is discarded. The requested activity, not the token-acquisition file, is retained. This
-separates an institution authentication requirement from the user's import period. Each
-account's download repeats the site's own request, at its host and with its parameters and
-script-set headers, changing only the account and dates, so a site that moves its download or
-adds a requirement is followed rather than guessed. Nothing captured outlives the sync, because a
-stale token would hide a failed capture. Personal and business behavior is selected explicitly by
-the provider's connector; it is never inferred from an MFA page that Chase may skip.
+Connectors request files directly inside the signed-in browser rather than clicking through
+download dialogs, so the bank's own session applies. A request that returns anything other than a
+statement skips that account, with the same result as an empty answer.
+
+Every connector follows the same steps after sign-in: list the site's accounts, match them to the
+provider's accounts by last four digits, then request and check each file. An account the site
+does not list ends the fetch before anything is requested. A site can list one account twice, as
+Chase Business does, so every entry with those digits is fetched, and import joins the rows that
+repeat.
+
+Chase's connector stays on the dashboard. It requests the accounts Chase offers downloads for, then
+a security token, once after sign-in. Nothing
+keeps it after the sync, because a stale token would hide a failed request. Card requests include
+the eligibility declaration Chase requires. Personal and business behavior is selected explicitly
+by the provider's connector; it is never inferred from an MFA page that Chase may skip.
+
+[Reconstructing bank requests](bank-requests/README.md) explains how a download's request is traced
+and proven, and records each bank's request and what is still unproven.
 
 Institution pages often identify accounts by the last four digits. Connectors can use
 those labels to locate configured accounts, but ledger identity still comes from account

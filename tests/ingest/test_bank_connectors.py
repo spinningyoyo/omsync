@@ -106,6 +106,12 @@ class FakePrompt:
             raise self.error
         return self.answer
 
+    def show(self, message: str, *, image: str | None = None) -> None:
+        pass
+
+    def cancelled(self) -> bool:
+        return False
+
 
 class FakeElement(WebElement):
     """A page element. It subclasses WebElement because Selenium checks for that type."""
@@ -194,7 +200,6 @@ class FakeChrome:
         self.xhr: dict[str, str] = {}  # URL -> the response text for XHR GET and POST
         self.requests: list[tuple[str, str, str | None, dict[str, str]]] = []  # by xhr_request
         self.cookies: dict[str, str] = {}
-        self.logs: dict[str, list[dict[str, str]]] = {}
         self.current_url = ""
         self.visited: list[str] = []  # every URL the connector asked the browser to open
         self.download_dir: Path | None = None
@@ -248,9 +253,6 @@ class FakeChrome:
 
     def get_cookie(self, name: str) -> dict[str, str] | None:
         return {"value": self.cookies[name]} if name in self.cookies else None
-
-    def get_log(self, name: str) -> list[dict[str, str]]:
-        return self.logs.get(name, [])
 
     def execute_cdp_cmd(self, cmd: str, params: dict[str, Any]) -> None:
         self.cdp.append((cmd, params))

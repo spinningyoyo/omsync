@@ -5,9 +5,9 @@ its whole length, the import included, and a second sync raises SyncBusy instead
 sync_all holds the lock across all its providers.
 
 Each sync writes one SyncRun (ledger/sync_models.py): running when it starts, then succeeded,
-failed, or needs_user_action. A connector's exceptions become that status and never escape. A sync
-always imports the files it fetched, each as its own batch, then categorizes the provider's
-accounts with the keywords.
+failed, needs_user_action, or cancelled. A connector's exceptions become that status and never
+escape. A sync always imports the files it fetched, each as its own batch, then categorizes the
+provider's accounts with the keywords. A sync cancelled while it fetches imports nothing.
 """
 
 import re
@@ -34,12 +34,14 @@ from omsync.ingest.connectors.base import (
     NeedsUserAction,
     PartialFetch,
     Prompt,
+    SyncCancelled,
 )
 from omsync.ingest.connectors.config import enabled_provider_keys
 from omsync.ingest.connectors.registry import get_connector
 from omsync.ingest.discovery import scan_statement_files, suggested_account
 from omsync.ingest.dropfolder import PendingFile, location_of
 from omsync.ingest.pipeline import ImportReport, import_files
+from omsync.ingest.timing import timed
 from omsync.ledger.categorize import InvalidKeyword, apply_categorize, plan_categorize
 from omsync.ledger.models import (
     Account,
@@ -157,12 +159,15 @@ def sync_all(
     """Sync every enabled provider, one after another, in institution key then provider key order,
     each for the given period (see sync_provider).
 
-    A provider that fails, or cannot run, does not stop the others, so every enabled provider has an
-    entry in the list. Raises SyncBusy, before anything is fetched, if another sync holds the lock.
+    A provider that fails, or cannot run, does not stop the others. Cancelling through the prompt
+    does: no provider starts after it, so only the providers that started have an entry in the
+    list. Raises SyncBusy, before anything is fetched, if another sync holds the lock.
     """
     outcomes: list[ProviderSync] = []
     with _sync_lock(settings.data_dir / SYNC_LOCK_NAME):
         for key in enabled_provider_keys(session):
+            if prompt.cancelled():
+                break
             if on_progress is not None:
                 on_progress(key, None)
             outcome = _sync_one(
@@ -280,7 +285,8 @@ def _run(
 
     linked = _link_statement_accounts(session, settings, plan)
     try:
-        report = import_files(session, settings, pending, apply=True)
+        with timed(plan.provider_key, "import"):
+            report = import_files(session, settings, pending, apply=True)
     except BaseException as exc:
         session.rollback()
         _finish(
@@ -302,7 +308,8 @@ def _run(
             digits = ", ".join(f"••{last4}" for last4 in unlinked)
             problem += f". No account is linked to the statement account {digits} yet"
         problems.append(problem)
-    categorized, categorize_problem = _categorize(session, plan)
+    with timed(plan.provider_key, "categorize"):
+        categorized, categorize_problem = _categorize(session, plan)
     categorized += report.auto.categorized
     if categorize_problem is not None:
         problems.append(categorize_problem)
@@ -478,6 +485,8 @@ def _finish(
 
 
 def _fetch_failure(exc: Exception) -> tuple[SyncStatus, str]:
+    if isinstance(exc, SyncCancelled):
+        return SyncStatus.cancelled, str(exc)
     if isinstance(exc, NeedsUserAction):
         return SyncStatus.needs_user_action, _clip(str(exc)) or "the connector needs you"
     if isinstance(exc, VaultLocked):

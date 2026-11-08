@@ -1,7 +1,7 @@
-{# The Bank sync status: the Sync all button, the status region with a line per provider and the
-   unlock form, and the question form. The region polls itself while a job runs. The question sits
-   outside it and is replaced only when the question changes, so a poll never wipes an answer being
-   typed. See routes/settings_providers.py and web/sync_runner.py. #}
+{# The Bank sync status: the Sync all button, the status region with a line per provider, the Cancel
+   button and the unlock form, and the question slot. The region polls itself while a job runs. The
+   slot sits outside it and is replaced only when its question or notice changes, so a poll never
+   wipes an answer being typed. See routes/settings_providers.py and web/sync_runner.py. #}
 {% from "components/button.html" import button %}
 {% from "components/password_field.html" import password_field %}
 {% from "settings/parts.html" import step_error %}
@@ -30,11 +30,16 @@
 {%- endmacro %}
 
 {# The status region. It polls its own state every two seconds while a job runs, and stops once the
-   job has finished. shown names the question the page already shows, so the poll can tell whether
-   the question form must be sent again. #}
+   job has finished. shown names the question or notice the page already shows, so the poll can
+   tell whether the slot must be sent again. #}
 {% macro sync_region(status, notice="", unlock_scope=none, unlock_message="") -%}
-<section id="sync-status" aria-live="polite" aria-labelledby="sync-status-title" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs"{% if status.running %} hx-get="/settings/providers/sync/status?shown={{ status.question_number }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
-  <h2 id="sync-status-title" class="text-base font-medium text-primary">Sync status</h2>
+<section id="sync-status" aria-live="polite" aria-labelledby="sync-status-title" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs"{% if status.running %} hx-get="/settings/providers/sync/status?shown={{ status.shown_number }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h2 id="sync-status-title" class="text-base font-medium text-primary">Sync status</h2>
+    {%- if status.running %}
+    {{ button("Cancelling…" if status.cancelling else "Cancel sync", variant="outline", size="sm", icon="x", disabled=status.cancelling, attrs={"hx-post": "/settings/providers/sync/cancel", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
+    {%- endif %}
+  </div>
   <p class="text-sm text-primary">{{ status.headline }} <span class="text-secondary">Each bank opens a Chrome window while it syncs. Keep that window open until its sync finishes.</span></p>
   {%- if unlock_scope is not none %}
   {{ sync_unlock(unlock_scope, unlock_message) }}
@@ -73,10 +78,20 @@
 {%- endif %}
 {%- endmacro %}
 
-{# The question a connector asked, such as for an MFA code. A secret answer is a password field. The
-   container is swapped out of band, so the region can be replaced without touching it. #}
-{% macro sync_question(question, oob=false) -%}
+{# The question a connector asked, such as for an MFA code, or the notice it shows in its place, such
+   as a QR to scan. A secret answer is a password field. The container is swapped out of band, so the
+   region can be replaced without touching it. #}
+{% macro sync_question(question, notice=none, oob=false) -%}
 <div id="sync-question"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {%- if question is none and notice is not none %}
+  <section class="flex flex-col items-center gap-3 rounded-xl bg-container p-5 text-center shadow-border-xs" aria-label="{{ notice.provider_key }} needs you">
+    <p class="text-sm font-medium text-primary">{{ notice.text }}</p>
+    {%- if notice.image %}
+    <img src="{{ notice.image }}" alt="QR code to scan with your phone" width="200" height="200" class="rounded-lg bg-white p-2" style="image-rendering: pixelated">
+    {%- endif %}
+    <p class="text-xs text-secondary">The sync goes on by itself once you approve.</p>
+  </section>
+  {%- endif %}
   {%- if question is not none %}
   <form id="sync-answer-form" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" hx-post="/settings/providers/sync/answer" hx-target="#sync-status" hx-swap="outerHTML"{% if question.digits %} data-controller="auto-submit" data-auto-submit-length-value="{{ question.digits }}" data-action="htmx:afterRequest->auto-submit#done"{% endif %}>
     <label class="form-field">

@@ -19,8 +19,10 @@ below.
 Close Chrome windows already using omsync's profile. The connector starts or attaches to
 Chrome with that dedicated profile. Sync from the Bank sync page with Sync all or a provider's
 Sync button, or run sync in the terminal. Either one asks for the master password, and any
-institution verification code is asked on the page or in the terminal. Replace `example` with
-the provider key:
+institution verification code is asked on the page or in the terminal. When Chase asks you to
+approve in its app instead, the page shows its QR: scan it with your phone and approve, and the
+sync goes on. In the terminal, scan the QR in the Chrome window. Cancel sync on the page stops a
+running sync, or Sync all. Replace `example` with the provider key:
 
 ```sh
 uv run omsync sync example --email you@example.com

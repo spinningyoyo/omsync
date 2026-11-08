@@ -20,10 +20,18 @@ from omsync.ledger.sync_models import SyncRun, SyncStatus
 
 
 class TyperPrompt:
-    """Asks you in the terminal. A secret answer is not echoed as it is typed."""
+    """Asks you in the terminal. A secret answer is not echoed as it is typed. A QR stays in the
+    bank's Chrome window, and Ctrl-C stops a sync, so there is no cancel."""
 
     def ask(self, question: str, *, secret: bool = False, digits: int | None = None) -> str:
         return typer.prompt(question, hide_input=secret)
+
+    def show(self, message: str, *, image: str | None = None) -> None:
+        if message:
+            typer.echo(f"{message} The QR is in the Chrome window." if image else message)
+
+    def cancelled(self) -> bool:
+        return False
 
 
 def make_vault(settings: Settings) -> Vault:

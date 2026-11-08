@@ -21,6 +21,7 @@ class SyncStatus(StrEnum):
     succeeded = "succeeded"
     failed = "failed"
     needs_user_action = "needs_user_action"
+    cancelled = "cancelled"
 
 
 class SyncRun(Base):

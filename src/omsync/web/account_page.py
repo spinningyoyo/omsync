@@ -27,6 +27,7 @@ SYNC_STATUS: dict[SyncStatus, tuple[str, str]] = {
     SyncStatus.succeeded: ("Succeeded", "green"),
     SyncStatus.failed: ("Failed", "red"),
     SyncStatus.needs_user_action: ("Needs you", "amber"),
+    SyncStatus.cancelled: ("Cancelled", "gray"),
 }
 
 

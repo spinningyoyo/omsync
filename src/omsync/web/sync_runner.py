@@ -1,6 +1,8 @@
 """Syncs started from the Bank sync page. Each job runs in a background thread of the server
 process, one job at a time, and shares the sync lock with the CLI. When a connector asks a
 question, such as for an MFA code, the question waits on the page for an answer, or for a timeout.
+A connector can also show a notice, such as a QR to scan, and a job can be cancelled: the bank in
+progress stops at its next step, and no later bank starts.
 
 Job state lives in memory and is lost when the server restarts; the sync log keeps the outcome of
 every sync. An answer is handed to the connector and is never stored, logged, or shown again.
@@ -15,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from omsync.core.settings import Settings
 from omsync.core.vault import Vault
-from omsync.ingest.connectors.base import ConnectorError
+from omsync.ingest.connectors.base import ConnectorError, SyncCancelled
 from omsync.ingest.discovery import mask_account_numbers
 from omsync.ingest.pipeline import ImportReport
 from omsync.ingest.sync import ProviderSync, SyncBusy, SyncResult, sync_all, sync_provider
@@ -29,6 +31,7 @@ ANSWER_LIMIT = 200
 BUSY_MESSAGE = "Another sync is running in a terminal. Try again when it finishes."
 ALREADY_RUNNING = "A sync is already running. Wait for it to finish."
 NO_QUESTION = "No question is waiting for an answer."
+NOT_RUNNING = "No sync is running."
 EMPTY_ANSWER = "Type the answer first."
 LONG_ANSWER = f"The answer is longer than {ANSWER_LIMIT} characters."
 
@@ -54,6 +57,7 @@ class ProviderPhase(StrEnum):
     succeeded = "succeeded"
     failed = "failed"
     needs_action = "needs_action"
+    cancelled = "cancelled"
 
 
 @dataclass(frozen=True)
@@ -63,6 +67,18 @@ class Question:
     text: str
     secret: bool
     digits: int | None  # the digits of a one-time code, so the page can send it once complete
+
+
+@dataclass(frozen=True)
+class Notice:
+    """A message a connector shows that needs no answer, such as what to do on your phone. image
+    is a data:image URL, such as a QR to scan. number is shared with questions, so a poll can tell
+    whether what the page shows has changed."""
+
+    number: int
+    provider_key: str
+    text: str
+    image: str | None
 
 
 @dataclass(frozen=True)
@@ -88,6 +104,8 @@ class JobView:
     phase: JobPhase
     providers: tuple[ProviderProgress, ...]
     question: Question | None
+    notice: Notice | None = None
+    cancelling: bool = False  # cancel was asked and the job has not ended yet
 
 
 @dataclass
@@ -104,12 +122,15 @@ class _Job:
     phase: JobPhase = JobPhase.running
     current: str | None = None
     pending: _Pending | None = None
+    notice: Notice | None = None
+    cancel: threading.Event = field(default_factory=threading.Event)
 
 
 class WebPrompt:
     """The Prompt of a web sync. ask() puts the question on the page and blocks the worker until
-    it is answered or the timeout passes. A timeout returns "", which a connector reports as no
-    code entered, so the provider ends as needing you."""
+    it is answered, the job is cancelled, or the timeout passes. A timeout returns "", which a
+    connector reports as no code entered, so the provider ends as needing you. show() puts a notice
+    in the question's place."""
 
     def __init__(self, runner: "SyncRunner", job: _Job, timeout: float) -> None:
         self._runner = runner
@@ -119,7 +140,16 @@ class WebPrompt:
     def ask(self, question: str, *, secret: bool = False, digits: int | None = None) -> str:
         pending = self._runner._open_question(self._job, question, secret, digits)
         pending.event.wait(self._timeout)
-        return self._runner._close_question(self._job, pending)
+        answer = self._runner._close_question(self._job, pending)
+        if self.cancelled():
+            raise SyncCancelled
+        return answer
+
+    def show(self, message: str, *, image: str | None = None) -> None:
+        self._runner._show(self._job, message, image)
+
+    def cancelled(self) -> bool:
+        return self._job.cancel.is_set()
 
 
 class SyncRunner:
@@ -140,7 +170,7 @@ class SyncRunner:
         self._prompt_timeout = prompt_timeout
         self._lock = threading.Lock()
         self._job: _Job | None = None
-        self._questions = 0
+        self._questions = 0  # questions and notices, so each has its own number
 
     def start(self, scope: str, provider_keys: list[str]) -> None:
         """Start a job that syncs the providers, in this order, as scope (ALL or one key). Returns
@@ -172,23 +202,41 @@ class SyncRunner:
             pending.answer = value
             pending.event.set()
 
+    def cancel(self) -> None:
+        """Cancel the running job. A question waiting for an answer stops waiting, the bank in
+        progress stops at its next step, and no later bank starts. Raises SyncRefused when no job
+        runs."""
+        with self._lock:
+            job = self._job
+            if job is None or job.phase is not JobPhase.running:
+                raise SyncRefused(NOT_RUNNING)
+            job.cancel.set()
+            job.notice = None
+            if job.pending is not None:
+                job.pending.event.set()
+
     def view(self) -> JobView:
         with self._lock:
             job = self._job
             if job is None:
                 return JobView(scope="", phase=JobPhase.idle, providers=(), question=None)
             pending = self._waiting_question()
+            running = job.phase is JobPhase.running
             return JobView(
                 scope=job.scope,
                 phase=job.phase,
                 providers=tuple(job.providers.values()),
-                question=pending.question if pending is not None else None,
+                question=pending.question if pending is not None and running else None,
+                notice=job.notice,
+                cancelling=running and job.cancel.is_set(),
             )
 
     def _waiting_question(self) -> _Pending | None:
         """The unanswered question of the running job, if any. Call with the lock held."""
         job = self._job
         if job is None or job.pending is None or job.pending.answer is not None:
+            return None
+        if job.cancel.is_set():
             return None
         return job.pending
 
@@ -218,6 +266,8 @@ class SyncRunner:
                     close_on_failure=close_on_failure,
                 )
                 self._progress(job, job.scope, ProviderSync(job.scope, result, None))
+            if job.cancel.is_set():
+                self._cancel_unstarted(job)
         except SyncBusy:
             self._fail_unfinished(job, BUSY_MESSAGE)
         except ConnectorError as exc:
@@ -230,6 +280,7 @@ class SyncRunner:
             with self._lock:
                 job.phase = JobPhase.finished
                 job.pending = None
+                job.notice = None
                 job.current = None
 
     def _progress(self, job: _Job, key: str, outcome: ProviderSync | None) -> None:
@@ -251,14 +302,36 @@ class SyncRunner:
                 ):
                     _update(job, key, phase=ProviderPhase.failed, message=message)
 
+    def _cancel_unstarted(self, job: _Job) -> None:
+        """Mark the providers a cancelled job never reached."""
+        with self._lock:
+            for key, progress in job.providers.items():
+                if progress.phase is ProviderPhase.queued:
+                    _update(job, key, phase=ProviderPhase.cancelled)
+
     def _open_question(self, job: _Job, text: str, secret: bool, digits: int | None) -> _Pending:
         with self._lock:
             self._questions += 1
             key = job.current or job.scope
             pending = _Pending(Question(self._questions, key, text, secret, digits))
             job.pending = pending
+            job.notice = None
+            if job.cancel.is_set():
+                pending.event.set()  # cancelled already: the question returns at once
             _update(job, key, phase=ProviderPhase.waiting)
             return pending
+
+    def _show(self, job: _Job, text: str, image: str | None) -> None:
+        with self._lock:
+            key = job.current or job.scope
+            if not text or job.cancel.is_set():
+                if job.notice is not None:
+                    job.notice = None
+                    _update(job, key, phase=ProviderPhase.running)
+                return
+            self._questions += 1
+            job.notice = Notice(self._questions, key, text, image)
+            _update(job, key, phase=ProviderPhase.waiting)
 
     def _close_question(self, job: _Job, pending: _Pending) -> str:
         with self._lock:
@@ -284,6 +357,8 @@ def _outcome_fields(outcome: ProviderSync) -> dict[str, object]:
     fields = _result_fields(result)
     if result.status is SyncStatus.succeeded:
         return {"phase": ProviderPhase.succeeded, "message": None, **fields}
+    if result.status is SyncStatus.cancelled:
+        return {"phase": ProviderPhase.cancelled, "message": None, **fields}
     if result.status is SyncStatus.needs_user_action:
         phase = ProviderPhase.needs_action
         fallback = "the bank needs you; sync again"

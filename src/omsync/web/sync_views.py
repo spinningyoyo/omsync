@@ -1,5 +1,6 @@
 """View data for the Bank sync status region: its headline, one line per provider, and the question
-waiting for an answer. Nothing here reads the database or the vault."""
+waiting for an answer or the notice shown in its place. Nothing here reads the database or the
+vault."""
 
 from dataclasses import dataclass
 
@@ -7,6 +8,7 @@ from omsync.web.sync_runner import (
     ALL,
     JobPhase,
     JobView,
+    Notice,
     ProviderPhase,
     ProviderProgress,
     Question,
@@ -15,10 +17,11 @@ from omsync.web.sync_runner import (
 LABELS: dict[ProviderPhase, str] = {
     ProviderPhase.queued: "Queued",
     ProviderPhase.running: "Running",
-    ProviderPhase.waiting: "Waiting for your answer",
+    ProviderPhase.waiting: "Waiting for you",
     ProviderPhase.succeeded: "Succeeded",
     ProviderPhase.failed: "Failed",
     ProviderPhase.needs_action: "Needs you",
+    ProviderPhase.cancelled: "Cancelled",
 }
 TONES: dict[ProviderPhase, str] = {
     ProviderPhase.queued: "text-secondary",
@@ -27,6 +30,7 @@ TONES: dict[ProviderPhase, str] = {
     ProviderPhase.succeeded: "text-success",
     ProviderPhase.failed: "text-destructive",
     ProviderPhase.needs_action: "text-destructive",
+    ProviderPhase.cancelled: "text-secondary",
 }
 
 
@@ -42,32 +46,44 @@ class ProviderLineView:
 @dataclass(frozen=True)
 class SyncStatusView:
     running: bool
+    cancelling: bool
     headline: str
     lines: list[ProviderLineView]
     question: Question | None
-    question_number: int  # 0 when no question waits; a poll reports the one it shows
+    notice: Notice | None
+    shown_number: int  # the question's or notice's, 0 for neither; a poll reports what it shows
 
 
 def sync_status_view(view: JobView) -> SyncStatusView:
+    shown = view.question or view.notice
     return SyncStatusView(
         running=view.phase is JobPhase.running,
+        cancelling=view.cancelling,
         headline=_headline(view),
         lines=[_line(progress) for progress in view.providers],
         question=view.question,
-        question_number=view.question.number if view.question is not None else 0,
+        notice=view.notice,
+        shown_number=shown.number if shown is not None else 0,
     )
 
 
 def _headline(view: JobView) -> str:
     if view.phase is JobPhase.idle:
         return "No sync has run from this page yet."
+    if view.cancelling:
+        return "Cancelling. The bank in progress stops at its next step."
     if view.phase is JobPhase.running:
         target = "every enabled provider" if view.scope == ALL else view.scope
         return f"Syncing {target}."
+    ended = (
+        "Cancelled."
+        if any(item.phase is ProviderPhase.cancelled for item in view.providers)
+        else "Finished."
+    )
     if view.scope != ALL:
-        return "Finished."
+        return ended
     succeeded = sum(1 for item in view.providers if item.phase is ProviderPhase.succeeded)
-    return f"Finished. {succeeded} of {len(view.providers)} succeeded."
+    return f"{ended} {succeeded} of {len(view.providers)} succeeded."
 
 
 def _line(progress: ProviderProgress) -> ProviderLineView:
@@ -100,5 +116,5 @@ def _detail(progress: ProviderProgress) -> str:
             message += f" Imported the rest: created {progress.created}, joined {progress.joined}."
         return message
     if progress.phase is ProviderPhase.waiting:
-        return "Answer the question below."
+        return "See below."
     return ""

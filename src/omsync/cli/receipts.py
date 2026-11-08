@@ -102,6 +102,13 @@ class EnterPrompt:
     def ask(self, question: str, *, secret: bool = False, digits: int | None = None) -> str:
         return typer.prompt(question, default="", show_default=False, prompt_suffix=" ")
 
+    def show(self, message: str, *, image: str | None = None) -> None:
+        if message:
+            typer.echo(message)
+
+    def cancelled(self) -> bool:
+        return False
+
 
 @fetch_app.command("costco")
 def fetch_costco(

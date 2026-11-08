@@ -24,6 +24,14 @@ class NeedsUserAction(ConnectorError):
     """A connector needs you: an MFA code was rejected, or a login has expired."""
 
 
+class SyncCancelled(ConnectorError):
+    """You cancelled the sync. The connector stops at its next step, closes its browser, and keeps
+    nothing it fetched."""
+
+    def __init__(self) -> None:
+        super().__init__("you cancelled the sync")
+
+
 class PartialFetch(ConnectorError):
     """A fetch that got files for some accounts and not for others. files are what it got, already
     stored. The message says which accounts failed, and never holds the bank's own text."""
@@ -34,12 +42,22 @@ class PartialFetch(ConnectorError):
 
 
 class Prompt(Protocol):
-    """Asks you a question while a sync runs, such as for an MFA code."""
+    """How a sync reaches you while it runs: a question, such as for an MFA code, a message, such
+    as a QR to scan, and whether you cancelled."""
 
     def ask(self, question: str, *, secret: bool = False, digits: int | None = None) -> str:
         """Return your answer. With secret=True, the answer is not echoed as you type it. digits is
         the number of digits a one-time code has, when that is known, so a screen can send the
-        answer as soon as it is complete."""
+        answer as soon as it is complete. Raises SyncCancelled when you cancel while it waits."""
+        ...
+
+    def show(self, message: str, *, image: str | None = None) -> None:
+        """Show a message that needs no answer, such as what to do on your phone, until the next
+        show or ask. image is a data: URL, such as a QR to scan. An empty message hides it."""
+        ...
+
+    def cancelled(self) -> bool:
+        """Whether you asked to cancel the sync. A connector checks it between steps."""
         ...
 
 

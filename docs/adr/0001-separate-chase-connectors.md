@@ -56,6 +56,16 @@ bank.
 Rejected because the observed requirement belongs to the business flow. Keeping it there avoids
 changing a working personal flow without evidence.
 
+Revised on 2026-11-05: a live trace showed Chase's site sends the field on personal card downloads
+too, and the personal connector was already repeating it from the site's request. Once that request
+was no longer captured, every card request sends the field. The two connectors stay separate.
+
+Revised on 2026-11-07: a live trace showed Chase Business moved to personal's identity check, the
+`confirmIdentity` screens, where it offers a code by text or call and asks for no password again.
+The check moved into the shared base class. Business still follows its older `simplerAuthOptions`
+screen when Chase shows it. That choice is between two Business screens, made from the screen on
+the page, not a guess between personal and Business, so the connectors stay separate.
+
 ## Consequences
 
 - Authentication and request behavior are deterministic from the configured connector.

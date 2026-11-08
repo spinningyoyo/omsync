@@ -1,7 +1,6 @@
-"""Chrome sessions, page requests, waits, and completed-download detection."""
+"""Chrome sessions, page requests, and waits."""
 
 import contextlib
-import json
 import platform
 import socket
 import subprocess
@@ -13,8 +12,6 @@ from typing import Any, ClassVar
 
 from selenium import webdriver
 from selenium.common.exceptions import (
-    NoSuchElementException,
-    TimeoutException,
     WebDriverException,
 )
 from selenium.webdriver.chrome.options import Options
@@ -29,9 +26,6 @@ from omsync.ingest.connectors.base import ConnectorError
 BROWSER_MODES = ("chrome", "chrome-headless", "chrome-attach", "chrome-manual")
 ATTACH_PORT = 9222
 ATTACH_ADDRESS = f"127.0.0.1:{ATTACH_PORT}"
-DOWNLOAD_TIMEOUT = 10  # seconds to wait for a finished download
-DOWNLOAD_POLL = 1  # seconds between checks of the download folder
-PARTIAL_DOWNLOAD_SUFFIX = ".crdownload"  # Chrome's name for a download still in progress
 
 
 class BrowserError(ConnectorError):
@@ -91,9 +85,6 @@ class BrowserSession:
                 chrome_options.add_argument("--headless")
             if useragent:
                 chrome_options.add_argument(f"--user-agent={useragent}")
-            chrome_options.set_capability(
-                "goog:loggingPrefs", {"browser": "ALL", "performance": "ALL"}
-            )
             prefs = {
                 "download.default_directory": str(download_dir),
                 "credentials_enable_service": False,
@@ -283,11 +274,6 @@ class BrowserSession:
         self.wait_for_ajax_load()
         return field
 
-    def set_element_attribute(self, webelement: Any, attribute: str, value: str) -> None:
-        element = self.wait().until(EC.element_to_be_clickable(webelement))
-        self.driver.execute_script(f"arguments[0].setAttribute('{attribute}', '{value}')", element)
-        self.wait().until(EC.text_to_be_present_in_element_attribute(webelement, attribute, value))
-
     def click_element(self, webelement: Any, timeout: float = 10) -> Any:
         """Click an element when it is clickable, then wait for the page to finish loading."""
         element = self.wait(timeout).until(EC.element_to_be_clickable(webelement))
@@ -308,35 +294,12 @@ class BrowserSession:
         items = element.find_elements(*by_value)
         return element, items
 
-    def wait_for_page_load(self, element_old_page: Any, timeout: float = 10) -> bool:
-        """Wait until the old page's element goes stale. False if the page did not change."""
-        try:
-            self.wait(timeout).until(EC.staleness_of(element_old_page))
-            return True
-        except NoSuchElementException:
-            return True
-        except TimeoutException:
-            return False
-
-    def get_logs(self, events: list[str] | None = None) -> list[dict[str, Any]]:
-        """Chrome performance log entries whose messages mention one of the event names."""
-        if events is None:
-            events = ["Network.response", "Network.request", "Network.webSocket"]
-        logs = self.driver.get_log("performance")  # reading the log also clears it
-        return [
-            json.loads(log["message"])
-            for log in logs
-            if any(event in log["message"] for event in events)
-        ]
-
-    def xhr_get_url(self, url: str) -> str:
-        """A synchronous GET inside the browser, so the bank's cookies and session apply."""
-        script = (
-            "var xhr = new XMLHttpRequest(); var dl_response = null; "
-            f'xhr.open("GET", "{url}", false); xhr.send(null); '
-            "dl_response = xhr.response; return dl_response;"
+    def page_has(self, css: str) -> bool:
+        """Whether the page has an element now. A script, because a find waits the implicit wait
+        for an element that is not there, and this is asked many times a second."""
+        return self.driver.execute_script(
+            "return document.querySelector(arguments[0]) !== null", css
         )
-        return self.driver.execute_script(script)
 
     def xhr_request(
         self, method: str, url: str, body: str | None = None, headers: dict[str, str] | None = None
@@ -352,72 +315,7 @@ class BrowserSession:
         )
         return self.driver.execute_script(script, method, url, body, headers or {})
 
-    def xhr_post_urlencoded(
-        self, url: str, data: Any, headers: dict[str, str] | None = None
-    ) -> str:
-        """A synchronous POST inside the browser. Returns the response text."""
-        if not isinstance(data, str):
-            data = urllib.parse.urlencode(data)
-        request_headers = dict(headers or {})
-        if not any(key.lower() == "content-type" for key in request_headers):
-            request_headers["Content-type"] = "application/x-www-form-urlencoded"
-        script = "var xhr = new XMLHttpRequest(); var dl_response = null; "
-        script += f'xhr.open("POST", "{url}", false); '
-        for key, value in request_headers.items():
-            script += f'xhr.setRequestHeader("{key}", "{value}"); '
-        script += f'xhr.send("{data}"); '
-        script += (
-            "dl_response = { resp: xhr.response, respText: xhr.responseText, "
-            "status: xhr.status, headers: xhr.getAllResponseHeaders() }; "
-            "return JSON.stringify(dl_response);"
-        )
-        result = json.loads(self.driver.execute_script(script))
-        return result["respText"]
-
-    def download_file(
-        self,
-        trigger: Callable[[], object],
-        *,
-        timeout: float | None = None,
-        polling_interval: float = DOWNLOAD_POLL,
-    ) -> Path | None:
-        """Run trigger, which starts a download, then wait for a finished file to appear.
-
-        Snapshot the folder before triggering: a fast download could finish before the next
-        listing. Partial .crdownload files are ignored until Chrome renames them. A file that
-        was there already counts when it is rewritten, because Chrome saves a download over an
-        earlier one of the same name. Returns the newest new or rewritten file, or None if none
-        finished before the timeout.
-        """
-        folder = self.scratch_dir()
-        wait_for = DOWNLOAD_TIMEOUT if timeout is None else timeout
-        before = {path: _fingerprint(path) for path in folder.iterdir()}
-        trigger()
-        deadline = time.time() + wait_for
-        while True:
-            new = [
-                path
-                for path in folder.iterdir()
-                if path.is_file()
-                and not path.name.endswith(PARTIAL_DOWNLOAD_SUFFIX)
-                and before.get(path) != _fingerprint(path)
-            ]
-            if new:
-                return max(new, key=lambda path: path.stat().st_mtime)
-            if time.time() >= deadline:
-                return None
-            time.sleep(polling_interval)
-
     def base_url(self) -> str:
         """The scheme and host of the current page."""
         parse = urllib.parse.urlparse(self.driver.current_url)
         return f"{parse.scheme}://{parse.netloc}"
-
-
-def _fingerprint(path: Path) -> tuple[int, int] | None:
-    """When a file was last written and how big it is, or None if it is gone."""
-    try:
-        stat = path.stat()
-    except FileNotFoundError:
-        return None
-    return stat.st_mtime_ns, stat.st_size

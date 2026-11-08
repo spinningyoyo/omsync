@@ -19,6 +19,10 @@ choices. Code expresses implementation. Operating guides explain how to use the 
 
 - [Statement import](architecture/import.md)
 - [Sync and connectors](architecture/sync.md)
+- [Reconstructing bank requests](architecture/bank-requests/README.md) — how a download's request is
+  traced and proven, with findings for [Bank of America](architecture/bank-requests/boa.md),
+  [Fidelity Rewards](architecture/bank-requests/fidelity.md), [Chase](architecture/bank-requests/chase.md),
+  and [Citi](architecture/bank-requests/citi.md).
 - [Receipts](architecture/receipts.md)
 - [Transactions](architecture/transactions.md)
 - [Categories and keywords](architecture/categories.md)
@@ -41,7 +45,7 @@ choices. Code expresses implementation. Operating guides explain how to use the 
 | --- | --- |
 | `core/` | [system](architecture/system.md); `batches.py` [changes](architecture/changes.md); `vault.py`, `sessions.py` [access](architecture/access.md); `settings.py` [settings](architecture/settings.md); `backups.py`, `recovery.py` [backups](architecture/backups.md) |
 | `demo/` | [access](architecture/access.md#demo-mode) (demo mode); [system](architecture/system.md) |
-| `ingest/` | [import](architecture/import.md); `sync.py`, `providers.py`, `connectors/` [sync](architecture/sync.md) |
+| `ingest/` | [import](architecture/import.md); `sync.py`, `providers.py`, `connectors/` [sync](architecture/sync.md), [bank requests](architecture/bank-requests/README.md) |
 | `ledger/` | [ledger](architecture/ledger.md), [transactions](architecture/transactions.md), [categories](architecture/categories.md), [accounts](architecture/accounts.md); `contacts.py`, `other_side.py` [contacts](architecture/contacts.md) |
 | `reconcile/` | [reconciliation](architecture/reconciliation.md) |
 | `receipts/` | [receipts](architecture/receipts.md) |

@@ -122,6 +122,17 @@ def sync_answer_route(
     return _sync_reply(request, db)
 
 
+@router.post(f"{PATH}/sync/cancel", response_class=HTMLResponse)
+def sync_cancel_route(request: Request, db: DbSession) -> HTMLResponse:
+    """Cancel the running sync, one provider's or Sync all. The region keeps polling until the bank
+    in progress has stopped."""
+    try:
+        request.app.state.sync_runner.cancel()
+    except SyncRefused as exc:
+        return _sync_reply(request, db, status=422, notice=exc.message)
+    return _sync_reply(request, db)
+
+
 # Editing a provider: its vault login and its accounts
 
 
@@ -373,9 +384,10 @@ def _sync_reply(
     poll: bool = False,
     shown: int = 0,
 ) -> HTMLResponse:
-    """The status region. While a job runs, a poll sends only the region and, when the question
-    changed, the question form, so the buttons and the list are not redrawn each time. Otherwise the
-    buttons and the provider list go out of band too, so they show the job's state."""
+    """The status region. While a job runs, a poll sends only the region and, when the question or
+    notice changed, the question slot, so the buttons and the list are not redrawn each time.
+    Otherwise the buttons and the provider list go out of band too, so they show the job's
+    state."""
     sync = sync_status_view(request.app.state.sync_runner.view())
     controls = not (poll and sync.running)
     return _fragment(
@@ -386,7 +398,7 @@ def _sync_reply(
         notice=notice,
         unlock_scope=unlock_scope,
         unlock_message=unlock_message,
-        include_question=not poll or shown != sync.question_number,
+        include_question=not poll or shown != sync.shown_number,
         groups=_group_views(request, db) if controls else None,
     )
 

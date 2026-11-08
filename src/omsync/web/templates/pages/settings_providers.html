@@ -20,6 +20,6 @@
 {{ close_on_failure_control(close_on_failure) }}
 {{ sync_region(sync) }}
 <section id="link-accounts" aria-live="polite" class="rounded-xl bg-container p-6 shadow-border-xs empty:hidden"></section>
-{{ sync_question(sync.question) }}
+{{ sync_question(sync.question, sync.notice) }}
 {{ provider_list(groups) }}
 {% endblock %}

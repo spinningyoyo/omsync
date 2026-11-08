@@ -1,4 +1,4 @@
-"""Shared institution sign-in hooks and completed-download storage.
+"""Shared institution sign-in hooks and fetched-statement storage.
 
 Subclasses register themselves; keeping this base unregistered avoids a registry import cycle.
 """
@@ -10,10 +10,12 @@ import tempfile
 import time
 from dataclasses import dataclass
 from datetime import date, datetime
+from enum import StrEnum
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
-from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.common.exceptions import JavascriptException, TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 
 from omsync.core.settings import load_settings
@@ -26,11 +28,29 @@ from omsync.ingest.connectors.base import (
     NeedsUserAction,
     PartialFetch,
     Prompt,
+    SyncCancelled,
 )
+from omsync.ingest.timing import timed
 
-STEP_PAUSE = 3
+SIGN_IN_TIMEOUT = 60  # seconds for the bank to answer a sign-in or a code
+APPROVAL_TIMEOUT = 300  # seconds for the person to approve a sign-in in the bank's app
+APPROVAL_GONE = 15  # seconds the approval screen may be gone, signed out, before the wait ends
+SIGN_IN_POLL = 0.25  # seconds between looks at the page
+# Seconds between asks for the account list while signing in, and before the first. Signed in means
+# the bank answers it: see docs/architecture/sync.md, "Signing in".
+LIST_ASK_INTERVAL = 5
+CODE_FAILED_TIMEOUT = 15  # seconds to see whether a code that hit an error was taken anyway
+NOT_A_STATEMENT = "the bank answered with something other than a statement"
 FOLDER_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")  # the drop folder's naming rule
 logger = logging.getLogger(__name__)
+
+
+class Check(StrEnum):
+    """How the bank checks it is you, once a connector has asked it to: a code to type, or an
+    approval in the bank's app, such as after scanning a QR."""
+
+    code = "code"
+    approval = "approval"
 
 
 def _web_address(uri: str, display_name: str) -> str:
@@ -82,6 +102,16 @@ def folder_for(account: ConnectorAccount) -> str:
 
 
 @dataclass(frozen=True)
+class SiteAccount:
+    """An account as a bank's site lists it. key is what the bank's requests call it. kind is the
+    bank's own type code, for a bank whose requests differ by it."""
+
+    last4: str
+    key: str
+    kind: str = ""
+
+
+@dataclass(frozen=True)
 class Download:
     """A finished file in the fetch's scratch directory, and where it is kept under statements/."""
 
@@ -103,14 +133,14 @@ class BankConnector(BrowserSession):
     username_id: str = ""
     password_id: str = ""
     login_id: str = ""
-    frame: str = ""
-    url_auth: str = ""
-    url_security: str = ""
-    search_by: str = By.ID
     browser_mode: str = "chrome-attach"
     # How many digits the bank's one-time code has. A connector declares it when it is not 6, so
     # the Bank sync page sends the code once that many digits are entered.
     code_digits: int = 6
+    statement_suffix: str = ".ofx"
+    # How long the bank's code request must stay on the page before it counts, for a bank whose
+    # request looks like an ordinary page while the signed-in page is still loading.
+    mfa_settle: float = 0
 
     def __init__(self) -> None:
         super().__init__()
@@ -123,6 +153,7 @@ class BankConnector(BrowserSession):
         self.fromdate = datetime.now()
         self._downloads: list[Download] = []
         self._skipped: list[str] = []
+        self._listed: list[SiteAccount] | None = None  # the list whose answer meant signed in
 
     @property
     def todate(self) -> datetime:
@@ -162,6 +193,7 @@ class BankConnector(BrowserSession):
         self.fromdate = datetime.combine(period.start, datetime.min.time())
         self._downloads = []
         self._skipped = []
+        self._listed = None
 
         # A fresh scratch directory per fetch. It is deleted when this block ends, after the
         # finished files have been moved into dest.
@@ -171,6 +203,9 @@ class BankConnector(BrowserSession):
             try:
                 self._sign_in_and_download()
                 failed = bool(self._skipped)
+            except SyncCancelled:
+                failed = False  # a cancelled sync always closes its browser
+                raise
             except TimeoutException:
                 raise NeedsUserAction(
                     f"{self.display_name} did not respond in time; sync again"
@@ -208,26 +243,135 @@ class BankConnector(BrowserSession):
         return url
 
     def _sign_in_and_download(self) -> None:
-        self.get_driver(self.browser_mode)
-        self.login()
-        time.sleep(STEP_PAUSE)
-        self.captcha()
-        time.sleep(STEP_PAUSE)
-        if self.request_auth():
-            self.authenticate(self._ask_code())
-            self.close_popup()
-        else:
-            time.sleep(STEP_PAUSE)
-            self.close_popup()
-            time.sleep(STEP_PAUSE)
-        self.get_account_activity()
+        with timed(self.key, "sign-in"):
+            self.get_driver(self.browser_mode)
+            self.login()
+            needs_code = self._await_sign_in(watch_mfa=True)
+        if needs_code:
+            if self.request_auth() is Check.approval:
+                self._await_approval()
+            else:
+                self._enter_code(self._ask_code())
+        with timed(self.key, "download"):
+            self.get_account_activity()
+
+    def _enter_code(self, code: str) -> None:
+        """Enter the code, then let the page say whether it worked. Submitting can navigate the
+        page and raise an error when the code was taken, so an error only shortens the wait."""
+        try:
+            self.authenticate(code)
+            failed = False
+        except WebDriverException:
+            failed = True
+        timeout = CODE_FAILED_TIMEOUT if failed else SIGN_IN_TIMEOUT
+        with timed(self.key, "sign-in after code"):
+            try:
+                self._await_sign_in(watch_mfa=False, timeout=timeout)
+            except NeedsUserAction:
+                if failed:
+                    raise NeedsUserAction(
+                        f"{self.display_name} did not take the code; sync again"
+                    ) from None
+                raise
+
+    def _await_sign_in(self, *, watch_mfa: bool, timeout: float | None = None) -> bool:
+        """Watch until the bank decides. False when the person is signed in, which is when the bank
+        answers the account list, asked every LIST_ASK_INTERVAL seconds. True when the page asks for
+        an identity check and the list is still refused. A page that never gets there, such as one
+        that needs a person, ends this."""
+        now = time.monotonic()
+        deadline = now + (SIGN_IN_TIMEOUT if timeout is None else timeout)
+        next_ask = now + LIST_ASK_INTERVAL
+        asked_since = None
+        while time.monotonic() < deadline:
+            self.stop_if_cancelled()
+            try:
+                self.captcha()
+                if time.monotonic() >= next_ask:
+                    next_ask = time.monotonic() + LIST_ASK_INTERVAL
+                    if self._accounts_listed():
+                        return False
+                if watch_mfa and self.mfa_requested():
+                    asked_since = time.monotonic() if asked_since is None else asked_since
+                    if time.monotonic() - asked_since >= self.mfa_settle:
+                        # A page can look like a check while it is signed in, so the list decides.
+                        if self._accounts_listed():
+                            return False
+                        return True
+                else:
+                    asked_since = None
+            except JavascriptException:
+                pass  # the page navigated while it was being read
+            time.sleep(SIGN_IN_POLL)
+        raise NeedsUserAction(f"{self.display_name} did not finish signing in; sync again")
+
+    def _accounts_listed(self) -> bool:
+        """Ask the bank for the account list. An answer means signed in, and its list is kept for
+        the downloads. A refusal, a failed request, or anything else means not yet."""
+        try:
+            self._listed = self.site_accounts()
+        except SyncCancelled:
+            raise
+        except (ConnectorError, JavascriptException):
+            return False
+        return True
+
+    def _await_approval(self) -> None:
+        """Show the bank's QR and wait until the person approves in the bank's app, which signs the
+        page in. The QR is shown again whenever the bank replaces it. A screen that stays gone
+        without a sign-in means the approval was declined or expired."""
+        prompt = self._the_prompt()
+        deadline = time.monotonic() + APPROVAL_TIMEOUT
+        next_ask = time.monotonic() + LIST_ASK_INTERVAL
+        shown: str | None = None
+        gone_since: float | None = None
+        with timed(self.key, "approval"):
+            try:
+                while time.monotonic() < deadline:
+                    self.stop_if_cancelled()
+                    if time.monotonic() >= next_ask:
+                        next_ask = time.monotonic() + LIST_ASK_INTERVAL
+                        if self._accounts_listed():
+                            return
+                    try:
+                        image = self.approval_image()
+                    except JavascriptException:
+                        image = shown  # the page navigated while it was being read
+                    if image is None:
+                        gone_since = time.monotonic() if gone_since is None else gone_since
+                        if time.monotonic() - gone_since >= APPROVAL_GONE:
+                            raise NeedsUserAction(
+                                f"{self.display_name} did not sign in after the approval "
+                                "screen closed; sync again"
+                            )
+                    else:
+                        gone_since = None
+                        if image != shown:
+                            prompt.show(
+                                f"Scan the QR with your phone, then approve in the "
+                                f"{self.display_name} app.",
+                                image=image,
+                            )
+                            shown = image
+                    time.sleep(SIGN_IN_POLL)
+            finally:
+                prompt.show("")
+        raise NeedsUserAction(f"no approval came in time for {self.display_name}; sync again")
+
+    def stop_if_cancelled(self) -> None:
+        """Raise SyncCancelled when the person cancelled the sync."""
+        if self._prompt is not None and self._prompt.cancelled():
+            raise SyncCancelled
+
+    def _the_prompt(self) -> Prompt:
+        if self._prompt is None:
+            raise RuntimeError("fetch() must set the prompt first")
+        return self._prompt
 
     def _ask_code(self) -> str:
         """Ask for the code the bank sent. A timeout or an empty answer needs the person."""
-        if self._prompt is None:
-            raise RuntimeError("fetch() must set the prompt first")
         try:
-            answer = self._prompt.ask(
+            answer = self._the_prompt().ask(
                 f"Enter the code {self.display_name} sent you",
                 secret=False,
                 digits=self.code_digits,
@@ -246,37 +390,113 @@ class BankConnector(BrowserSession):
             raise RuntimeError("fetch() must load the login first")
         return self._login
 
-    # Hooks. The defaults suit a bank with no captcha, no MFA, and no pop-ups.
+    # Hooks. The defaults suit a bank with no captcha and no MFA. The first two are asked many
+    # times a second, so they only read the page.
 
-    def login(self) -> None:
-        """Automates login using configured credentials and web elements."""
-        self.driver.get(self._sign_in_url)
-        time.sleep(3)  # Wait arbitrary for 3 seconds for webpage to load
-        self.wait_for_ajax_load()
-        if self.frame:
-            self.driver.switch_to.frame(self.frame)
-        credentials = self._credentials()
-        self.send_keys_to_element((self.search_by, self.username_id), credentials.username or "")
-        self.send_keys_to_element((self.search_by, self.password_id), credentials.password)
-        login_button = self.click_element((self.search_by, self.login_id))
-        self.wait_for_page_load(login_button)
+    def mfa_requested(self) -> bool:
+        """Hook: True when the bank is asking how to send a code."""
+        return False
 
     def captcha(self) -> None:
         """Hook for banks that show a CAPTCHA. Raises NeedsUserAction when one is shown."""
 
-    def request_auth(self, timeout: float = 5) -> bool:
-        """Hook: True when the bank is asking for an MFA code, after sending the request."""
-        return False
+    def login(self) -> None:
+        """Automates login using configured credentials and web elements."""
+        self.driver.get(self._sign_in_url)
+        self.wait_for_ajax_load()
+        credentials = self._credentials()
+        self.send_keys_to_element((By.ID, self.username_id), credentials.username or "")
+        self.send_keys_to_element((By.ID, self.password_id), credentials.password)
+        self.click_element((By.ID, self.login_id))
+
+    def request_auth(self) -> Check:
+        """Hook: ask the bank to check it is you, and say how it will: a code it sends, or an
+        approval in its app, whose QR approval_image reads."""
+        return Check.code
+
+    def approval_image(self) -> str | None:
+        """Hook: the QR the bank shows for an approval in its app, as a data:image URL, or None
+        when the page does not show one."""
+        return None
 
     def authenticate(self, code: str) -> None:
         """Hook: type the MFA code and continue."""
 
-    def close_popup(self, timeout: float = 3) -> None:
-        """Hook for modal pop-ups after sign-in."""
+    def site_accounts(self) -> list[SiteAccount]:
+        """Hook: the accounts the bank lists. It is also the sign-in signal: it returns only when
+        the bank answered with its list, and raises NeedsUserAction or ConnectorError otherwise,
+        such as when the bank refuses a session that is not signed in yet."""
+        raise NotImplementedError
+
+    def entries_for(self, last4: str, site_accounts: list[SiteAccount]) -> list[SiteAccount]:
+        """Every entry with these last four digits, which is more than one when a bank lists an
+        account twice. All are fetched: import joins rows that repeat and keeps any that differ."""
+        entries = [entry for entry in site_accounts if entry.last4 == last4]
+        if not entries:
+            raise self.account_not_shown(last4)
+        return entries
+
+    def prepare_downloads(self) -> Any:
+        """Hook: what every download needs, such as a token. It is passed to fetch_statements and
+        not stored, because a registered connector serves repeated syncs."""
+        return None
+
+    def fetch_statements(
+        self, site_account: SiteAccount, account: ConnectorAccount, prepared: Any
+    ) -> list[str]:
+        """Hook: what the bank answered for one entry, one text per statement."""
+        raise NotImplementedError
+
+    def is_statement(self, text: str) -> bool:
+        """Hook: whether an answer is a statement. A failed request can have a success status."""
+        return "<OFX>" in text.upper()
+
+    def failure_reason(self, text: str) -> str:
+        """Hook: why an answer was not a statement, as far as it is safe to show."""
+        return NOT_A_STATEMENT if text.strip() else "the bank returned an empty response"
+
+    def statement_folder(self, account: ConnectorAccount) -> str | None:
+        """Hook: the subfolder for an account's files, when its format does not name the account."""
+        return None
 
     def get_account_activity(self) -> None:
-        """Hook: open each account and keep its statement files."""
-        raise NotImplementedError
+        """Fetch and keep every configured account's statements. An account the site does not list
+        ends the fetch before anything is requested."""
+        if not self._accounts:
+            return
+        site_accounts = self._listed if self._listed is not None else self.site_accounts()
+        wanted = [
+            (account, self.entries_for(site_last4(account), site_accounts))
+            for account in self._accounts
+        ]
+        prepared = self.prepare_downloads()
+        fetched: set[str] = set()
+        for account, entries in wanted:
+            self.stop_if_cancelled()
+            new_entries = [entry for entry in entries if entry.key not in fetched]
+            if new_entries:
+                fetched.update(entry.key for entry in new_entries)
+                self._keep_statements(account, new_entries, prepared)
+
+    def _keep_statements(
+        self, account: ConnectorAccount, entries: list[SiteAccount], prepared: Any
+    ) -> None:
+        last4 = site_last4(account)
+        texts = [
+            text for entry in entries for text in self.fetch_statements(entry, account, prepared)
+        ]
+        if not texts:
+            self.skip_account(last4, "the bank listed no statements")
+        for number, text in enumerate(texts, start=1):
+            if self.is_statement(text):
+                self.keep_text(
+                    text,
+                    stem=self.stem_for(last4, number if len(texts) > 1 else None),
+                    suffix=self.statement_suffix,
+                    subfolder=self.statement_folder(account),
+                )
+            else:
+                self.skip_account(last4, self.failure_reason(text))
 
     # Keeping files.
 
@@ -285,31 +505,12 @@ class BankConnector(BrowserSession):
         fetched and kept, and the sync reports this one as failed."""
         self._skipped.append(f"{self.display_name} gave nothing for ••{last4}: {reason}")
 
-    def keep_file(
-        self, source: Path, *, stem: str, suffix: str, subfolder: str | None = None
-    ) -> None:
-        """Keep a finished download. subfolder is a statement account ID, or None for the top.
-
-        The file is moved aside at once. A bank names every download alike (BoA's is always
-        stmt.csv), and Chrome saves the next one over a file of the same name."""
-        self._check_subfolder(subfolder)
-        kept = self.scratch_dir() / f"download-{len(self._downloads)}{suffix}"
-        source.replace(kept)
-        self._downloads.append(Download(kept, stem, suffix, subfolder))
-
     def keep_text(self, text: str, *, stem: str, suffix: str, subfolder: str | None = None) -> None:
         """Keep text a page returned, such as an XHR response, as a file."""
         self._check_subfolder(subfolder)
         path = self.scratch_dir() / f"response-{len(self._downloads)}{suffix}"
         path.write_text(text, encoding="utf-8")
         self._downloads.append(Download(path, stem, suffix, subfolder))
-
-    def require_download(self, path: Path | None) -> Path:
-        if path is None:
-            raise NeedsUserAction(
-                f"{self.display_name} did not finish a download in time; sync again"
-            )
-        return path
 
     def stem_for(self, last4: str, number: int | None = None) -> str:
         """A file name with the last four digits and the window, never a full account number."""

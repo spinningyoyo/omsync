@@ -31,7 +31,7 @@
 {% from "settings/provider_parts.html" import provider_list %}
 {{ sync_region(sync, notice, unlock_scope, unlock_message) }}
 {%- if include_question %}
-{{ sync_question(sync.question, oob=true) }}
+{{ sync_question(sync.question, sync.notice, oob=true) }}
 {%- endif %}
 {%- if groups is not none %}
 {{ sync_all_control(sync.running, oob=true) }}
