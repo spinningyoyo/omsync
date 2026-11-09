@@ -22,6 +22,7 @@
 {% from "components/brand.html" import wordmark, mascot with context %}
 {% from "components/menu.html" import menu, menu_item, menu_separator with context %}
 {% from "components/pill.html" import pill with context %}
+{% from "components/vault_status.html" import vault_status as vault_status_line %}
 {% from "layouts/shell_parts.html" import nav_item, accounts_panel %}
 {% from "layouts/appearance.html" import scenes, themes %}
 
@@ -51,15 +52,18 @@
 </script>
 {% endblock %}
 
-{# The user menu: the signed-in email, Settings, the scene and theme choices and sign-out. The rail
+{# The user menu: the signed-in email and the vault's status, Settings, the scene and theme choices and sign-out. The rail
    holds one on wide screens and the phone header holds another, so each has its own id. The scene
    choices slide out from a Scene item, and the theme switch is the same as the sign-in page's, in
    the same order (layouts/appearance.html). The scene and theme controllers keep both menus in step. #}
-{% macro user_menu(id, placement, email) -%}
+{% macro user_menu(id, placement, email, vault) -%}
 {% call menu(id=id, label="User menu", placement=placement) %}
 <div class="px-3 pb-1 pt-2">
   <p class="text-xs text-secondary">Signed in as</p>
   <p class="truncate text-sm text-primary">{{ email }}</p>
+  {%- if vault %}
+  <div class="mt-2">{{ vault_status_line(vault, "vault-status-" ~ id, compact=true) }}</div>
+  {%- endif %}
 </div>
 {{ menu_separator() }}
 {{ menu_item("Guides", icon_name="book-open", href="/settings/guides") }}
@@ -150,7 +154,7 @@
     </nav>
 
     <div class="mt-auto mx-auto max-lg:hidden">
-      {{ user_menu("user-menu", "right-end", email) }}
+      {{ user_menu("user-menu", "right-end", email, vault_status) }}
     </div>
   </div>
 
@@ -170,7 +174,7 @@
         {#- On a phone the word would crowd the wordmark, so only the book shows there. #}
         <a href="/settings/guides" class="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg px-2 text-sm font-medium text-primary hover:bg-container-inset-hover focus-ring pointer-coarse:h-11" title="Short walkthroughs of each page">{{ icon("book-open", 16, "text-secondary") }}<span class="max-sm:sr-only">Guides</span></a>
         {{ privacy_toggle() }}
-        <div class="lg:hidden">{{ user_menu("user-menu-mobile", "bottom-end", email) }}</div>
+        <div class="lg:hidden">{{ user_menu("user-menu-mobile", "bottom-end", email, vault_status) }}</div>
       </div>
     </div>
     <div class="flex flex-col gap-6 px-4 pb-10 pt-4 lg:px-6{% if fill_viewport == "2xl" %} fill-viewport-2xl 2xl:pb-4{% elif fill_viewport %} fill-viewport lg:pb-4{% endif %}">

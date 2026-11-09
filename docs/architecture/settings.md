@@ -18,23 +18,31 @@ Configuration cannot widen the loopback bind address. Secrets live in the
 Institutions, accounts, aliases, providers, categories, keywords, rules, contacts, and
 account nicknames live in the database. Browser storage owns device presentation such as
 theme, privacy mode, and accounts-panel geometry. Database presentation preferences own
-shared choices such as joint share, dashboard layout, and whether a failed
-sync closes its browser. These are not competing sources
+shared choices such as joint share and dashboard layout. These are not competing sources
 of financial truth.
 
 ## Bank sync
 
-Bank sync lists each institution by name and logo, with its providers and the accounts they fetch. A
-[provider](sync.md#providers) is a bank login; an institution may have several, and each fetches
-only its own accounts. A provider card shows its bank, its vault login by name while the vault is
-unlocked, its latest sync, and its accounts. Open accounts that no provider fetches are listed under
-their institution as not synced. Statement files for them still import from the institution's folder.
+Bank sync shows its providers as one row of cards, 320 pixels wide, that scrolls sideways, so the
+page does not grow longer as banks are added; the card cut off at the right edge shows there are
+more. A [provider](sync.md#providers) is a bank login; an institution may have several, and each
+fetches only its own accounts. Each provider has its own card: the institution's logo and name with
+the provider key under it, then its method (how it fetches, such as "OFX from the website"), its
+vault login by name while the vault is unlocked, its latest sync, and its accounts. Sync, Edit, Delete and each account's Rename are icons, named on
+hover. Eight accounts show, and a longer list scrolls inside the card. Open accounts that no provider
+fetches get a Not synced card for their institution, after its providers. Statement files for them
+still import from the institution's folder. The Method line leaves out the bank's name, which the
+card's header shows, so each card's details take the same three lines: "OFX from the website". A
+name that goes further than the header's, such as Chase Business under Chase, stays, because it
+says which login the provider uses.
 Logos are bundled files named for institution keys; a business variant such as `chase_business`
 shares its personal institution's logo, and an institution without a file shows its initial. Sync
 all and each card's Sync button start syncs from the page; see [syncing from the web](sync.md#syncing-from-the-web).
 
-Editing a provider changes its vault login and the accounts it fetches. The account choices name
-the provider that already fetches an account, and that account cannot be chosen twice. The bank is
+Editing a provider changes its vault login and the accounts it fetches. The account choices are the
+accounts the provider fetches and the open accounts no provider fetches yet; an account another
+provider fetches is not offered, because a login sees only its own accounts. To move an account,
+untick it on the provider that has it, then tick it on the other. The bank is
 read-only: to use another bank, delete the provider and add one. Deleting keeps the accounts,
 transactions, statement files, and sync history, and only stops syncing. Both are
 [batches](changes.md) that undo reverses, and both are refused while a sync holds the operation lock.
@@ -79,8 +87,8 @@ identifiers and remain private data.
 
 The Categories page lives in Settings, under Transactions, rather than on the icon rail: the user
 shapes categories and keywords once and revisits them occasionally, so they are configuration, not
-daily work. It holds the category table, the keyword lists, rules, the payee tester, triage,
-keyword import, and categorize; their behavior is in [categories](categories.md). The page keeps its
+daily work. It holds the category table, the payee and receipt keyword lists, rules, the payee
+tester, triage, and keyword import; their behavior is in [categories](categories.md). The page keeps its
 long-table layout inside Settings: from xl the tables scroll under their headers beside the
 sub-nav. The old `/categories` address redirects to it.
 

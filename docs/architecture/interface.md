@@ -22,6 +22,18 @@ screens the page scrolls as a whole. Menus open toward the side with room: those
 the content extend right, so they never open under the accounts panel.
 
 Shared components provide buttons, cards, dialogs, menus, tabs, tables, notices, and inputs.
+
+Every page header has the same shape: the title and a line under it that says what the page shows
+in words, and on the right at most three controls, in this order. **Joint accounts** shows My
+half or Full and opens the choice. It is one setting for the whole app, so every page whose
+amounts it changes (Home, Reports, Budget) has the same control, and changing it on one changes
+it on all; it is shown only when an account is joint, and account balances always stay in full.
+The **period** is a button showing the current choice, opening the presets and Custom; Custom's
+two dates appear in one row under the header and apply as soon as both are whole and in order,
+with no Show button. A **⋯ menu** holds the page's actions, such as Print and Export on
+Reports. A page shows only the controls that apply to it, and a new action becomes an item in
+its menu rather than another button, so headers do not grow as features are added.
+
 Day, night, and auto themes use common semantic tokens; auto follows the computer's clock,
 night from 5pm to 7am. The theme is applied before first paint and persists in browser storage.
 The user menu and the sign-in page set the same choice with the same icon buttons and hover

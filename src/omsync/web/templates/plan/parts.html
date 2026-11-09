@@ -11,6 +11,7 @@
 {% from "components/pill.html" import pill with context %}
 {% from "components/toggle.html" import toggle %}
 {% from "layouts/shell_parts.html" import empty_state %}
+{% from "components/view_controls.html" import joint_menu with context %}
 
 {# The toast, with its Undo. The Undo names the page the change came from, so the reply can refresh
    that page's regions. #}
@@ -181,11 +182,14 @@
 <header class="flex flex-col gap-4">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <h1 class="text-2xl font-medium text-primary">Budget</h1>
+    <div class="flex flex-wrap items-center gap-2">
+    {{ joint_menu(page.joint, return_to="/plan/budget/" ~ page.key) }}
     <form method="post" action="/plan/budget/{{ page.key }}/mode" hx-post="/plan/budget/{{ page.key }}/mode" hx-swap="none" class="segmented-control" role="group" aria-label="Budget mode">
       <input type="hidden" name="idempotency_key" value="{{ page.mode_key }}">
       <button type="submit" name="mode" value="flex" class="segmented-control__segment focus-ring{% if page.is_flex %} segmented-control__segment--active{% endif %}" aria-pressed="{{ 'true' if page.is_flex else 'false' }}" title="Budget fixed and non-monthly costs; the rest is one amount to spend">Flex</button>
       <button type="submit" name="mode" value="category" class="segmented-control__segment focus-ring{% if not page.is_flex %} segmented-control__segment--active{% endif %}" aria-pressed="{{ 'false' if page.is_flex else 'true' }}" title="Give every category its own budget">Category</button>
     </form>
+    </div>
   </div>
   <p class="text-sm text-secondary">
     {%- if page.is_flex %}Flex: you budget fixed and non-monthly costs, and everything else is one amount to spend, the flex number.
@@ -199,9 +203,6 @@
     {{ link_button("This month", href="/plan/budget/" ~ page.current_key, variant="outline", size="sm") }}
     {%- endif %}
   </div>
-  {%- if page.joint_note %}
-  <p class="text-sm text-secondary">{{ page.joint_note }}</p>
-  {%- endif %}
 </header>
 {%- endmacro %}
 

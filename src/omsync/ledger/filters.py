@@ -310,11 +310,16 @@ def _payee_clause(op: str, value: str) -> ColumnElement[bool]:
 
 
 def _category_clause(op: str, value: Any) -> ColumnElement[bool]:
-    split_with_category = select(Split.id).where(
-        Split.transaction_id == Transaction.id, Split.category_id.is_not(None)
-    )
     if op == "is_empty":
-        return not_(or_(Transaction.category_id.is_not(None), split_with_category.exists()))
+        # Uncategorized: an unsplit transaction with no category, or a split one with any line
+        # that has none, as a receipt leaves an item that matched no keyword.
+        has_split = select(Split.id).where(Split.transaction_id == Transaction.id).exists()
+        split_without_category = (
+            select(Split.id)
+            .where(Split.transaction_id == Transaction.id, Split.category_id.is_(None))
+            .exists()
+        )
+        return or_(and_(Transaction.category_id.is_(None), not_(has_split)), split_without_category)
     split_in_ids = (
         select(Split.id)
         .where(Split.transaction_id == Transaction.id, Split.category_id.in_(value))

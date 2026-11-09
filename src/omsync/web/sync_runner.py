@@ -21,7 +21,6 @@ from omsync.ingest.connectors.base import ConnectorError, SyncCancelled
 from omsync.ingest.discovery import mask_account_numbers
 from omsync.ingest.pipeline import ImportReport
 from omsync.ingest.sync import ProviderSync, SyncBusy, SyncResult, sync_all, sync_provider
-from omsync.ledger.preferences import close_browser_on_failure
 from omsync.ledger.sync_models import SyncStatus
 
 # The scope of a sync of every enabled provider. Not a valid provider key, so it cannot collide.
@@ -245,14 +244,12 @@ class SyncRunner:
         try:
             session = self._session_factory()
             prompt = WebPrompt(self, job, self._prompt_timeout)
-            close_on_failure = close_browser_on_failure(session)
             if job.scope == ALL:
                 sync_all(
                     session,
                     self._settings,
                     vault=self._vault,
                     prompt=prompt,
-                    close_on_failure=close_on_failure,
                     on_progress=lambda key, outcome: self._progress(job, key, outcome),
                 )
             else:
@@ -263,7 +260,6 @@ class SyncRunner:
                     provider_key=job.scope,
                     vault=self._vault,
                     prompt=prompt,
-                    close_on_failure=close_on_failure,
                 )
                 self._progress(job, job.scope, ProviderSync(job.scope, result, None))
             if job.cancel.is_set():

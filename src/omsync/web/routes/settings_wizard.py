@@ -39,7 +39,12 @@ from omsync.web.settings_views import (
     mapping_row,
     type_choices,
 )
-from omsync.web.vault_logins import VaultActionError, search_logins, unlock_vault
+from omsync.web.vault_logins import (
+    VaultActionError,
+    search_logins,
+    unlock_vault,
+    vault_status_view,
+)
 
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
@@ -194,6 +199,7 @@ def unlock(
         request,
         "frag_step_login",
         **_login_context(state, locked=False, form_key=uuid4().hex),
+        vault_status=vault_status_view(vault),
     )
 
 

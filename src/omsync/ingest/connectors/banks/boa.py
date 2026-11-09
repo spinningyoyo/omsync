@@ -24,7 +24,7 @@ class BoaConnector(BankConnector):
     key = "boa"
     # Its CSV folders are named by the last four digits, so those are the statement account IDs.
     last4_is_statement_id = True
-    label = "Bank of America: CSV statements from the website"
+    label = "Bank of America: CSV from the website"
     display_name = "Bank of America"
     fallback_sign_in_url = "https://secure.bankofamerica.com/login/sign-in/signOnV2Screen.go"
     username_id = "oid"

@@ -5,7 +5,6 @@ from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import select
@@ -31,11 +30,11 @@ from omsync.ledger.models import (
     Transaction,
 )
 from omsync.ledger.other_side import PersonSides
+from omsync.ledger.payment_methods import PaymentMethod, parse_paid_by, payment_method
 from omsync.ledger.statements import SourceText, source_texts
 from omsync.ledger.transactions import may_replace
 
-PAYEE_LISTS = ("unique", "generic")
-MEMO_LISTS = ("unique",)
+PAYEE_LIST = "payee"
 _VENDOR_KEY = re.compile(r"[a-z][a-z0-9_]*")
 
 
@@ -44,8 +43,13 @@ class InvalidKeyword(ValueError):
 
 
 def is_list_key(value: str) -> bool:
-    """True for a payee list or a lowercase vendor key such as amazon."""
-    return value in PAYEE_LISTS or _VENDOR_KEY.fullmatch(value) is not None
+    """True for the payee list or a lowercase vendor key such as amazon."""
+    return value == PAYEE_LIST or _VENDOR_KEY.fullmatch(value) is not None
+
+
+def list_name(list_key: str) -> str:
+    """A list as the page names it: Payees, or a vendor's key capitalized, such as Amazon."""
+    return "Payees" if list_key == PAYEE_LIST else list_key.capitalize()
 
 
 def compile_pattern(pattern: str, *, is_regex: bool) -> re.Pattern[str]:
@@ -62,7 +66,6 @@ class CompiledKeyword:
     list_key: str
     pattern: str
     category_id: int
-    priority: int
     matcher: re.Pattern[str]
 
     def matches(self, text: str) -> bool:
@@ -79,15 +82,16 @@ class KeywordMatch:
 
 @dataclass(frozen=True)
 class ActiveRule:
-    """An enabled rule, as matching reads it. position orders the rules; the first that holds wins.
+    """An enabled rule, as matching reads it. Rules categorize only what no keyword matched;
+    position orders them, and the first that holds wins.
 
-    A draft that is not saved yet has id 0.
+    paid_by is empty when the rule does not read how money moved. A draft that is not saved yet
+    has id 0.
     """
 
     id: int
     position: int
-    list_key: str | None
-    from_category_id: int | None
+    paid_by: frozenset[PaymentMethod]
     below_cents: int | None
     at_least_cents: int | None
     other_side: RuleOtherSide | None
@@ -122,11 +126,10 @@ def load_keywords(session: Session) -> KeywordSet:
             Keyword.pattern,
             Keyword.is_regex,
             Keyword.category_id,
-            Keyword.priority,
         ).where(Keyword.enabled.is_(True))
     ).all()
     lists: dict[str, list[CompiledKeyword]] = {}
-    for row in sorted(rows, key=lambda r: _precedence(r.priority, r.pattern, r.id)):
+    for row in sorted(rows, key=lambda r: _precedence(r.pattern, r.id)):
         try:
             matcher = compile_pattern(row.pattern, is_regex=row.is_regex)
         except re.error:
@@ -134,16 +137,13 @@ def load_keywords(session: Session) -> KeywordSet:
                 f"keyword {row.id} in list {row.list_key!r} is not a valid regular expression"
             ) from None
         lists.setdefault(row.list_key, []).append(
-            CompiledKeyword(
-                row.id, row.list_key, row.pattern, row.category_id, row.priority, matcher
-            )
+            CompiledKeyword(row.id, row.list_key, row.pattern, row.category_id, matcher)
         )
     rules = session.execute(
         select(
             CategoryRule.id,
             CategoryRule.position,
-            CategoryRule.list_key,
-            CategoryRule.from_category_id,
+            CategoryRule.paid_by,
             CategoryRule.below_cents,
             CategoryRule.at_least_cents,
             CategoryRule.other_side,
@@ -165,8 +165,7 @@ def _active(row: Any) -> ActiveRule:
     return ActiveRule(
         id=row.id,
         position=row.position,
-        list_key=row.list_key,
-        from_category_id=row.from_category_id,
+        paid_by=parse_paid_by(row.paid_by),
         below_cents=row.below_cents,
         at_least_cents=row.at_least_cents,
         other_side=None if row.other_side is None else RuleOtherSide(row.other_side),
@@ -176,10 +175,28 @@ def _active(row: Any) -> ActiveRule:
     )
 
 
-def _precedence(priority: int, pattern: str, keyword_id: int) -> tuple[int, int, int]:
-    """Sort key for keywords of one list: higher priority first, then a longer pattern, then a
-    lower id."""
-    return (-priority, -len(pattern), keyword_id)
+def with_keyword(
+    keywords: KeywordSet, keyword: CompiledKeyword | None, *, replacing: int | None = None
+) -> KeywordSet:
+    """The set with a draft keyword in its list, in precedence order, which is how a draft is
+    previewed. replacing removes the stored keyword of that id first, so an edit replaces it; a
+    draft of None leaves it out, as for a keyword that is switched off."""
+    lists = {
+        key: [item for item in items if item.id != replacing]
+        for key, items in keywords.lists.items()
+    }
+    if keyword is not None:
+        members = [*lists.get(keyword.list_key, []), keyword]
+        lists[keyword.list_key] = sorted(
+            members, key=lambda item: _precedence(item.pattern, item.id)
+        )
+    return KeywordSet({key: tuple(items) for key, items in lists.items()}, keywords.rules)
+
+
+def _precedence(pattern: str, keyword_id: int) -> tuple[int, int]:
+    """Sort key for keywords of one list: the longer, more specific pattern first, then the older
+    keyword."""
+    return (-len(pattern), keyword_id)
 
 
 def payee_match_text(payee_raw: str, payee: str) -> str:
@@ -188,13 +205,13 @@ def payee_match_text(payee_raw: str, payee: str) -> str:
 
 
 def match_payee(payee_text: str, keywords: KeywordSet) -> KeywordMatch | None:
-    """The winning keyword for a payee: the first hit in unique, then in generic."""
-    return _first(_hits(keywords, PAYEE_LISTS, payee_text))
+    """The winning payee keyword for a payee, or None."""
+    return _first(_hits(keywords, (PAYEE_LIST,), payee_text))
 
 
 def match_memo(memo_text: str, keywords: KeywordSet) -> KeywordMatch | None:
-    """The winning unique keyword for a statement memo. Generic keywords are for payees only."""
-    return _first(_hits(keywords, MEMO_LISTS, memo_text))
+    """The winning payee keyword for a statement memo, or None."""
+    return _first(_hits(keywords, (PAYEE_LIST,), memo_text))
 
 
 def match_receipt_item(vendor_key: str, text: str, keywords: KeywordSet) -> KeywordMatch | None:
@@ -204,9 +221,9 @@ def match_receipt_item(vendor_key: str, text: str, keywords: KeywordSet) -> Keyw
 
 def pick_rule(
     keywords: KeywordSet,
-    match: KeywordMatch | None,
     *,
     amount_cents: int | None,
+    method: PaymentMethod | None = None,
     contact_id: int | None = None,
     account_id: int | None = None,
     owner_id: int | None = None,
@@ -214,9 +231,10 @@ def pick_rule(
 ) -> ActiveRule | None:
     """The first rule, in position order, whose conditions all hold, or None.
 
-    match is the keyword that won the payee, or None when no keyword matched. A rule's keyword
-    conditions read only that winner, so a rule with none can hold with no keyword. amount_cents
-    is None when no amount is known, and then a rule with an amount condition does not hold.
+    Call it only for a transaction no keyword matched: a keyword always beats a rule, so what was
+    bought beats how it was paid. method is how the bank's wording says the money moved, or None
+    when it does not say. amount_cents is None when no amount is known, and then a rule with an
+    amount condition does not hold.
     contact_id is the other side stored on the transaction, owner_id the contact that is you, and
     with_person whether the payment is with a person. The caller applies the one rule it returns;
     rules never chain.
@@ -227,8 +245,8 @@ def pick_rule(
             for rule in keywords.rules
             if _holds(
                 rule,
-                match,
                 amount_cents=amount_cents,
+                method=method,
                 contact_id=contact_id,
                 account_id=account_id,
                 owner_id=owner_id,
@@ -241,19 +259,16 @@ def pick_rule(
 
 def _holds(
     rule: ActiveRule,
-    match: KeywordMatch | None,
     *,
     amount_cents: int | None,
+    method: PaymentMethod | None,
     contact_id: int | None,
     account_id: int | None,
     owner_id: int | None,
     with_person: bool,
 ) -> bool:
-    if rule.from_category_id is not None:
-        if match is None or match.category_id != rule.from_category_id:
-            return False
-        if rule.list_key is not None and match.list_key != rule.list_key:
-            return False
+    if rule.paid_by and method not in rule.paid_by:
+        return False
     if rule.below_cents is not None or rule.at_least_cents is not None:
         if amount_cents is None:
             return False
@@ -275,10 +290,11 @@ def _holds(
 @dataclass(frozen=True)
 class Explanation:
     """How a payee classifies. matches are the keywords that hit, in precedence order, and the first
-    is the winner. rule is the first rule that holds, if any: it sets the category in place of the
-    winner, and it can hold with no keyword match at all."""
+    is the winner. method and rule are read only when no keyword matched: method is how the
+    wording says the money moved, and rule is the first rule that holds, if any."""
 
     matches: list[KeywordMatch]
+    method: PaymentMethod | None
     rule: ActiveRule | None
 
 
@@ -294,14 +310,12 @@ def explain(
     name one, or that name you as the other side, do not hold either. A rule limited to a person
     holds only when with_person says the payment is with a person."""
     keywords = load_keywords(session)
-    matches = [_as_match(keyword) for keyword in _hits(keywords, PAYEE_LISTS, payee_text)]
-    rule = pick_rule(
-        keywords,
-        matches[0] if matches else None,
-        amount_cents=amount_cents,
-        with_person=with_person,
-    )
-    return Explanation(matches, rule)
+    matches = [_as_match(keyword) for keyword in _hits(keywords, (PAYEE_LIST,), payee_text)]
+    if matches:
+        return Explanation(matches, None, None)
+    method = payment_method(payee_text)
+    rule = pick_rule(keywords, amount_cents=amount_cents, method=method, with_person=with_person)
+    return Explanation(matches, method, rule)
 
 
 def _hits(keywords: KeywordSet, list_keys: Iterable[str], text: str) -> Iterator[CompiledKeyword]:
@@ -372,16 +386,19 @@ def plan_categorize(
     start: date | None = None,
     end: date | None = None,
     rules: Sequence[ActiveRule] | None = None,
+    keywords: KeywordSet | None = None,
 ) -> CategorizePlan:
     """Plan categories for the transactions in scope. Writes nothing.
 
     account_ids None means every account. start and end are inclusive dates. Only transactions
     without splits, and whose origin is none, keyword, or rule, are considered: a manual or receipt
     category is never changed. rules, in position order, replaces the stored rules, which is how a
-    draft is previewed; None reads the stored rules. A rule that reads the other side or the
-    account reads it as stored on each transaction, so recognize the other side first.
+    draft is previewed; None reads the stored rules. keywords, likewise, replaces the stored
+    keywords and rules (see with_keyword); rules, when also given, replaces its rules. A rule that
+    reads the other side or the account reads it as stored on each transaction, so recognize the
+    other side first.
     """
-    keywords = load_keywords(session)
+    keywords = keywords if keywords is not None else load_keywords(session)
     if rules is not None:
         keywords = KeywordSet(keywords.lists, tuple(rules))
     # Who a payment is with is read only when a person rule could use it.
@@ -513,17 +530,20 @@ def _classify(
     row: Any,
     source: SourceText | None,
 ) -> tuple[KeywordMatch | None, ActiveRule | None]:
-    """The keyword that wins a transaction and the rule that holds for it, as categorize reads them.
+    """The keyword that wins a transaction, or, when none does, the rule that holds for it.
 
     row carries the payee, payee_raw, amount_cents, contact_id, and account_id of a transaction.
     people is None when no rule reads a person, so no person is looked up.
     """
-    match = match_payee(payee_match_text(row.payee_raw, row.payee), keywords)
+    text = payee_match_text(row.payee_raw, row.payee)
+    match = match_payee(text, keywords)
     if match is None and source is not None and (source.memo or "").strip():
-        # The payee names no keyword, so the statement's MEMO may. Only Unique keywords apply
-        # to memos: Generic ones are loose payee fragments that misfire on location text.
-        # A payee that matched keeps its match, so a MEMO never overrides a payee decision.
+        # The payee names no keyword, so the statement's MEMO may. A payee that matched keeps
+        # its match, so a MEMO never overrides a payee decision.
         match = match_memo(source.memo or "", keywords)
+    if match is not None:
+        # A keyword says who was paid, and that beats every rule.
+        return match, None
     with_person = people is not None and people.with_person(
         contact_id=row.contact_id,
         payee_raw=row.payee_raw,
@@ -532,8 +552,8 @@ def _classify(
     )
     rule = pick_rule(
         keywords,
-        match,
         amount_cents=row.amount_cents,
+        method=payment_method(text),
         contact_id=row.contact_id,
         account_id=row.account_id,
         owner_id=owner_id,
@@ -545,12 +565,12 @@ def _classify(
 def _target(
     match: KeywordMatch | None, rule: ActiveRule | None
 ) -> tuple[int | None, CategoryOrigin]:
-    """The category and origin that the keyword and rule give a transaction. A rule that holds
-    sets its category in place of the keyword's; with neither, the category is unset."""
-    if rule is not None:
-        return rule.to_category_id, CategoryOrigin.rule
+    """The category and origin that the keyword or rule gives a transaction; with neither, the
+    category is unset. A rule is only found when no keyword matched."""
     if match is not None:
         return match.category_id, CategoryOrigin.keyword
+    if rule is not None:
+        return rule.to_category_id, CategoryOrigin.rule
     return None, CategoryOrigin.none
 
 
@@ -598,11 +618,6 @@ def apply_categorize(session: Session, plan: CategorizePlan, *, idempotency_key:
 # Conflicts
 
 
-class ConflictScope(StrEnum):
-    same_list = "same_list"  # one pattern, several categories, inside one list
-    across_lists = "across_lists"  # unique and generic give one pattern different categories
-
-
 @dataclass(frozen=True)
 class ConflictMember:
     keyword_id: int
@@ -614,54 +629,31 @@ class ConflictMember:
 @dataclass(frozen=True)
 class Conflict:
     pattern: str  # as first written
-    scope: ConflictScope
     members: tuple[ConflictMember, ...]
     winner_id: int  # the member whose category a payee hitting all of them gets
 
 
 def find_conflicts(session: Session) -> list[Conflict]:
-    """Find enabled keywords that share a pattern, ignoring case, but name different categories.
-
-    A conflict is either inside one list, or between unique and generic. Repeating a pattern
-    with the same category is not a conflict. The winner follows matching's own order: unique
-    before generic, then precedence within the list.
-    """
+    """Find enabled keywords of one list that share a pattern, ignoring case, but name different
+    categories. Repeating a pattern with the same category is not a conflict. The winner follows
+    matching's own precedence."""
     rows = session.execute(
-        select(Keyword.id, Keyword.list_key, Keyword.pattern, Keyword.priority, Category.name)
+        select(Keyword.id, Keyword.list_key, Keyword.pattern, Category.name)
         .join(Category, Category.id == Keyword.category_id)
         .where(Keyword.enabled.is_(True))
         .order_by(Keyword.id)
     ).all()
-    members = [ConflictMember(row.id, row.list_key, row.pattern, row.name) for row in rows]
-    precedence = {row.id: _precedence(row.priority, row.pattern, row.id) for row in rows}
-
-    def winner_id(group: Sequence[ConflictMember]) -> int:
-        def rank(member: ConflictMember) -> tuple[int, tuple[int, int, int]]:
-            list_rank = PAYEE_LISTS.index(member.list_key) if member.list_key in PAYEE_LISTS else 0
-            return list_rank, precedence[member.keyword_id]
-
-        return min(group, key=rank).keyword_id
-
-    by_list: dict[tuple[str, str], list[ConflictMember]] = {}
-    by_payee_pattern: dict[str, list[ConflictMember]] = {}
-    for member in members:
-        folded = member.pattern.casefold()
-        by_list.setdefault((member.list_key, folded), []).append(member)
-        if member.list_key in PAYEE_LISTS:
-            by_payee_pattern.setdefault(folded, []).append(member)
-
-    conflicts = [
-        Conflict(group[0].pattern, ConflictScope.same_list, tuple(group), winner_id(group))
-        for group in by_list.values()
+    precedence = {row.id: _precedence(row.pattern, row.id) for row in rows}
+    groups: dict[tuple[str, str], list[ConflictMember]] = {}
+    for row in rows:
+        member = ConflictMember(row.id, row.list_key, row.pattern, row.name)
+        groups.setdefault((row.list_key, row.pattern.casefold()), []).append(member)
+    return [
+        Conflict(
+            group[0].pattern,
+            tuple(group),
+            min(group, key=lambda member: precedence[member.keyword_id]).keyword_id,
+        )
+        for group in groups.values()
         if len({member.category_name for member in group}) > 1
     ]
-    for group in by_payee_pattern.values():
-        unique = {m.category_name for m in group if m.list_key == "unique"}
-        generic = {m.category_name for m in group if m.list_key == "generic"}
-        if unique and generic and len(unique | generic) > 1:
-            conflicts.append(
-                Conflict(
-                    group[0].pattern, ConflictScope.across_lists, tuple(group), winner_id(group)
-                )
-            )
-    return conflicts

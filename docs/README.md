@@ -66,6 +66,7 @@ choices. Code expresses implementation. Operating guides explain how to use the 
 
 - [Separate Chase personal and Chase Business connectors](adr/0001-separate-chase-connectors.md)
 - [Identify the other side of every transaction](adr/0002-identify-the-other-side.md)
+- [Read how money moved from the bank's wording](adr/0003-read-how-money-moved.md)
 
 For installation and startup, see the [project README](../README.md). Engineering instructions
 are in [AGENTS.md](../AGENTS.md); review standards are in [CODING_STANDARDS.md](../CODING_STANDARDS.md).

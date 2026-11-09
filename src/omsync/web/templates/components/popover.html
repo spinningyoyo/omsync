@@ -1,0 +1,37 @@
+{# Adapted from Sure (we-promise/sure), AGPL-3.0: the DS::Menu panel in its "custom content" form,
+   as the dashboard's size menu uses it. A small panel of controls, such as segmented choices, under
+   an icon button. It is not a menu: what it holds are ordinary buttons, reached with Tab. Escape or
+   a click outside closes it, and Escape puts focus back on the button.
+
+   Usage:
+     {% call popover(id="size-cash-flow", label="Adjust size", icon_name="sliders-horizontal") %}
+       <div>Controls</div>
+     {% endcall %}
+   The label is the button's accessible name and hover label. Import with context. #}
+{% from "components/icon.html" import icon with context %}
+
+{# trigger_text makes the trigger a text button with a chevron, showing a current value such as a
+   period; its accessible name is then label, then value or the text. #}
+{% macro popover(id, label, icon_name=none, class_="", trigger_text=none, panel_class="min-w-48 p-3", value=none) -%}
+<div class="relative {{ class_ }}" data-controller="popover" data-action="keydown->popover#keydown click@window->popover#clickOutside">
+  {%- if trigger_text %}
+  <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-primary shadow-border-xs bg-container hover:bg-container-hover focus-ring pointer-coarse:h-11"
+    aria-label="{{ label }}: {{ value or trigger_text }}" aria-expanded="false" aria-controls="{{ id }}"
+    data-popover-target="button" data-action="popover#toggle">
+    {%- if icon_name %}{{ icon(icon_name, 16, "text-secondary") }}{% endif %}
+    <span class="whitespace-nowrap">{{ trigger_text }}</span>
+    {{ icon("chevron-down", 16, "text-secondary") }}
+  </button>
+  {%- else %}
+  <button type="button" class="icon-tip inline-flex size-6 items-center justify-center rounded-md hover:bg-container-inset-hover hover:text-primary aria-expanded:text-primary focus-ring pointer-coarse:size-11"
+    aria-label="{{ label }}" data-tip="{{ label }}" aria-expanded="false" aria-controls="{{ id }}"
+    data-popover-target="button" data-action="popover#toggle">
+    {{ icon(icon_name, 16) }}
+  </button>
+  {%- endif %}
+  <div id="{{ id }}" role="group" aria-label="{{ label }}" hidden data-popover-target="panel"
+    class="absolute right-0 top-full z-50 mt-2 {{ panel_class }} rounded-lg bg-container text-left shadow-border-lg">
+    {{ caller() }}
+  </div>
+</div>
+{%- endmacro %}

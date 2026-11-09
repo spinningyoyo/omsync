@@ -42,7 +42,7 @@ def _table_view(
 View = Annotated[TableView, Depends(_table_view)]
 PAGE = "pages/categories.html"
 PATH = "/settings/categories"  # the page; its fragments and writes stay under /categories
-TABS = ("keywords", "rules", "test", "triage", "import")
+TABS = ("triage", "keywords", "rules")
 ICON_PAGE = 120
 TARGET_MESSAGE = "Pick a category to move its uses to."
 
@@ -60,7 +60,7 @@ def categories_redirect(request: Request) -> RedirectResponse:
 def categories_page(
     request: Request,
     db: DbSession,
-    tab: str = "keywords",
+    tab: str = "triage",
     list_key: Annotated[str | None, Query(alias="list")] = None,
 ) -> HTMLResponse:
     """The whole page. `tab` and `list` open a given tab and keyword list, so a conflict can link to
@@ -74,7 +74,7 @@ def categories_page(
             "nav": SETTINGS_NAV,
             "active_href": PATH,
             **_category_list(db, TableView()),
-            "tab": tab if tab in TABS else "keywords",
+            "tab": tab if tab in TABS else "triage",
             "keywords": keyword_context(db, safe_list(list_key)),
             "rules": rule_context(db),
             "payee": "",

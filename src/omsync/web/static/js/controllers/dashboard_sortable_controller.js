@@ -2,7 +2,7 @@
 // Changes: the grab handle is each section's header, not the whole card; the drop point is the first
 // section whose middle is below the pointer (Sure picks the nearest centre, so a drop just below a
 // card lands above it); the layout is saved as one POST of order, collapsed, half-width sections, and
-// column count; touch hold-to-drag is left out, and the keyboard covers reordering. The keyboard is Sure's: Enter or
+// chosen heights; touch hold-to-drag is left out, and the keyboard covers reordering. The keyboard is Sure's: Enter or
 // Space grabs, the arrow keys move, and Enter, Space or Escape drops. A live region announces moves.
 // Sections can sit two to a row: a drop is placed by reading order, so over a half-width section the
 // pointer's side of its middle decides, and over a full-width one its height does.
@@ -17,7 +17,7 @@ const PLACE_RIGHT = "border-r-4";
 const MARK = "border-primary";
 
 export default class extends Controller {
-  static targets = ["section", "list", "status", "columnsButton", "widthButton"];
+  static targets = ["section", "list", "status"];
 
   connect() {
     this.dragged = null;
@@ -145,8 +145,8 @@ export default class extends Controller {
     return { before: null, beside: false };
   }
 
-  // True while the page is laid out in two columns, which needs both the setting and a wide enough
-  // container; the grid's computed columns say so, so the rule is not repeated here.
+  // True while the page is laid out in two columns, which needs a wide enough container; the grid's
+  // computed columns say so, so the rule is not repeated here.
   twoUp() {
     return getComputedStyle(this.listTarget).gridTemplateColumns.split(" ").length > 1;
   }
@@ -176,23 +176,28 @@ export default class extends Controller {
     }
   }
 
-  // Each section's width button flips it between half and full width. The setting is kept in the
-  // section's data-width attribute, which the grid classes read.
-  toggleWidth(event) {
-    const section = event.currentTarget.closest(SECTION);
-    const half = section.dataset.width !== "half";
-    section.dataset.width = half ? "half" : "full";
-    event.currentTarget.setAttribute("aria-pressed", String(half));
-    const title = section.querySelector("h2")?.textContent ?? "Section";
-    this.announce(`${title} is now ${half ? "half" : "full"} width.`);
-    this.save();
+  // The size menu's choices. Width and height are kept in the section's data-width and data-height
+  // attributes, which the grid and chart classes read, so the card changes at once.
+  setWidth(event) {
+    this.setSize(event, "width", event.params.width);
   }
 
-  toggleColumns(event) {
-    const two = this.listTarget.dataset.columns !== "2";
-    this.listTarget.dataset.columns = two ? "2" : "1";
-    event.currentTarget.setAttribute("aria-pressed", String(two));
-    this.announce(two ? "Two columns." : "One column.");
+  setHeight(event) {
+    this.setSize(event, "height", event.params.height);
+  }
+
+  setSize(event, name, value) {
+    const section = event.currentTarget.closest(SECTION);
+    if (!section || section.dataset[name] === value) return;
+    section.dataset[name] = value;
+    const group = event.currentTarget.closest("[data-size]");
+    for (const segment of group.querySelectorAll("button")) {
+      const active = segment === event.currentTarget;
+      segment.classList.toggle("segmented-control__segment--active", active);
+      segment.setAttribute("aria-pressed", String(active));
+    }
+    const title = section.querySelector("h2")?.textContent ?? "Section";
+    this.announce(`${title}: ${name} ${event.currentTarget.textContent.trim().toLowerCase()}.`);
     this.save();
   }
 
@@ -205,8 +210,9 @@ export default class extends Controller {
   }
 
   // Saves the whole layout as it stands on the page: the order, which sections are collapsed, which
-  // are half width, and the column count. Each section's collapsed state is kept in its
-  // data-collapsed attribute by dashboard_section, and its width in data-width.
+  // are half width, and the heights other than auto. Each section's collapsed state is kept in its
+  // data-collapsed attribute by dashboard_section, its width in data-width, and its height in
+  // data-height, present only on a section that offers the choice.
   async save() {
     const order = this.sectionTargets.map((section) => section.dataset.sectionKey);
     const collapsed = this.sectionTargets
@@ -215,12 +221,16 @@ export default class extends Controller {
     const half = this.sectionTargets
       .filter((section) => section.dataset.width === "half")
       .map((section) => section.dataset.sectionKey);
-    const columns = Number(this.listTarget.dataset.columns);
+    const heights = Object.fromEntries(
+      this.sectionTargets
+        .filter((section) => section.dataset.height && section.dataset.height !== "auto")
+        .map((section) => [section.dataset.sectionKey, section.dataset.height]),
+    );
     try {
       const response = await fetch(LAYOUT_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ layout: JSON.stringify({ order, collapsed, half, columns }) }),
+        body: new URLSearchParams({ layout: JSON.stringify({ order, collapsed, half, heights }) }),
       });
       if (!response.ok) {
         console.error("[Home layout] The layout was not saved:", response.status);

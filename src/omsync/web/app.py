@@ -21,6 +21,8 @@ from omsync.core.vault import BitwardenCLI, SystemKeychain, Vault
 from omsync.demo.site import DemoSite
 from omsync.demo.vault import DemoVault
 from omsync.ledger.categories import TYPE_LABELS
+from omsync.ledger.categorize import list_name
+from omsync.ledger.payment_methods import METHOD_LABELS
 from omsync.ledger.register import field_version
 from omsync.ledger.sources import account_digits
 from omsync.web.amounts import money_html, sensitive
@@ -133,6 +135,10 @@ def create_app(
     templates.env.globals["filter_labels"] = FIELD_LABELS
     templates.env.globals["filter_op_choices"] = op_choices
     templates.env.globals["category_type_options"] = TYPE_OPTIONS
+    templates.env.globals["list_name"] = list_name
+    templates.env.globals["payment_methods"] = [
+        (method.value, label) for method, label in METHOD_LABELS.items()
+    ]
     templates.env.globals["category_type_labels"] = TYPE_LABELS
     templates.env.globals["field_version"] = field_version
     templates.env.globals["register_page_sizes"] = PAGE_SIZES

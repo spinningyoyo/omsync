@@ -1,27 +1,24 @@
 // Adapted from Sure (we-promise/sure), AGPL-3.0: app/javascript/controllers/sankey_chart_controller.js.
 // Changes: one static diagram, with no zoom or Turbo; ribbons leaving the green hub shade from green
 // to their category's colour, blended in OKLab so the middle stays clean, and ribbons arriving keep
-// their source's colour; source nodes are labelled on their left and sink nodes on their
-// right, so labels never sit on a ribbon, and the labels on each side are spread so none overlaps,
-// each joined to its box by a leader line in the box's colour; the centre node is labelled above;
-// the chart is as tall as its labels need; hovering a node or ribbon dims what it does not touch,
-// labels included; a category node opens the register for it; names, amounts, shares, and links
+// their source's colour; as in Sure, the boxes run to the card's edges and each label sits beside
+// its own box, inside the chart, but a label that would collide with a bigger box's label is left
+// off rather than moved, and the tooltip names it; hovering a node or ribbon dims what it does not
+// touch, labels included; a category node opens the register for it; names, amounts, shares, and links
 // arrive from the server, and tooltips are built with textContent. d3-sankey is the global added by
 // static/vendor/d3-sankey.min.js (BSD-3-Clause), loaded by the home page only. Nothing here writes data.
 import { Controller } from "/static/vendor/stimulus.js";
 
-const MARGIN_TOP = 44;
-const MARGIN_BOTTOM = 8;
+const MARGIN = 4; // above and below the boxes, so the rounded corners are not clipped
 const NODE_WIDTH = 12;
 const NODE_RADIUS = 3;
 const NODE_PADDING = 14;
 const MIN_WIDTH = 240;
 const MIN_HEIGHT = 160;
-const CHART_MIN_HEIGHT = 360;
-const CHART_MAX_HEIGHT = 720;
-const LABEL_GAP = 28; // the least distance between two labels on one side
+const LABEL_HEIGHT = 24; // a label's two lines, with room between it and the next
 const LABEL_LINE = 12; // from a label's name line to its amount line
-const LABEL_OFFSET = 16; // from a box to its label, which the leader line spans
+const LABEL_OFFSET = 6; // from a box to its label
+const LABEL_MAX_CHARS = 22;
 const RIBBON_OPACITY = 0.55;
 const BLEND_STEPS = [0.2, 0.4, 0.6, 0.8]; // between a ribbon's two colours, so the blend is OKLab
 const DIMMED_OPACITY = 0.2;
@@ -37,8 +34,9 @@ export default class extends Controller {
     this.element.classList.add("privacy-sensitive");
     this.gradientPrefix = `sankey-${Math.random().toString(36).slice(2)}`;
     this.drawn = false;
-    this.element.style.height = `${chartHeight(this.dataValue)}px`;
-    // The observer reports the element's size as soon as it is watched, which draws the first time.
+    // The element's classes set its height: the card's, or the taller expanded dialog's. The observer
+    // reports the element's size as soon as it is watched, which draws the first time, and again
+    // when a closed dialog that holds it opens.
     this.resizeObserver = new ResizeObserver(() => this.draw());
     this.resizeObserver.observe(this.element);
   }
@@ -59,15 +57,13 @@ export default class extends Controller {
     const height = this.element.clientHeight;
     if (width < MIN_WIDTH || height < MIN_HEIGHT) return;
 
-    // Room on each side for the labels of the first and last columns.
-    const labelWidth = Math.min(160, Math.max(96, Math.round(width * 0.22)));
     const graph = d3
       .sankey()
       .nodeWidth(NODE_WIDTH)
       .nodePadding(NODE_PADDING)
       .extent([
-        [labelWidth, MARGIN_TOP],
-        [width - labelWidth, height - MARGIN_BOTTOM],
+        [0, MARGIN],
+        [width, height - MARGIN],
       ])({
       nodes: nodes.map((node) => ({ ...node })),
       links: links.map((link) => ({ ...link })),
@@ -144,7 +140,7 @@ export default class extends Controller {
         .style("fill", node.color);
     });
 
-    const { labels, leaders } = drawLabels(svg, graph.nodes, labelWidth, height);
+    const labels = drawLabels(svg, graph.nodes, width, height);
 
     const tooltip = d3
       .select(this.element)
@@ -175,16 +171,16 @@ export default class extends Controller {
     const hide = () => tooltip.style("opacity", 0);
 
     // Keeps the links and nodes that pass their predicate at full strength and dims the rest, labels
-    // and leader lines included, so what is pointed at stands out.
+    // included, so what is pointed at stands out.
     const dimOthers = (keepLink, keepNode) => {
       linkPaths.attr("stroke-opacity", (link) => (keepLink(link) ? 1 : DIMMED_OPACITY));
-      for (const part of [nodeGroups, labels, leaders]) {
+      for (const part of [nodeGroups, labels]) {
         part.style("opacity", (node) => (keepNode(node) ? 1 : DIMMED_OPACITY));
       }
     };
     const reset = () => {
       linkPaths.attr("stroke-opacity", 1);
-      for (const part of [nodeGroups, labels, leaders]) part.style("opacity", 1);
+      for (const part of [nodeGroups, labels]) part.style("opacity", 1);
       hide();
     };
 
@@ -234,16 +230,6 @@ export default class extends Controller {
   }
 }
 
-// The height the chart needs: a label slot for each box on its busier side, within limits.
-function chartHeight({ nodes = [], links = [] }) {
-  const targets = new Set(links.map((link) => link.target));
-  const sources = new Set(links.map((link) => link.source));
-  const left = nodes.filter((_node, index) => !targets.has(index)).length;
-  const right = nodes.filter((_node, index) => !sources.has(index)).length;
-  const needed = Math.max(left, right) * LABEL_GAP + MARGIN_TOP + MARGIN_BOTTOM + LABEL_LINE;
-  return Math.min(CHART_MAX_HEIGHT, Math.max(CHART_MIN_HEIGHT, needed));
-}
-
 // The colour `t` of the way from one colour to another, mixed in OKLab. Each is a CSS colour.
 function blend(from, to, t) {
   return from === to ? from : `color-mix(in oklab, ${from} ${Math.round((1 - t) * 100)}%, ${to})`;
@@ -271,50 +257,41 @@ function asLink(selection, node) {
     .style("cursor", "pointer");
 }
 
-// Source nodes are labelled on their left, sinks on their right, and the centre node above itself.
-// The labels on each side are spread, so none overlaps the one above it, and a leader line in the
-// box's colour joins each to its box, however far the spreading has moved it. Returns the label and
-// leader selections, each bound to its node.
-function drawLabels(svg, nodes, labelWidth, height) {
-  const sources = nodes.filter((node) => node.targetLinks.length === 0);
-  const sinks = nodes.filter((node) => node.sourceLinks.length === 0);
-  const firstLine = new Map([...spread(sources, height), ...spread(sinks, height)]);
-  const maxChars = Math.max(10, Math.floor((labelWidth - LABEL_OFFSET) / 7));
+// Each label sits beside its box, centred on it: right of a box in the left half, left of one in the
+// right half, as Sure places them. Labels are placed biggest box first, and one that would overlap a
+// label already placed in its column, or run off the chart, is left off. Returns the labels drawn,
+// each bound to its node.
+function drawLabels(svg, nodes, width, height) {
+  const placed = new Map(); // a column's x to the vertical spans its labels take
+  const shown = [...nodes]
+    .sort((a, b) => b.value - a.value)
+    .filter((node) => {
+      const top = (node.y0 + node.y1) / 2 - LABEL_HEIGHT / 2;
+      const bottom = top + LABEL_HEIGHT;
+      if (top < 0 || bottom > height) return false;
+      const spans = placed.get(node.x0) ?? [];
+      if (spans.some(([t, b]) => top < b && bottom > t)) return false;
+      placed.set(node.x0, [...spans, [top, bottom]]);
+      return true;
+    });
 
-  const leaderGroup = svg.append("g").attr("fill", "none");
   const group = svg.append("g").attr("class", "select-none");
-  for (const node of nodes) {
-    const sink = node.sourceLinks.length === 0;
-    const source = node.targetLinks.length === 0;
-    const middle = !source && !sink;
-    const edge = sink ? node.x1 : node.x0;
-    const direction = sink ? 1 : -1;
-    const x = middle ? (node.x0 + node.x1) / 2 : edge + direction * LABEL_OFFSET;
-    const y = middle ? node.y0 - LABEL_LINE * 2 : firstLine.get(node);
-    const anchor = middle ? "middle" : sink ? "start" : "end";
-    const shown = node.name.length > maxChars ? `${node.name.slice(0, maxChars - 1)}…` : node.name;
-
-    if (!middle) {
-      const from = [edge + direction, (node.y0 + node.y1) / 2];
-      const to = [x - direction * 2, y + LABEL_LINE / 2 - 2];
-      const bend = (from[0] + to[0]) / 2;
-      leaderGroup
-        .append("path")
-        .datum(node)
-        .attr("d", `M${from[0]},${from[1]}C${bend},${from[1]} ${bend},${to[1]} ${to[0]},${to[1]}`)
-        .attr("stroke", node.color)
-        .attr("stroke-width", 1)
-        .attr("stroke-opacity", 0.8);
-    }
+  for (const node of shown) {
+    const left = node.x0 < width / 2;
+    const x = left ? node.x1 + LABEL_OFFSET : node.x0 - LABEL_OFFSET;
+    // The name's baseline, so the two lines together are centred on the box.
+    const y = (node.y0 + node.y1) / 2 - LABEL_LINE / 2 + 4;
+    const name =
+      node.name.length > LABEL_MAX_CHARS ? `${node.name.slice(0, LABEL_MAX_CHARS - 1)}…` : node.name;
 
     const text = asLink(group, node)
       .append("text")
       .datum(node)
       .attr("x", x)
       .attr("y", y)
-      .attr("text-anchor", anchor);
+      .attr("text-anchor", left ? "start" : "end");
     text.append("title").text(`${node.name}: ${node.text}`);
-    text.append("tspan").attr("class", "text-xs font-medium fill-current text-primary").text(shown);
+    text.append("tspan").attr("class", "text-xs font-medium fill-current text-primary").text(name);
     text
       .append("tspan")
       .attr("x", x)
@@ -323,23 +300,5 @@ function drawLabels(svg, nodes, labelWidth, height) {
       .style("font-size", "0.65rem")
       .text(node.text);
   }
-  return { labels: group.selectAll("text"), leaders: leaderGroup.selectAll("path") };
-}
-
-// The first-line y of each label on one side, in the order the nodes sit, with LABEL_GAP between
-// neighbours. A label that would run past the bottom is pulled back up.
-function spread(nodes, height) {
-  const sorted = [...nodes].sort((a, b) => a.y0 + a.y1 - (b.y0 + b.y1));
-  const bottom = height - MARGIN_BOTTOM - LABEL_LINE;
-  const ys = sorted.map((node) => (node.y0 + node.y1) / 2);
-  for (let i = 1; i < ys.length; i += 1) {
-    ys[i] = Math.max(ys[i], ys[i - 1] + LABEL_GAP);
-  }
-  if (ys.length > 0 && ys[ys.length - 1] > bottom) {
-    ys[ys.length - 1] = bottom;
-    for (let i = ys.length - 2; i >= 0; i -= 1) {
-      ys[i] = Math.min(ys[i], ys[i + 1] - LABEL_GAP);
-    }
-  }
-  return sorted.map((node, i) => [node, ys[i]]);
+  return group.selectAll("text");
 }

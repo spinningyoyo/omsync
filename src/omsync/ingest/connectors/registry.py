@@ -47,7 +47,7 @@ class DropFolder:
     """Statement files are placed in the drop folder by hand, so there is nothing to fetch."""
 
     key = "drop_folder"
-    label = "Drop folder: you place the statement files by hand"
+    label = "Drop folder: files you add by hand"
     last4_is_statement_id = False
 
     def fetch(
@@ -59,7 +59,6 @@ class DropFolder:
         dest: Path,
         *,
         vault_item_id: str | None,
-        close_on_failure: bool = True,
     ) -> list[Path]:
         return []
 

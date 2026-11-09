@@ -1,6 +1,9 @@
-"""Keyword routes: the keyword lists, and the payee tester that explains which keyword wins.
+"""Keyword routes: the keyword lists, a draft keyword's preview, and the payee tester that explains
+which keyword wins.
 
-The forms and panels here are also what the page and the triage form build on.
+Each write is one batch, followed in the same request by the automatic step, so categories follow
+the keywords at once; the toast names both, and undo reverses both (see applied_toast). The forms
+and panels here are also what the page and the triage form build on.
 """
 
 from typing import Annotated, Any
@@ -13,8 +16,16 @@ from sqlalchemy.orm import Session
 from omsync.core.batches import BatchError
 from omsync.ledger import categories_admin as admin
 from omsync.ledger.categories_admin import KeywordRow, NothingChanged
-from omsync.ledger.categorize import PAYEE_LISTS, explain, find_conflicts, is_list_key
-from omsync.web.categories_replies import block, events, refused, toast, whole_number
+from omsync.ledger.categorize import PAYEE_LIST, explain, find_conflicts, is_list_key, list_name
+from omsync.ledger.payment_methods import METHOD_LABELS
+from omsync.web.categories_replies import (
+    applied_toast,
+    block,
+    events,
+    preview_reply,
+    refused,
+    whole_number,
+)
 from omsync.web.deps import get_db
 
 router = APIRouter()
@@ -40,10 +51,9 @@ def keyword_panel(
 def add_keyword(
     request: Request,
     db: DbSession,
-    list_key: Annotated[str, Form()] = "unique",
+    list_key: Annotated[str, Form()] = PAYEE_LIST,
     pattern: Annotated[str, Form()] = "",
     category_id: Annotated[str, Form()] = "",
-    priority: Annotated[str, Form()] = "0",
     is_regex: Annotated[str, Form()] = "",
     idempotency_key: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
@@ -55,7 +65,6 @@ def add_keyword(
             pattern,
             whole_number(category_id, "Pick a category."),
             is_regex=bool(is_regex),
-            priority=whole_number(priority, "Priority must be a whole number, such as 10."),
             idempotency_key=key,
         )
     except (ValueError, BatchError) as exc:
@@ -63,7 +72,6 @@ def add_keyword(
             list_key,
             pattern=pattern,
             category_id=category_id,
-            priority=priority,
             is_regex=bool(is_regex),
             error=str(exc),
         )
@@ -82,7 +90,7 @@ def add_keyword(
         form=keyword_form(list_key),
         list_key=list_key,
         choices=admin.category_choices(db),
-        **toast(batch),
+        **applied_toast(db, batch),
     )
 
 
@@ -102,10 +110,9 @@ def save_keyword(
     request: Request,
     db: DbSession,
     keyword_id: int,
-    list_key: Annotated[str, Form()] = "unique",
+    list_key: Annotated[str, Form()] = PAYEE_LIST,
     pattern: Annotated[str, Form()] = "",
     category_id: Annotated[str, Form()] = "",
-    priority: Annotated[str, Form()] = "0",
     is_regex: Annotated[str, Form()] = "",
     idempotency_key: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
@@ -118,7 +125,6 @@ def save_keyword(
             pattern=pattern,
             is_regex=bool(is_regex),
             category_id=whole_number(category_id, "Pick a category."),
-            priority=whole_number(priority, "Priority must be a whole number, such as 10."),
         )
     except NothingChanged:
         return block(request, "frag_keyword_row", row=_keyword_or_404(db, keyword_id))
@@ -129,7 +135,6 @@ def save_keyword(
             list_key,
             pattern=pattern,
             category_id=category_id,
-            priority=priority,
             is_regex=bool(is_regex),
             error=str(exc),
             key=key,
@@ -145,7 +150,7 @@ def save_keyword(
         "frag_keyword_row",
         trigger=events(changed=True),
         row=_keyword_or_404(db, keyword_id),
-        **toast(batch),
+        **applied_toast(db, batch),
     )
 
 
@@ -166,7 +171,7 @@ def set_keyword_enabled(
         raise HTTPException(status_code=404, detail="No such keyword") from None
     except BatchError as exc:
         return block(request, "frag_toast", status=409, message=str(exc))
-    return block(request, "frag_toast", trigger=events(changed=True), **toast(batch))
+    return block(request, "frag_toast", trigger=events(changed=True), **applied_toast(db, batch))
 
 
 @router.post("/categories/keywords/{keyword_id:int}/delete", response_class=HTMLResponse)
@@ -183,7 +188,68 @@ def delete_keyword(
         raise HTTPException(status_code=404, detail="No such keyword") from None
     except BatchError as exc:
         return block(request, "frag_toast", status=409, message=str(exc))
-    return block(request, "frag_toast", trigger=events(changed=True), **toast(batch))
+    return block(request, "frag_toast", trigger=events(changed=True), **applied_toast(db, batch))
+
+
+# Preview
+
+
+RECEIPT_NOTE = (
+    "A receipt keyword changes no transaction here. Apply the vendor's receipts again from "
+    "Reconcile to fill in the transactions they split."
+)
+
+
+@router.post("/categories/keywords/preview", response_class=HTMLResponse)
+def preview_new_keyword(
+    request: Request,
+    db: DbSession,
+    list_key: Annotated[str, Form()] = PAYEE_LIST,
+    pattern: Annotated[str, Form()] = "",
+    category_id: Annotated[str, Form()] = "",
+    is_regex: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """The preview of a keyword that would be added."""
+    return _preview(request, db, list_key, pattern, category_id, is_regex, None)
+
+
+@router.post("/categories/keywords/{keyword_id:int}/preview", response_class=HTMLResponse)
+def preview_saved_keyword(
+    request: Request,
+    db: DbSession,
+    keyword_id: int,
+    pattern: Annotated[str, Form()] = "",
+    category_id: Annotated[str, Form()] = "",
+    is_regex: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """The preview of an edit. The keyword keeps its list and whether it is on."""
+    row = _keyword_or_404(db, keyword_id)
+    return _preview(request, db, row.list_key, pattern, category_id, is_regex, keyword_id)
+
+
+def _preview(
+    request: Request,
+    db: Session,
+    list_key: str,
+    pattern: str,
+    category_id: str,
+    is_regex: str,
+    keyword_id: int | None,
+) -> HTMLResponse:
+    try:
+        preview = admin.preview_keyword(
+            db,
+            list_key,
+            pattern,
+            whole_number(category_id, "Pick a category."),
+            is_regex=bool(is_regex),
+            keyword_id=keyword_id,
+        )
+    except ValueError as exc:
+        return preview_reply(request, None, error=str(exc))
+    if list_key != PAYEE_LIST:
+        return preview_reply(request, None, note=RECEIPT_NOTE)
+    return preview_reply(request, preview)
 
 
 # Test a payee
@@ -195,6 +261,7 @@ def test_payee(
 ) -> HTMLResponse:
     text = payee.strip()
     matches: list[Any] = []
+    method = None
     rule = None
     error = ""
     if text:
@@ -205,6 +272,7 @@ def test_payee(
             error = str(exc)
         else:
             matches = explanation.matches
+            method = explanation.method
             rule = None if explanation.rule is None else admin.get_rule(db, explanation.rule.id)
     return block(
         request,
@@ -213,6 +281,7 @@ def test_payee(
         amount=amount.strip(),
         person=person == "1",
         matches=matches,
+        method=None if method is None else METHOD_LABELS[method],
         rule=rule,
         error=error,
         names=admin.category_names(db),
@@ -227,7 +296,6 @@ def keyword_form(list_key: str, **values: Any) -> dict[str, Any]:
         "list_key": list_key,
         "pattern": "",
         "category_id": "",
-        "priority": "0",
         "is_regex": True,
         "error": "",
         "key": uuid4().hex,
@@ -261,19 +329,18 @@ def _keyword_edit(
         row.list_key,
         pattern=row.pattern,
         category_id=str(row.category_id),
-        priority=str(row.priority),
         is_regex=row.is_regex,
     )
     return {"row": row, "form": {**values, "id": row.id}, "choices": choices}
 
 
 def list_choices(db: Session) -> list[tuple[str, str]]:
-    """Unique, generic, each registered vendor, then any other list that has keywords."""
+    """Payees, each registered vendor, then any other list that has keywords."""
     vendors = admin.receipt_vendor_keys()
     others = [
-        key for key in admin.keyword_list_keys(db) if key not in PAYEE_LISTS and key not in vendors
+        key for key in admin.keyword_list_keys(db) if key != PAYEE_LIST and key not in vendors
     ]
-    return [(key, key.capitalize()) for key in (*PAYEE_LISTS, *vendors, *others)]
+    return [(key, list_name(key)) for key in (PAYEE_LIST, *vendors, *others)]
 
 
 def _keyword_or_404(db: Session, keyword_id: int) -> KeywordRow:
@@ -284,7 +351,7 @@ def _keyword_or_404(db: Session, keyword_id: int) -> KeywordRow:
 
 
 def safe_list(value: str | None) -> str:
-    """A list key the page can show. Anything else falls back to unique."""
+    """A list key the page can show. Anything else falls back to payee."""
     if value and is_list_key(value):
         return value
-    return "unique"
+    return PAYEE_LIST

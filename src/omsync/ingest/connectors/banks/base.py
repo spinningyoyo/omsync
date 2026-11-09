@@ -173,7 +173,6 @@ class BankConnector(BrowserSession):
         dest: Path,
         *,
         vault_item_id: str | None,
-        close_on_failure: bool = True,
     ) -> list[Path]:
         if vault_item_id is None:
             raise ConnectorError(
@@ -215,7 +214,7 @@ class BankConnector(BrowserSession):
                     f"the browser stopped while syncing {self.display_name} ({type(exc).__name__})"
                 ) from None
             finally:
-                if failed and not close_on_failure:
+                if failed:
                     self.leave_open()
                 else:
                     self.close()

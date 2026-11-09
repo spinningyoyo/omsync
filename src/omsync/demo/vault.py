@@ -15,6 +15,8 @@ class DemoVault:
     def __repr__(self) -> str:
         return "DemoVault()"
 
+    idle_minutes = 0
+
     def unlock(self, email: str, password: str) -> None:
         raise VaultError(MESSAGE)
 

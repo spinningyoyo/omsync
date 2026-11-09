@@ -3,7 +3,7 @@
 {% from "components/alert.html" import alert with context %}
 {% from "components/button.html" import link_button %}
 {% from "settings/provider_parts.html" import provider_list %}
-{% from "settings/sync_parts.html" import close_on_failure_control, sync_all_control, sync_region, sync_question %}
+{% from "settings/sync_parts.html" import sync_all_control, sync_region, sync_question %}
 
 {% block settings_page %}
 {% if demo_mode %}
@@ -17,8 +17,7 @@
   </div>
 </div>
 <div id="toast-region" aria-live="polite"></div>
-{{ close_on_failure_control(close_on_failure) }}
-{{ sync_region(sync) }}
+{{ sync_region(sync, vault_status) }}
 <section id="link-accounts" aria-live="polite" class="rounded-xl bg-container p-6 shadow-border-xs empty:hidden"></section>
 {{ sync_question(sync.question, sync.notice) }}
 {{ provider_list(groups) }}

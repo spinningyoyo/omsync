@@ -2,14 +2,14 @@
 
 from typing import Any
 
-from sqlalchemy import JSON
+from sqlalchemy import JSON, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from omsync.core.db import Base
+from omsync.ledger.sources import Account
 
 JOINT_SHARE = "joint_share"
 JOINT_SHARE_DEFAULT = True
-SYNC_CLOSE_ON_FAILURE = "sync_close_on_failure"
 
 
 class Preference(Base):
@@ -38,7 +38,6 @@ def joint_share_on(session: Session) -> bool:
     return bool(get_pref(session, JOINT_SHARE, JOINT_SHARE_DEFAULT))
 
 
-def close_browser_on_failure(session: Session) -> bool:
-    """Whether a failed sync closes its browser. On unless you turned it off, so that you can look
-    at the page a sync stopped on."""
-    return bool(get_pref(session, SYNC_CLOSE_ON_FAILURE, True))
+def has_joint_accounts(session: Session) -> bool:
+    """Whether any account, open or closed, is joint. Joint share changes nothing without one."""
+    return session.scalar(select(Account.id).where(Account.joint).limit(1)) is not None

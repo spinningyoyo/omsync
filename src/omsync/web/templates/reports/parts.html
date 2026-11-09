@@ -4,109 +4,87 @@
    _period_picker, _summary_dashboard, _trends_insights, _breakdown_table, _category_row and
    _budget_performance. Net worth, investment flows and performance, and Google Sheets are left out.
 
-   Each macro that the fragments use takes oob=true, so an htmx reply swaps it in place by id. #}
+   A period change is a plain link, so the whole page shows the new period. #}
 {% from "components/icon.html" import icon with context %}
-{% from "components/button.html" import link_button with context %}
-{% from "components/menu.html" import menu, menu_item with context %}
-{% from "components/segmented_control.html" import segmented_control with context %}
+{% from "components/button.html" import button with context %}
+{% from "components/dialog.html" import dialog_panel with context %}
+{% from "components/menu.html" import menu_item with context %}
 {% from "components/table.html" import table %}
-{% from "components/toggle.html" import toggle %}
+{% from "components/view_controls.html" import page_actions, custom_range_form with context %}
 {% from "layouts/shell_parts.html" import empty_state %}
 {% from "plan/parts.html" import budget_card as plan_budget_card with context %}
 
-{# The period picker: presets as segments, the custom range below them, and the Print link. #}
-{% macro period_controls(view, oob=false) -%}
-<div id="period-controls" class="flex flex-col gap-3"{% if oob %} hx-swap-oob="true"{% endif %}>
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div class="max-w-full overflow-x-auto">
-      {{ segmented_control(view.presets, label="Report period") }}
+{# The page's actions menu: Print opens the print layout for the period shown, in a new tab, and
+   Export opens a dialog with the year, the workbook, and the Export button. The dialog's form asks
+   /reports/export, which sends it on to the chosen workbook's download, and the dialog closes as
+   the download starts. A year change asks for the choices again (routes/reports.py, export_menu),
+   since the rental report depends on rental properties being set. The dialog sits beside the menu,
+   inside the same dialog controller, since the menu's panel closes when an item is chosen. #}
+{% macro report_actions(view, export) -%}
+<div class="inline-flex" data-controller="dialog">
+  {%- call page_actions("report-actions") %}
+  {{ menu_item("Print", icon_name="printer", href=view.print_href, attrs={"target": "_blank", "rel": "noopener"}) }}
+  {{ menu_item("Export…", icon_name="download", attrs={"data-action": "dialog#open"}) }}
+  {%- endcall %}
+  {%- call dialog_panel("export-dialog", "Export", width="sm") %}
+  <form id="export-form" method="get" action="/reports/export" class="flex flex-col gap-4" data-action="submit->dialog#close">
+    <div class="form-field">
+      <div class="form-field__body">
+        <label class="form-field__label" for="export-year">Year</label>
+        <select id="export-year" name="year" class="form-field__input w-full" hx-get="/reports/export/menu" hx-trigger="change" hx-target="#export-menu" hx-swap="outerHTML">
+          {%- for year in export.years %}
+          <option value="{{ year }}"{% if year == export.year %} selected{% endif %}>{{ year }}</option>
+          {%- endfor %}
+        </select>
+      </div>
     </div>
-    {{ link_button("Print", href=view.print_href, variant="outline", size="sm", icon="printer", attrs={"target": "_blank", "rel": "noopener"}) }}
-  </div>
-  {%- if view.selection.key == "custom" %}
-  <form id="custom-range" class="flex flex-wrap items-end gap-3 rounded-lg bg-surface-inset p-3" method="get" action="/reports" hx-get="/reports" hx-swap="none" hx-push-url="true">
-    <input type="hidden" name="period" value="custom">
-    <label class="form-field w-40">
-      <span class="form-field__label">From</span>
-      <input type="date" name="start" value="{{ view.selection.start }}" required class="form-field__input">
-    </label>
-    <label class="form-field w-40">
-      <span class="form-field__label">To</span>
-      <input type="date" name="end" value="{{ view.selection.end }}" required class="form-field__input">
-    </label>
-    <button type="submit" class="inline-flex items-center rounded-md border border-secondary bg-transparent px-3 py-2 text-sm font-medium text-primary hover:bg-surface-hover focus-ring">Show</button>
+    {{ export_menu(export) }}
+    {{ button(text="Export", type="submit", icon="download", full_width=true) }}
   </form>
+  {%- endcall %}
+</div>
+{%- endmacro %}
+
+{# Under the header: the custom range form when Custom is chosen, and a period error. #}
+{% macro period_range(view) -%}
+{%- if view.selection.key == "custom" or view.selection.error %}
+<div id="period-range" class="flex flex-col gap-3">
+  {%- if view.selection.key == "custom" %}
+  {{ custom_range_form("/reports", view.selection) }}
   {%- endif %}
   {%- if view.selection.error %}
   <p class="text-sm text-destructive" role="alert">{{ view.selection.error }}</p>
   {%- endif %}
 </div>
+{%- endif %}
 {%- endmacro %}
 
-{# The values the joint toggle sends with its change: the period, from the hidden state form. #}
-{% macro report_state(view, oob=false) -%}
-<form id="report-state" hidden{% if oob %} hx-swap-oob="true"{% endif %}>
-  <input type="hidden" name="period" value="{{ view.selection.key }}">
-  <input type="hidden" name="start" value="{{ view.selection.start }}">
-  <input type="hidden" name="end" value="{{ view.selection.end }}">
-</form>
-{%- endmacro %}
-
-{# The toggle sits in the header, outside the swapped regions, so it keeps focus when it changes. #}
-{% macro joint_toggle(view) -%}
-<form id="joint-share" method="post" action="/reports/joint-share" hx-post="/reports/joint-share" hx-trigger="change" hx-include="#report-state" hx-swap="none">
-  {{ toggle("joint-share-input", "joint", "Show my half of joint accounts", checked=view.joint_share) }}
-</form>
-{%- endmacro %}
-
-{# The year select and the Export menu. The select sits beside the menu, not inside it: the menu
-   closes on any click inside its panel and takes the arrow keys, so a select there cannot be used.
-   A change asks for the menu again (routes/reports.py, export_menu) and swaps only the menu. #}
-{% macro export_controls(export, oob=false) -%}
-<div id="export-controls" class="flex flex-wrap items-end gap-3"{% if oob %} hx-swap-oob="true"{% endif %}>
-  <div class="form-field w-28">
-    <div class="form-field__body">
-      <label class="form-field__label" for="export-year">Year</label>
-      <select id="export-year" name="year" class="form-field__input w-full" hx-get="/reports/export/menu" hx-trigger="change" hx-target="#export-menu" hx-swap="outerHTML">
-        {%- for year in export.years %}
-        <option value="{{ year }}"{% if year == export.year %} selected{% endif %}>{{ year }}</option>
-        {%- endfor %}
-      </select>
-    </div>
-  </div>
-  {{ export_menu(export) }}
-</div>
-{%- endmacro %}
-
+{# The workbooks to choose from, for the year picked. The rental report cannot be chosen until rental
+   properties are set, and says so. #}
 {% macro export_menu(export) -%}
-<div id="export-menu">
-  {%- call menu(id="export-menu-items", label="Export", trigger="Export") %}
-  {{ menu_item("Transactions for " ~ export.year ~ " (.xlsx)", href="/reports/export/transactions?year=" ~ export.year, attrs={"download": ""}) }}
-  {%- if export.rental_ready %}
-  {{ menu_item("Rental report for " ~ export.year ~ " (.xlsx)", href="/reports/export/rental?year=" ~ export.year, attrs={"download": ""}) }}
-  {%- else %}
-  {{ unavailable_item("Rental report for " ~ export.year ~ " (.xlsx)", "Set up rental properties in Settings") }}
-  {%- endif %}
-  {%- endcall %}
-</div>
-{%- endmacro %}
-
-{# A menu item that cannot be chosen. It stays in the menu, so the reason shows as a tooltip and as
-   text, which a keyboard user can read. #}
-{% macro unavailable_item(text, reason) -%}
-<div class="px-1" role="none">
-  <span role="menuitem" tabindex="-1" aria-disabled="true" title="{{ reason }}" class="flex w-full flex-col gap-0.5 rounded-md p-2 cursor-not-allowed">
-    <span class="text-sm text-secondary">{{ text }}</span>
-    <span class="text-xs text-subdued">{{ reason }}</span>
-  </span>
-</div>
+<fieldset id="export-menu" class="flex flex-col gap-2">
+  <legend class="mb-2 text-sm text-secondary">Workbook</legend>
+  <label class="flex items-start gap-2 text-sm text-primary">
+    <input type="radio" name="report" value="transactions" checked class="mt-0.5">
+    <span>Transactions for {{ export.year }} (.xlsx)</span>
+  </label>
+  <label class="flex items-start gap-2 text-sm{% if export.rental_ready %} text-primary{% else %} text-secondary cursor-not-allowed{% endif %}"{% if not export.rental_ready %} title="Set up rental properties in Settings"{% endif %}>
+    <input type="radio" name="report" value="rental" class="mt-0.5"{% if not export.rental_ready %} disabled aria-describedby="export-rental-reason"{% endif %}>
+    <span class="flex flex-col gap-0.5">
+      <span>Rental report for {{ export.year }} (.xlsx)</span>
+      {%- if not export.rental_ready %}
+      <span id="export-rental-reason" class="text-xs text-subdued">Set up rental properties in Settings</span>
+      {%- endif %}
+    </span>
+  </label>
+</fieldset>
 {%- endmacro %}
 
 {% macro summary_cards(view) -%}
 <section class="flex flex-col gap-3" aria-labelledby="summary-title">
   <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
     <h2 id="summary-title" class="text-sm font-medium text-primary">Summary for {{ view.period_label }}</h2>
-    <p class="text-sm text-secondary">{{ view.joint_note }}. Compared with {{ view.prior_label }}.</p>
+    <p class="text-sm text-secondary">Compared with {{ view.prior_label }}.</p>
   </div>
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
     {%- for card in view.cards %}
@@ -205,8 +183,8 @@
 
 {# The report body: the summary, the trend, the breakdown, and the budget card. With no transactions
    at all, the empty state stands in for them. #}
-{% macro report_main(view, oob=false) -%}
-<div id="report-main" class="flex flex-col gap-6"{% if oob %} hx-swap-oob="true"{% endif %}>
+{% macro report_main(view) -%}
+<div id="report-main" class="flex flex-col gap-6">
   {%- if view.has_transactions %}
   {{ summary_cards(view) }}
   {{ trend_card(view) }}

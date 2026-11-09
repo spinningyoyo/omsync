@@ -10,7 +10,7 @@ Triage reads receipt files through the vendor registry. This module never import
 import copy
 import re
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -34,15 +34,17 @@ from omsync.core.money import format_cents, to_cents
 from omsync.core.settings import Settings
 from omsync.ledger.categories import DEFAULT_CATEGORY_ICON
 from omsync.ledger.categorize import (
-    PAYEE_LISTS,
     ActiveRule,
+    CompiledKeyword,
     Move,
     compile_pattern,
     is_list_key,
+    list_name,
     load_keywords,
     match_receipt_item,
     plan_categorize,
     rule_for_transaction,
+    with_keyword,
 )
 from omsync.ledger.models import (
     Account,
@@ -57,6 +59,12 @@ from omsync.ledger.models import (
     RuleOtherSide,
     SavedFilter,
     Transaction,
+)
+from omsync.ledger.payment_methods import (
+    PaymentMethod,
+    describe_methods,
+    parse_paid_by,
+    store_paid_by,
 )
 from omsync.receipts import vendor as vendor_registry
 from omsync.reports.rental import RENTAL_CATEGORIES, get_rental_categories
@@ -117,7 +125,6 @@ class KeywordRow:
     list_key: str
     pattern: str
     is_regex: bool
-    priority: int
     enabled: bool
     category_id: int
     category_name: str
@@ -132,10 +139,7 @@ class RuleRow:
     id: int
     position: int
     enabled: bool
-    list_key: str | None
-    from_category_id: int | None
-    from_category_name: str | None
-    from_category_hidden: bool
+    paid_by: tuple[str, ...]  # PaymentMethod values, in the order PaymentMethod lists them
     below_cents: int | None
     at_least_cents: int | None
     other_side: str | None  # the RuleOtherSide value
@@ -153,11 +157,11 @@ class RuleRow:
 class RuleDraft:
     """A rule as it would be stored: its conditions and the category it sets. Nothing is stored
     until add_rule or update_rule, and preview_rule checks a draft the same way and writes nothing.
-    other_side is a RuleOtherSide, or its value."""
+    other_side is a RuleOtherSide, or its value, and paid_by holds PaymentMethods or their
+    values."""
 
     to_category_id: int
-    from_category_id: int | None = None
-    list_key: str | None = None
+    paid_by: Iterable[PaymentMethod | str] = ()
     below_cents: int | None = None
     at_least_cents: int | None = None
     other_side: RuleOtherSide | str | None = None
@@ -166,7 +170,7 @@ class RuleDraft:
 
 
 @dataclass(frozen=True)
-class RulePreview:
+class DraftPreview:
     """The transactions whose category a draft would change, were it saved now. count is their
     number, and changes lists them in ID order."""
 
@@ -244,7 +248,7 @@ def category_choices(session: Session) -> list[tuple[int, str]]:
 
 
 def keywords_in_list(session: Session, list_key: str, query: str = "") -> list[KeywordRow]:
-    """The keywords of one list, in precedence order: priority, then longer pattern, then id.
+    """The keywords of one list, in precedence order: longer pattern first, then id.
 
     Disabled keywords are listed too, at their precedence, so you can turn them back on. A query
     keeps the keywords whose pattern or category name contains it, ignoring case. A blank query
@@ -261,7 +265,6 @@ def keywords_in_list(session: Session, list_key: str, query: str = "") -> list[K
             list_key=keyword.list_key,
             pattern=keyword.pattern,
             is_regex=keyword.is_regex,
-            priority=keyword.priority,
             enabled=keyword.enabled,
             category_id=keyword.category_id,
             category_name=name,
@@ -276,7 +279,7 @@ def keywords_in_list(session: Session, list_key: str, query: str = "") -> list[K
             for row in found
             if needle in row.pattern.casefold() or needle in row.category_name.casefold()
         ]
-    return sorted(found, key=lambda row: (-row.priority, -len(row.pattern), row.id))
+    return sorted(found, key=lambda row: (-len(row.pattern), row.id))
 
 
 def keyword_count(session: Session, list_key: str) -> int:
@@ -302,8 +305,7 @@ def get_keyword(session: Session, keyword_id: int) -> KeywordRow:
 
 # The conditions a rule has, in the order a draft names them, and the fields a rule stores.
 _CONDITIONS = (
-    "from_category_id",
-    "list_key",
+    "paid_by",
     "below_cents",
     "at_least_cents",
     "other_side",
@@ -311,7 +313,6 @@ _CONDITIONS = (
     "account_id",
 )
 _RULE_FIELDS = (*_CONDITIONS, "to_category_id")
-_LIST_PHRASE = {"unique": "Unique", "generic": "Generic"}
 
 
 @dataclass(frozen=True)
@@ -376,16 +377,12 @@ def _names(session: Session) -> _Names:
 
 def _row(rule: CategoryRule, names: _Names) -> RuleRow:
     fields = _fields_of(rule)
-    from_id = fields["from_category_id"]
     to_id = fields["to_category_id"]
     return RuleRow(
         id=rule.id,
         position=rule.position,
         enabled=rule.enabled,
-        list_key=fields["list_key"],
-        from_category_id=from_id,
-        from_category_name=names.categories.get(from_id) if from_id is not None else None,
-        from_category_hidden=from_id in names.hidden,
+        paid_by=tuple(m.value for m in PaymentMethod if m in parse_paid_by(fields["paid_by"])),
         below_cents=fields["below_cents"],
         at_least_cents=fields["at_least_cents"],
         other_side=fields["other_side"],
@@ -404,8 +401,7 @@ def _fields_of(rule: CategoryRule) -> dict[str, Any]:
     """A stored rule's values, named as a draft names them, with the other side as its value."""
     other = None if rule.other_side is None else RuleOtherSide(rule.other_side).value
     return {
-        "from_category_id": rule.from_category_id,
-        "list_key": rule.list_key,
+        "paid_by": rule.paid_by,
         "below_cents": rule.below_cents,
         "at_least_cents": rule.at_least_cents,
         "other_side": other,
@@ -418,8 +414,7 @@ def _fields_of(rule: CategoryRule) -> dict[str, Any]:
 def _sentence(
     names: _Names,
     *,
-    from_category_id: int | None,
-    list_key: str | None,
+    paid_by: str | None,
     below_cents: int | None,
     at_least_cents: int | None,
     other_side: str | None,
@@ -427,15 +422,9 @@ def _sentence(
     account_id: int | None,
     to_category_id: int,
 ) -> str:
-    """A rule as one sentence, such as "Keywords say Transfer · under $100.00 · with a person →
+    """A rule as one sentence, such as "Paid by Transfer · under $100.00 · with a person →
     Dining"."""
-    if from_category_id is None:
-        parts = ["Any transaction"]
-    elif list_key is None:
-        parts = [f"Keywords say {names.categories[from_category_id]}"]
-    else:
-        keywords = f"{_LIST_PHRASE[list_key]} keywords say"
-        parts = [f"{keywords} {names.categories[from_category_id]}"]
+    parts = [f"Paid by {describe_methods(parse_paid_by(paid_by))}"] if paid_by else []
     amount = _amount_text(below_cents, at_least_cents)
     if amount is not None:
         parts.append(amount)
@@ -447,7 +436,7 @@ def _sentence(
         parts.append("with one of my accounts")
     if account_id is not None:
         parts.append(f"in {names.accounts[account_id]}")
-    joined = " · ".join(parts)
+    joined = " · ".join(parts) or "Any transaction"
     return f"{joined} → {names.categories[to_category_id]}"
 
 
@@ -711,16 +700,14 @@ def delete_category(session: Session, category_id: int, *, idempotency_key: str)
 
 @dataclass(frozen=True)
 class MovePreview:
-    """What delete_and_move would write, computed now. `uses` is what points at the category today,
-    including the rules that `dropped_rules` of them lose. `digest` identifies this exact
-    operation, so an apply made from a stale preview is refused."""
+    """What delete_and_move would write, computed now. `uses` is what points at the category today.
+    `digest` identifies this exact operation, so an apply made from a stale preview is refused."""
 
     category_id: int
     category_name: str
     target_id: int
     target_name: str
     uses: tuple[CategoryUse, ...]
-    dropped_rules: int
     digest: str
     preview: Preview
 
@@ -731,8 +718,7 @@ def move_preview(session: Session, category_id: int, target_id: int) -> MovePrev
 
     Raises LookupError if the category does not exist. Raises ValueError, with a message for the
     screen, when the move is refused: the target is the category itself or does not exist, the
-    target already has a budget line for a month the category has one, or two rules would
-    become one.
+    target already has a budget line for a month the category has one.
     """
     source = _category_snapshot(session, category_id)
     if target_id == category_id:
@@ -742,16 +728,13 @@ def move_preview(session: Session, category_id: int, target_id: int) -> MovePrev
         raise ValueError("Pick a category to move its uses to.")
     source_name = str(source["name"])
     changes = [
-        *_rule_changes(session, category_id, target_id, source_name, target.name),
+        *_rule_changes(session, category_id, target_id),
         *_budget_line_changes(session, category_id, target_id, source_name, target.name),
         *_repoint_changes(session, category_id, target_id),
         *_saved_filter_changes(session, category_id, target_id),
         *_rental_name_changes(session, source_name, target.name),
         Change("category", str(category_id), source, None),
     ]
-    dropped = sum(
-        1 for change in changes if change.table == "category_rule" and change.after is None
-    )
     label = f"Deleted {source_name} and moved its uses to {target.name}"
     preview = make_preview(
         session,
@@ -761,7 +744,6 @@ def move_preview(session: Session, category_id: int, target_id: int) -> MovePrev
             "label": label,
             "category_id": category_id,
             "target_id": target_id,
-            "dropped_rules": dropped,
         },
     )
     return MovePreview(
@@ -770,7 +752,6 @@ def move_preview(session: Session, category_id: int, target_id: int) -> MovePrev
         target_id=target_id,
         target_name=target.name,
         uses=tuple(category_uses(session, category_id)),
-        dropped_rules=dropped,
         digest=preview_digest(preview),
         preview=preview,
     )
@@ -810,7 +791,6 @@ def add_keyword(
     category_id: int,
     *,
     is_regex: bool = True,
-    priority: int = 0,
     idempotency_key: str,
 ) -> Batch:
     """Add a keyword to a list. The pattern must not be blank or a bad regex, and it must not repeat
@@ -821,7 +801,6 @@ def add_keyword(
     _check_list_key(list_key)
     clean = _clean_pattern(pattern, is_regex=is_regex)
     _check_category(session, category_id)
-    _check_priority(priority)
     _ensure_pattern_free(session, list_key, clean, except_id=None)
     new_id = next_primary_key(session, Keyword.__table__)
     values = {
@@ -830,14 +809,13 @@ def add_keyword(
         "pattern": clean,
         "is_regex": bool(is_regex),
         "category_id": category_id,
-        "priority": priority,
         "enabled": True,
     }
     return _write(
         session,
         "keyword.add",
         [Change("keyword", str(new_id), None, values)],
-        f'Added keyword "{clean}" to {list_key}',
+        f'Added keyword "{clean}" to {list_name(list_key)}',
         idempotency_key,
         keyword_id=new_id,
     )
@@ -846,7 +824,7 @@ def add_keyword(
 def update_keyword(
     session: Session, keyword_id: int, *, idempotency_key: str, **fields: Any
 ) -> Batch:
-    """Change a keyword's pattern, is_regex, category_id, or priority. Enabling is separate.
+    """Change a keyword's pattern, is_regex, or category_id. Enabling is separate.
 
     Raises LookupError if it does not exist, ValueError for a bad value, and NothingChanged when
     the values are already stored.
@@ -854,22 +832,19 @@ def update_keyword(
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
         return replay
-    unknown = set(fields) - {"pattern", "is_regex", "category_id", "priority"}
+    unknown = set(fields) - {"pattern", "is_regex", "category_id"}
     if unknown:
         raise ValueError(f"A keyword has no field {sorted(unknown)[0]!r} that can be changed here.")
     before = _keyword_snapshot(session, keyword_id)
     is_regex = bool(fields.get("is_regex", before["is_regex"]))
     pattern = _clean_pattern(fields.get("pattern", before["pattern"]), is_regex=is_regex)
     category_id = fields.get("category_id", before["category_id"])
-    priority = fields.get("priority", before["priority"])
     _check_category(session, category_id)
-    _check_priority(priority)
     after = {
         **before,
         "pattern": pattern,
         "is_regex": is_regex,
         "category_id": category_id,
-        "priority": priority,
     }
     if after == before:
         raise NothingChanged(NOTHING_CHANGED)
@@ -1052,7 +1027,7 @@ def move_rule(
     )
 
 
-def preview_rule(session: Session, draft: RuleDraft, *, rule_id: int | None = None) -> RulePreview:
+def preview_rule(session: Session, draft: RuleDraft, *, rule_id: int | None = None) -> DraftPreview:
     """The transactions whose category would change if the draft were saved now, with their count.
 
     A draft with rule_id replaces that rule, keeping its place and whether it is on. Without
@@ -1075,7 +1050,52 @@ def preview_rule(session: Session, draft: RuleDraft, *, rule_id: int | None = No
     if rule_id is None:
         rules.append(_active(0, (stored[-1].position + 1) if stored else 1, values))
     plan = plan_categorize(session, rules=rules)
-    return RulePreview(count=plan.changed, changes=plan.moves)
+    return DraftPreview(count=plan.changed, changes=plan.moves)
+
+
+def preview_keyword(
+    session: Session,
+    list_key: str,
+    pattern: str,
+    category_id: int,
+    *,
+    is_regex: bool = True,
+    keyword_id: int | None = None,
+) -> DraftPreview:
+    """The transactions whose category would change if the keyword were saved now, with their count.
+
+    A draft with keyword_id replaces that keyword, which stays out if it is switched off. Without
+    keyword_id, the draft would be added. Writes nothing. Raises ValueError for a draft that
+    add_keyword or update_keyword would refuse, and LookupError if keyword_id does not exist. A
+    receipt list's keyword changes no transaction here: it categorizes receipt items, which change
+    when a vendor's receipts are applied.
+    """
+    _check_list_key(list_key)
+    clean = _clean_pattern(pattern, is_regex=is_regex)
+    _check_category(session, category_id)
+    enabled = True
+    if keyword_id is not None:
+        stored = session.get(Keyword, keyword_id)
+        if stored is None:
+            raise LookupError(f"There is no keyword {keyword_id}.")
+        list_key, enabled = stored.list_key, stored.enabled
+    _ensure_pattern_free(session, list_key, clean, except_id=keyword_id)
+    if keyword_id is None:
+        keyword_id_for_draft = next_primary_key(session, Keyword.__table__)
+    else:
+        keyword_id_for_draft = keyword_id
+    draft = CompiledKeyword(
+        keyword_id_for_draft,
+        list_key,
+        clean,
+        category_id,
+        compile_pattern(clean, is_regex=is_regex),
+    )
+    keywords = with_keyword(
+        load_keywords(session), draft if enabled else None, replacing=keyword_id
+    )
+    plan = plan_categorize(session, keywords=keywords)
+    return DraftPreview(count=plan.changed, changes=plan.moves)
 
 
 def _active(rule_id: int, position: int, fields: Mapping[str, Any]) -> ActiveRule:
@@ -1083,8 +1103,7 @@ def _active(rule_id: int, position: int, fields: Mapping[str, Any]) -> ActiveRul
     return ActiveRule(
         id=rule_id,
         position=position,
-        list_key=fields["list_key"],
-        from_category_id=fields["from_category_id"],
+        paid_by=parse_paid_by(fields["paid_by"]),
         below_cents=fields["below_cents"],
         at_least_cents=fields["at_least_cents"],
         other_side=None if other is None else RuleOtherSide(other),
@@ -1148,13 +1167,12 @@ def _condition_key(fields: Mapping[str, Any]) -> tuple[Any, ...]:
 def _check_rule(session: Session, draft: RuleDraft) -> dict[str, Any]:
     """The values a draft stores, checked. Raises ValueError with a message for the screen.
 
-    A rule needs at least one condition. A keyword list needs the category the keywords assign,
-    the two categories must differ, a limit or minimum must be more than $0.00, and the under
+    A rule needs at least one condition. A limit or minimum must be more than $0.00, and the under
     limit must be more than the minimum. A contact goes with the contact option and no other.
     """
+    methods = _methods(draft.paid_by)
     values: dict[str, Any] = {
-        "from_category_id": draft.from_category_id,
-        "list_key": draft.list_key,
+        "paid_by": store_paid_by(methods),
         "below_cents": draft.below_cents,
         "at_least_cents": draft.at_least_cents,
         "other_side": None if draft.other_side is None else _other_side(draft.other_side),
@@ -1163,16 +1181,6 @@ def _check_rule(session: Session, draft: RuleDraft) -> dict[str, Any]:
         "to_category_id": draft.to_category_id,
     }
     _check_category(session, draft.to_category_id, "Pick the category to set.")
-    from_id = draft.from_category_id
-    if from_id is not None:
-        _check_category(session, from_id, "Pick the category the keywords assign.")
-        if from_id == draft.to_category_id:
-            raise ValueError("Pick two different categories.")
-    if draft.list_key is not None:
-        if draft.list_key not in PAYEE_LISTS:
-            raise ValueError("The list must be unique or generic.")
-        if from_id is None:
-            raise ValueError("Pick the category the keywords assign to use a list.")
     if draft.below_cents is not None:
         _check_money(draft.below_cents, "The limit must be more than $0.00.")
     if draft.at_least_cents is not None:
@@ -1187,10 +1195,16 @@ def _check_rule(session: Session, draft: RuleDraft) -> dict[str, Any]:
         raise ValueError("A contact goes only with the contact option.")
     if draft.account_id is not None and session.get(Account, draft.account_id) is None:
         raise ValueError("Pick an account.")
-    conditions = ("from_category_id", "below_cents", "at_least_cents", "other_side", "account_id")
-    if all(values[name] is None for name in conditions):
+    if all(values[name] is None for name in _CONDITIONS):
         raise ValueError("Set at least one condition.")
     return values
+
+
+def _methods(values: Iterable[PaymentMethod | str]) -> frozenset[PaymentMethod]:
+    try:
+        return frozenset(PaymentMethod(value) for value in values)
+    except ValueError:
+        raise ValueError("Pick how it was paid from the list.") from None
 
 
 def _other_side(value: RuleOtherSide | str) -> str:
@@ -1262,8 +1276,7 @@ def _category_usage(session: Session) -> dict[int, Counter[str]]:
     """What points at each category, by kind: rows with a foreign key to it, saved filters that name
     it, and rental category names that match it. A category nothing points at is absent.
 
-    No row holds the same category in two columns (category_rule's check constraint forbids it), so
-    counting each column once counts each row once.
+    Each table names a category in one column, so counting each column counts each row once.
     """
     usage: dict[int, Counter[str]] = {}
 
@@ -1323,36 +1336,22 @@ def _repoint_filter(data: Any, source_id: int, target_id: int) -> dict[str, Any]
     return repointed if changed else None
 
 
-def _rule_changes(
-    session: Session, source_id: int, target_id: int, source_name: str, target_name: str
-) -> list[Change]:
-    """The rules a move changes. A rule that would have the target on both sides is dropped. Two
-    rules that would then have the same conditions are refused rather than merged."""
-    drops: list[Change] = []
-    moves: list[Change] = []
-    seen: set[tuple[Any, ...]] = set()
-    for rule in session.scalars(select(CategoryRule).order_by(CategoryRule.id)):
-        fields = _fields_of(rule)
-        moved = {
-            name: target_id if fields[name] == source_id else fields[name]
-            for name in ("from_category_id", "to_category_id")
-        }
-        after = {**fields, **moved}
-        if after["from_category_id"] == after["to_category_id"]:
-            before = snapshot(session, "category_rule", rule.id)
-            drops.append(Change("category_rule", str(rule.id), before, None))
-            continue
-        key = _condition_key(after)
-        if key in seen:
-            raise ValueError(
-                f"Moving {source_name} would leave two rules with the same conditions, "
-                f"one of them to {target_name}. Change or delete one of them first."
-            )
-        seen.add(key)
-        if any(moved[name] != fields[name] for name in moved):
-            before_pair = {name: fields[name] for name in moved}
-            moves.append(Change("category_rule", str(rule.id), before_pair, moved))
-    return [*drops, *moves]
+def _rule_changes(session: Session, source_id: int, target_id: int) -> list[Change]:
+    """The rules a move changes: those that set the source now set the target."""
+    rules = session.scalars(
+        select(CategoryRule)
+        .where(CategoryRule.to_category_id == source_id)
+        .order_by(CategoryRule.id)
+    )
+    return [
+        Change(
+            "category_rule",
+            str(rule.id),
+            {"to_category_id": source_id},
+            {"to_category_id": target_id},
+        )
+        for rule in rules
+    ]
 
 
 def _budget_line_changes(
@@ -1436,7 +1435,7 @@ def _rental_name_changes(session: Session, source_name: str, target_name: str) -
 def _check_list_key(list_key: str) -> None:
     if is_list_key(list_key):
         return
-    raise ValueError("The list must be unique, generic, or a lowercase vendor key such as amazon.")
+    raise ValueError("The list must be payee or a lowercase vendor key such as amazon.")
 
 
 def _clean_pattern(pattern: str, *, is_regex: bool) -> str:
@@ -1458,11 +1457,6 @@ def _clean_pattern(pattern: str, *, is_regex: bool) -> str:
 def _check_category(session: Session, category_id: int, message: str = "Pick a category.") -> None:
     if not isinstance(category_id, int) or session.get(Category, category_id) is None:
         raise ValueError(message)
-
-
-def _check_priority(priority: int) -> None:
-    if isinstance(priority, bool) or not isinstance(priority, int):
-        raise ValueError("Priority must be a whole number.")
 
 
 def _ensure_pattern_free(

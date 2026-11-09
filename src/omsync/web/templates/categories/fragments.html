@@ -91,9 +91,9 @@
 {{ rule_edit_row(form, choices, contacts, accounts) }}
 {% endblock %}
 
-{% block frag_rule_preview %}
-{% from "categories/parts.html" import rule_preview %}
-{{ rule_preview(count, moves, error) }}
+{% block frag_change_preview %}
+{% from "categories/parts.html" import change_preview %}
+{{ change_preview(count, moves, error, note) }}
 {% endblock %}
 
 {# A batch reply passes its label; a refusal or a no-op passes its message. #}
@@ -108,12 +108,12 @@
 
 {% block frag_payee_results %}
 {% from "categories/parts.html" import payee_results %}
-{{ payee_results(payee, person, matches, names, error, rule) }}
+{{ payee_results(payee, person, matches, names, error, rule, method) }}
 {% endblock %}
 
 {% block frag_triage %}
 {% from "categories/parts.html" import triage_panel %}
-{{ triage_panel(payees, vendors, choices) }}
+{{ triage_panel(payees, vendors, choices, uncategorized, uncategorized_href) }}
 {% endblock %}
 
 {% block frag_triage_form %}
@@ -123,7 +123,7 @@
 
 {% block frag_triage_done %}
 {% from "transactions/parts.html" import toast_region %}
-<p class="text-sm text-secondary">Keyword added to {{ list_key }}. Preview categorize to apply it.</p>
+<p class="text-sm text-secondary">Keyword added to {{ list_name(list_key) }}.</p>
 {{ toast_region(label, batch_id) }}
 {% endblock %}
 
@@ -138,13 +138,3 @@
 {{ toast_region(label, batch_id) }}
 {% endblock %}
 
-{% block frag_categorize %}
-{% from "categories/parts.html" import categorize_body %}
-{{ categorize_body(plan, error, revision, key) }}
-{% endblock %}
-
-{% block frag_categorize_done %}
-{% from "transactions/parts.html" import toast_region %}
-<p class="text-sm text-primary">{{ message }}</p>
-{{ toast_region(label, batch_id) }}
-{% endblock %}

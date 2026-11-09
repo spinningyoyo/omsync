@@ -1,4 +1,4 @@
-{# The Bank sync parts: the institutions with their provider cards, the edit and delete dialogs of a
+{# The Bank sync parts: the row of provider and Not synced cards, the edit and delete dialogs of a
    card, and the edit form's vault search. The list region is replaced whole when a change is saved
    or undone, so the dialogs and the cards are re-rendered with it. Macros import what they use,
    because a fragment block renders without this file's top level. #}
@@ -10,55 +10,65 @@
 {% from "settings/parts.html" import step_error, vault_results %}
 {% from "settings/sync_parts.html" import sync_button %}
 
-{# The list of institutions. oob=true swaps it in place after a change or an undo. #}
+{# The providers, as one row of cards that scrolls sideways, so the page does not grow longer with
+   each bank: a card for each provider, then a Not synced card for an institution with open accounts
+   that no provider fetches. The card past the right edge is cut off, which shows there are more.
+   oob=true swaps it in place after a change or an undo. #}
 {% macro provider_list(groups, oob=false) -%}
-<div id="providers-list" class="flex flex-col gap-6"{% if oob %} hx-swap-oob="true"{% endif %}>
+<div id="providers-list" class="flex flex-col gap-4"{% if oob %} hx-swap-oob="true"{% endif %}>
   {%- if not (groups | selectattr("providers") | list) %}
   {{ empty_state("No providers yet", "A provider logs in to one institution's bank with a vault login and fetches the accounts you choose. Use Add provider to set one up. Accounts that no provider fetches are listed under their institution as Not synced.") }}
   {%- endif %}
-  {%- for group in groups %}
-  {{ institution_group(group) }}
-  {%- endfor %}
+  <div class="-m-1 flex snap-x snap-proximity items-stretch gap-4 overflow-x-auto p-1 pb-3" role="list" aria-label="Providers">
+    {%- for group in groups %}
+    {%- for card in group.providers %}
+    {{ provider_card(card, group) }}
+    {%- endfor %}
+    {%- if group.not_synced %}
+    {{ not_synced_card(group) }}
+    {%- endif %}
+    {%- endfor %}
+  </div>
 </div>
 {%- endmacro %}
 
-{# One institution: its provider cards, then its open accounts that no provider fetches. #}
-{% macro institution_group(group) -%}
-<section id="institution-{{ group.key }}" class="flex flex-col gap-4" aria-labelledby="institution-{{ group.key }}-title">
-  <header class="flex items-center gap-3">
-    {{ institution_logo(group.key, group.name, 36) }}
-    <div>
-      <h2 id="institution-{{ group.key }}-title" class="text-base font-medium text-primary">{{ group.name }}</h2>
-      <p class="text-xs text-secondary">{{ group.key }}</p>
-    </div>
-  </header>
-  {%- for card in group.providers %}
-  {{ provider_card(card) }}
-  {%- else %}
-  <p class="text-sm text-secondary">No provider fetches this institution's accounts yet.</p>
-  {%- endfor %}
-  {%- if group.not_synced %}
-  <div class="flex flex-col gap-2 rounded-xl bg-container p-5 shadow-border-xs">
-    <h3 class="text-sm font-medium text-primary">Not synced</h3>
-    <p class="text-xs text-secondary">Open accounts that no provider fetches. Edit a provider to choose them.</p>
-    {{ account_list(group.not_synced, "Accounts not synced at " ~ group.name) }}
+{# The top of a card: the institution's logo and name, and what the card holds under it. #}
+{% macro card_header(group, title_id, subtitle, subtitle_id) -%}
+<div class="flex min-w-0 flex-1 items-center gap-3">
+  {{ institution_logo(group.key, group.name, 36) }}
+  <div class="min-w-0">
+    <h3 id="{{ title_id }}" class="font-medium text-primary">{{ group.name }}</h3>
+    <p id="{{ subtitle_id }}" class="break-words text-xs text-secondary">{{ subtitle }}</p>
   </div>
-  {%- endif %}
-</section>
+</div>
 {%- endmacro %}
 
-{# The accounts of a provider or of Not synced, each with the dialog that renames it. #}
+{# The classes every card in the row shares: 320 pixels wide, so three or four fit across a laptop. #}
+{% set CARD = "flex w-80 shrink-0 snap-start flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" %}
+
+{# An institution's open accounts that no provider fetches. #}
+{% macro not_synced_card(group) -%}
+<article id="not-synced-{{ group.key }}" role="listitem" class="{{ CARD }}" aria-labelledby="not-synced-{{ group.key }}-title not-synced-{{ group.key }}-subtitle">
+  <header class="flex items-start gap-2">{{ card_header(group, "not-synced-" ~ group.key ~ "-title", "Not synced", "not-synced-" ~ group.key ~ "-subtitle") }}</header>
+  <p class="text-xs text-secondary">Open accounts that no provider fetches. Edit a provider to choose them.</p>
+  {{ account_list(group.not_synced, "Accounts not synced at " ~ group.name) }}
+</article>
+{%- endmacro %}
+
+{# The accounts of a provider or of Not synced, each with the dialog that renames it. Eight rows show
+   (each is 52 pixels), and a longer list scrolls inside the card. #}
 {% macro account_list(accounts, label) -%}
-<ul class="flex flex-col divide-y divide-subdued text-sm" aria-label="{{ label }}">
+<ul class="-mx-1 flex max-h-[26rem] flex-col divide-y divide-subdued overflow-y-auto px-1 text-sm" aria-label="{{ label }}">
   {%- for account in accounts %}
-  <li class="flex flex-wrap items-center justify-between gap-2 py-2">
-    <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-primary">
-      <span>{{ account.name }}</span>
-      <span class="text-secondary">{{ account.last4 }} · {{ account.type }}</span>
-      {%- if account.joint %}{{ pill("Joint", tone="blue") }}{% endif %}
-      {%- if account.closed %}{{ pill("Closed", tone="gray") }}{% endif %}
+  <li class="flex items-center justify-between gap-2 py-2">
+    <span class="flex min-w-0 flex-col">
+      <span class="break-words text-primary">{{ account.name }}</span>
+      <span class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-secondary">{{ account.last4 }} · {{ account.type }}
+        {%- if account.joint %}{{ pill("Joint", tone="blue") }}{% endif %}
+        {%- if account.closed %}{{ pill("Closed", tone="gray") }}{% endif %}
+      </span>
     </span>
-    {% call dialog(id="rename-account-" ~ account.id, title="Rename account", trigger="Rename", trigger_variant="ghost", trigger_size="sm", subtitle="The name appears on the accounts panel and in the register.", width="sm") %}
+    {% call dialog(id="rename-account-" ~ account.id, title="Rename account", trigger="Rename", trigger_size="sm", trigger_icon="pencil", trigger_tip_class="icon-tip--left", subtitle="The name appears on the accounts panel and in the register.", width="sm") %}
       {{ account_rename(account) }}
     {% endcall %}
   </li>
@@ -82,36 +92,34 @@
 </form>
 {%- endmacro %}
 
-{# One provider: its bank, vault login, last sync, and the accounts it fetches. Sync starts a sync of
-   this provider; Edit and Delete open their dialogs. #}
-{% macro provider_card(card) -%}
-<article id="provider-{{ card.key }}" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="provider-{{ card.key }}-title">
-  <div class="flex flex-wrap items-start justify-between gap-4">
-    <div class="flex min-w-0 flex-col gap-3">
-      <h3 id="provider-{{ card.key }}-title" class="font-medium text-primary">{{ card.key }}</h3>
-      <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-        <dt class="text-secondary">Bank</dt>
-        <dd class="text-primary">{{ card.connector }}</dd>
-        <dt class="text-secondary">Vault login</dt>
-        <dd class="text-primary">{{ card.vault }}</dd>
-        <dt class="text-secondary">Last sync</dt>
-        <dd class="text-primary">
-          {%- if card.sync %}{{ card.sync.status }}, {{ card.sync.when }}, {{ card.sync.files }}
-          {%- if card.sync.message %} <span class="text-xs text-secondary">{{ card.sync.message }}</span>{% endif %}
-          {%- else %}No syncs yet{% endif %}
-        </dd>
-      </dl>
-    </div>
-    <div class="flex flex-wrap items-center gap-2">
+{# One provider: its institution, bank, vault login, last sync, and the accounts it fetches. Sync starts
+   a sync of this provider; Edit and Delete open their dialogs. They are icons, named on hover. #}
+{% macro provider_card(card, group) -%}
+<article id="provider-{{ card.key }}" role="listitem" class="{{ CARD }}" aria-labelledby="provider-{{ card.key }}-title provider-{{ card.key }}-key">
+  <header class="flex items-start gap-2">
+    {{ card_header(group, "provider-" ~ card.key ~ "-title", card.key, "provider-" ~ card.key ~ "-key") }}
+    <div class="flex shrink-0 items-center">
       {{ sync_button(card.key, card.sync_busy) }}
-      {% call dialog(id="edit-provider-" ~ card.key, title="Edit " ~ card.key, trigger="Edit", trigger_variant="outline", width="md") %}
+      {% call dialog(id="edit-provider-" ~ card.key, title="Edit " ~ card.key, trigger="Edit", trigger_size="sm", trigger_icon="pencil", width="md") %}
         {{ provider_edit(card, card.locked) }}
       {% endcall %}
-      {% call dialog(id="delete-provider-" ~ card.key, title="Delete " ~ card.key ~ "?", trigger="Delete", trigger_variant="outline", width="sm") %}
+      {% call dialog(id="delete-provider-" ~ card.key, title="Delete " ~ card.key ~ "?", trigger="Delete", trigger_size="sm", trigger_icon="trash-2", width="sm") %}
         {{ provider_delete(card) }}
       {% endcall %}
     </div>
-  </div>
+  </header>
+  <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+    <dt class="text-secondary">Method</dt>
+    <dd class="min-w-0 break-words text-primary">{{ card.connector }}</dd>
+    <dt class="text-secondary">Vault login</dt>
+    <dd class="min-w-0 break-words text-primary">{{ card.vault }}</dd>
+    <dt class="text-secondary">Last sync</dt>
+    <dd class="min-w-0 break-words text-primary">
+      {%- if card.sync %}{{ card.sync.status }}, {{ card.sync.when }}, {{ card.sync.files }}
+      {%- if card.sync.message %} <span class="text-xs text-secondary">{{ card.sync.message }}</span>{% endif %}
+      {%- else %}No syncs yet{% endif %}
+    </dd>
+  </dl>
   {%- if card.accounts %}
   {{ account_list(card.accounts, "Accounts fetched by " ~ card.key) }}
   {%- else %}
@@ -134,20 +142,19 @@
     <div id="provider-vault-results-{{ card.key }}" aria-live="polite" class="flex flex-col gap-2">
       {{ vault_results(locked, logins, unlock_message, "", unlock_action="/settings/providers/" ~ card.key ~ "/edit/unlock", unlock_target="#provider-edit-" ~ card.key, form_id="provider-edit-form-" ~ card.key, choice_required=false) }}
     </div>
-    <p class="text-xs text-secondary">The bank is {{ card.connector }}, and it cannot be changed. To use another bank, delete this provider and add one.</p>
+    <p class="text-xs text-secondary">The bank is {{ card.bank }}, and it cannot be changed. To use another bank, delete this provider and add one.</p>
   </div>
   <form id="provider-edit-form-{{ card.key }}" class="flex flex-col gap-4" hx-post="/settings/providers/{{ card.key }}/edit" hx-target="#provider-edit-status-{{ card.key }}" hx-swap="innerHTML">
     <input type="hidden" name="idempotency_key" value="{{ card.edit_key }}">
     <fieldset class="flex flex-col gap-1">
       <legend class="text-sm font-medium text-primary">Accounts it fetches</legend>
       {%- for choice in card.choices %}
-      <label class="flex flex-wrap items-center gap-x-2 rounded-lg px-2 py-1.5 text-sm {{ 'text-secondary' if choice.disabled else 'text-primary' }}">
-        <input type="checkbox" name="account" value="{{ choice.id }}"{% if choice.checked %} checked{% endif %}{% if choice.disabled %} disabled{% endif %}>
+      <label class="flex flex-wrap items-center gap-x-2 rounded-lg px-2 py-1.5 text-sm text-primary">
+        <input type="checkbox" name="account" value="{{ choice.id }}"{% if choice.checked %} checked{% endif %}>
         <span>{{ choice.label }}</span>
-        {%- if choice.owner %}<span class="text-xs text-secondary">{{ choice.owner }}</span>{% endif %}
       </label>
       {%- else %}
-      <p class="text-sm text-secondary">This institution has no open accounts. Add one in the add-provider wizard, or with omsync accounts add.</p>
+      <p class="text-sm text-secondary">No accounts to choose. Every open account at this institution is fetched by another provider, or there are none. Add one in the add-provider wizard, or with omsync accounts add.</p>
       {%- endfor %}
     </fieldset>
     <div id="provider-edit-status-{{ card.key }}" aria-live="polite">{{ step_error(message) }}</div>

@@ -49,8 +49,8 @@ def save_home_layout(
     db: DbSession,
     layout: Annotated[str, Form()] = "",
 ) -> Response:
-    """Save the section order, the collapsed sections, the half-width sections, and the column
-    count. Unknown section keys are dropped, and a missing section is placed at its default
+    """Save the section order, the collapsed sections, the half-width sections, and the chosen
+    heights. Unknown section keys are dropped, and a missing section is placed at its default
     position."""
     try:
         parsed = parse_layout(layout)

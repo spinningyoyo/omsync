@@ -50,7 +50,7 @@
   {%- endfor %}
   {%- elif results.not_matched %}
   {%- set count = results.not_matched|length %}
-  {{ alert("Nothing to review. " ~ count ~ " transaction" ~ (" has" if count == 1 else "s have") ~ " no other side yet: link " ~ ("it" if count == 1 else "each one") ~ " by hand, or say what is on the other side, under Not matched below.", title="Next step", variant="info") }}
+  {{ alert("Nothing to review. " ~ count ~ " transaction" ~ (" has" if count == 1 else "s have") ~ " no other side yet: link " ~ ("it" if count == 1 else "each one") ~ " or say what is on the other side, under Not matched below.", title="Next step", variant="info") }}
   {%- else %}
   {{ empty_state("No proposals in this range", "The rules found no links to propose. Transactions that should have a counterpart and do not are listed under Not matched.", mascot=true) }}
   {%- endif %}
@@ -62,7 +62,6 @@
   {%- endfor %}
 
   {{ explained_card(results.explained, start, end) }}
-  {{ unmatched_card(results.unmatched, start, end) }}
   {{ linked_card(results.linked, start, end) }}
   {{ tally_card(results.tally) }}
 
@@ -220,7 +219,7 @@
 <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="not-matched-title">
   <div>
     <h2 id="not-matched-title" class="font-medium text-primary">Not matched <span class="text-sm text-secondary">({{ rows|length }})</span></h2>
-    <p class="text-sm text-secondary">Transfers, card payments, and payments from people whose other side is not linked or proposed and not known. Link one by hand, or choose rows and say what is on the other side.</p>
+    <p class="text-sm text-secondary">Transfers, card payments, and payments from people whose other side is not linked or proposed and not known. Link one yourself, or choose rows and say what is on the other side.</p>
   </div>
   {%- if rows %}
   <form id="other-side-form" class="flex flex-wrap items-end gap-3" hx-post="/reconcile/other-side">
@@ -338,53 +337,6 @@
   </div>
   {%- else %}
   <p class="text-sm text-secondary">Nothing in this range is explained without a link.</p>
-  {%- endif %}
-</details>
-{%- endmacro %}
-
-{% macro unmatched_card(rows, start, end) -%}
-<details class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs">
-  <summary class="cursor-pointer font-medium text-primary">Link by hand ({{ rows|length }})</summary>
-  {%- if rows %}
-  <p class="text-sm text-secondary">Every transaction with an amount that no link explains yet, whether or not it should have a counterpart. Link one by hand, or leave it.</p>
-  <div class="table-scroll rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Transactions to link by hand">
-    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
-      <thead>
-        <tr>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Account</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Payee</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Open amount</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Actions</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        {%- for row in rows %}
-        <tr>
-          <td class="px-3 py-2 whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.on }}</td>
-          <td class="px-3 py-2 whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.account }}</td>
-          <td class="px-3 py-2{% if not loop.first %} border-t border-subdued{% endif %}">
-            {{ row.payee }}
-            {%- if row.proposed %} {{ pill("Proposed", tone="indigo", style="soft") }}{% endif %}
-            {%- if row.partly_linked %} {{ pill("Partly linked", tone="gray", style="soft") }}{% endif %}
-          </td>
-          <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.open_amount }}</td>
-          <td class="px-3 py-2 text-right{% if not loop.first %} border-t border-subdued{% endif %}">
-            {{ button("Link manually…", variant="outline", size="sm", attrs={
-              "hx-get": "/reconcile/link?txn=" ~ row.txn_id ~ "&start=" ~ start ~ "&end=" ~ end,
-              "hx-target": "#reconcile-link-body",
-              "hx-swap": "innerHTML",
-              "data-action": "page-dialogs#openDialog",
-              "data-dialog-id": "reconcile-link-dialog",
-            }) }}
-          </td>
-        </tr>
-        {%- endfor %}
-      </tbody>
-    </table>
-  </div>
-  {%- else %}
-  <p class="text-sm text-secondary">Every transaction in this range is explained by a link.</p>
   {%- endif %}
 </details>
 {%- endmacro %}

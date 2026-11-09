@@ -1,0 +1,37 @@
+{# The vault's status: a dot, green when unlocked and gray when locked, and its label. Each user menu
+   shows one under the email, with when it locks or what unlocks it under the label. The Bank sync
+   page shows the label alone beside the Sync status title, which redraws it with every reply; an
+   unlock reply sends the menu lines out of band, so all of them change at once. The demo has no
+   vault, so it says that instead. See vault_status_view in web/vault_logins.py. #}
+
+{# The ids of the status lines, so a reply can send each one out of band. #}
+{% set VAULT_STATUS_PAGE = "vault-status-page" %}
+{% set VAULT_STATUS_MENUS = ["vault-status-user-menu", "vault-status-user-menu-mobile"] %}
+
+{# One status line. compact is the user menu's: the label, and the detail under it. Otherwise it is
+   the label alone. poll rechecks the vault every minute, because it locks itself after its idle
+   timeout without any request. #}
+{% macro vault_status(status, id, compact=false, poll=false, oob=false) -%}
+{%- set unlocked = status.unlocked and not demo_mode -%}
+{%- set label = "No vault in the demo" if demo_mode else status.label -%}
+{%- set detail = "Bank sync is off." if demo_mode else status.detail -%}
+<div id="{{ id }}" role="status" class="{{ 'flex flex-col gap-0.5' if compact else 'flex items-center text-sm' }}"{% if oob %} hx-swap-oob="true"{% endif %}{% if poll and not demo_mode %} hx-get="/settings/providers/vault-status" hx-trigger="every 60s" hx-swap="outerHTML"{% endif %}>
+  <span class="flex items-center gap-2 text-sm {{ 'text-primary' if compact else 'text-secondary' }}">
+    <span class="inline-block size-2 shrink-0 rounded-full {{ 'bg-success' if unlocked else 'bg-gray-400' }}" aria-hidden="true"></span>{{ label }}
+  </span>
+  {%- if compact %}
+  <span class="pl-4 text-xs text-secondary">{{ detail }}</span>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# The status lines out of band: the user menus' and, unless page=false, the Bank sync page's. A
+   reply that redraws the Sync status card, or goes to a page without it, passes page=false. #}
+{% macro vault_status_oob(status, page=true) -%}
+{%- if page %}
+{{ vault_status(status, VAULT_STATUS_PAGE, poll=true, oob=true) }}
+{%- endif %}
+{%- for id in VAULT_STATUS_MENUS %}
+{{ vault_status(status, id, compact=true, oob=true) }}
+{%- endfor %}
+{%- endmacro %}

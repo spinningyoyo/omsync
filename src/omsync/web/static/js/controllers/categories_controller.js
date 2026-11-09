@@ -61,13 +61,49 @@ export default class extends Controller {
   }
 
   // A saved change redraws the table, so the opener may be gone; its replacement has the same id.
-  restoreFocus() {
+  // A dialog marked data-reset-on-close starts over the next time it opens: its forms are reset and
+  // its result areas (aria-live) emptied, so the import never shows an earlier file or result.
+  restoreFocus(event) {
+    const dialog = event?.currentTarget;
+    if (dialog?.hasAttribute("data-reset-on-close")) {
+      dialog.querySelectorAll("form").forEach((form) => form.reset());
+      dialog.querySelectorAll("[aria-live]").forEach((area) => area.replaceChildren());
+    }
     const opener = this.opener;
     const id = this.openerId;
     this.opener = null;
     this.openerId = null;
     const target = opener?.isConnected ? opener : id && document.getElementById(id);
     target?.focus();
+  }
+
+  // Clear on an add form: empties what was typed and the form's preview.
+  resetForm(event) {
+    const form = event.currentTarget.closest("form");
+    if (!form) return;
+    form.reset();
+    form.querySelectorAll("[aria-live]").forEach((area) => area.replaceChildren());
+    form.querySelectorAll('[data-popover-target="panel"]').forEach((panel) => this.namePaidBy(panel));
+  }
+
+  // A rule form's Paid by button names the ticked methods: "Any", "Transfer", or "Transfer, Check +1".
+  // Its width is fixed, so a longer list never moves the fields after it; the full list is its title.
+  paidByChanged(event) {
+    this.namePaidBy(event.currentTarget);
+  }
+
+  namePaidBy(panel) {
+    const button = panel.parentElement.querySelector("[data-paid-by-button]");
+    if (!button) return;
+    const ticked = [...panel.querySelectorAll('input[name="paid_by"]:checked')].map(
+      (box) => box.dataset.label,
+    );
+    const more = ticked.length > 2 ? ` +${ticked.length - 2}` : "";
+    const text = ticked.length ? ticked.slice(0, 2).join(", ") + more : "Any";
+    const all = ticked.length ? ticked.join(", ") : "Any";
+    button.querySelector("[data-paid-by-text]").textContent = text;
+    button.setAttribute("aria-label", `Paid by: ${all}`);
+    button.title = all;
   }
 
   // Empties the triage slot that holds an open keyword form.

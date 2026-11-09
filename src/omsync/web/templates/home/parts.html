@@ -9,49 +9,33 @@
 {% from "components/segmented_control.html" import segmented_control with context %}
 {% from "components/brand.html" import mascot with context %}
 {% from "components/pill.html" import pill with context %}
-{% from "layouts/shell_parts.html" import empty_state %}
+{% from "components/dialog.html" import dialog_panel with context %}
+{% from "components/popover.html" import popover with context %}
+{% from "layouts/shell_parts.html" import empty_state, page_header %}
+{% from "components/view_controls.html" import period_menu, joint_menu, view_summary, custom_range_form with context %}
 {% from "plan/parts.html" import budget_card_body, goals_card_body with context %}
 
-{# The header: the page's name, the greeting with the period in words, the joint note when it is on,
-   and the period picker. The picker is plain links and a custom-range form, as on the reports page. #}
-{% macro home_header(view) -%}
-<header class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-  <div class="flex flex-col gap-1">
-    <h1 class="text-2xl font-medium text-primary">Home</h1>
-    <p class="text-sm text-secondary">{{ view.greeting }}. Showing {{ view.period_label }}.</p>
-    {%- if view.joint_note %}
-    <p id="joint-note" class="text-sm text-secondary">{{ view.joint_note }}.</p>
-    {%- endif %}
-  </div>
+{# The header: the shared page header, with the greeting and the view in words under the title, and
+   the joint and period choices on the right. The custom range's dates sit under it when Custom is
+   chosen. #}
+{% macro home_header(view, joint) -%}
+{%- set summary = view.greeting ~ ". " ~ view_summary(view.period_label, joint) -%}
+{% call page_header("Home", summary) %}
+  {{ joint_menu(joint) }}
   {%- if view.has_transactions %}
-  {{ period_picker(view) }}
+  {{ period_menu(view.presets) }}
   {%- endif %}
-</header>
-{%- endmacro %}
-
-{% macro period_picker(view) -%}
-<div id="period-picker" class="flex flex-col gap-3">
-  <div class="max-w-full overflow-x-auto">
-    {{ segmented_control(view.presets, label="Home period") }}
-  </div>
+{% endcall %}
+{%- if view.has_transactions and (view.selection.key == "custom" or view.selection.error) %}
+<div id="period-range" class="flex flex-col gap-3">
   {%- if view.selection.key == "custom" %}
-  <form id="custom-range" class="flex flex-wrap items-end gap-3 rounded-lg bg-surface-inset p-3" method="get" action="/">
-    <input type="hidden" name="period" value="custom">
-    <label class="form-field w-40">
-      <span class="form-field__label">From</span>
-      <input type="date" name="start" value="{{ view.selection.start }}" required class="form-field__input">
-    </label>
-    <label class="form-field w-40">
-      <span class="form-field__label">To</span>
-      <input type="date" name="end" value="{{ view.selection.end }}" required class="form-field__input">
-    </label>
-    <button type="submit" class="inline-flex items-center rounded-md border border-secondary bg-transparent px-3 py-2 text-sm font-medium text-primary hover:bg-surface-hover focus-ring">Show</button>
-  </form>
+  {{ custom_range_form("/", view.selection) }}
   {%- endif %}
   {%- if view.selection.error %}
   <p class="text-sm text-destructive" role="alert">{{ view.selection.error }}</p>
   {%- endif %}
 </div>
+{%- endif %}
 {%- endmacro %}
 
 {# With no transactions yet there is nothing to chart, so the page points to where accounts are added. #}
@@ -66,23 +50,15 @@
 </section>
 {%- endmacro %}
 
-{# The sections in the saved order. The controller on the wrapper handles the drag and the keyboard,
-   and saves the layout to /home/layout. The status line is read aloud after a keyboard move.
-   The wrapper is a size container: two columns apply only while it is wide enough for them, so the
-   open accounts panel or a narrow window falls back to one column, and the width controls hide. #}
+{# The sections in the saved order. The dashboard-sortable controller handles the drag and the
+   keyboard, the width and height choices, and saves the layout to /home/layout. The status line is
+   read aloud after a keyboard move or a size change.
+   The wrapper is a size container: half-width sections sit two to a row only while it is wide
+   enough, so the open accounts panel or a narrow window stacks them, and the width choice hides. #}
 {% macro sections(view) -%}
 <div class="@container" data-controller="dashboard-sortable" data-action="dragover->dashboard-sortable#dragOver drop->dashboard-sortable#drop dashboard-layout-changed->dashboard-sortable#save">
   <p class="sr-only" aria-live="polite" data-dashboard-sortable-target="status"></p>
-  <div class="mb-3 hidden justify-end @4xl:flex">
-    <button type="button" aria-pressed="{{ 'true' if view.columns == 2 else 'false' }}"
-      class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-secondary hover:bg-container-inset-hover hover:text-primary aria-pressed:text-primary focus-ring"
-      data-dashboard-sortable-target="columnsButton"
-      data-action="dashboard-sortable#toggleColumns">
-      {{ icon("columns-2", 16) }}Two columns
-    </button>
-  </div>
-  <div id="home-sections" class="group grid grid-cols-1 gap-6 data-[columns=2]:@4xl:grid-cols-2" role="list" aria-label="Home sections"
-    data-columns="{{ view.columns }}" data-dashboard-sortable-target="list">
+  <div id="home-sections" class="grid grid-cols-1 gap-6 @4xl:grid-cols-2" role="list" aria-label="Home sections" data-dashboard-sortable-target="list">
     {%- for section in view.sections %}
     {{ section_card(section, view) }}
     {%- endfor %}
@@ -90,12 +66,19 @@
 </div>
 {%- endmacro %}
 
+{# One card. As in Sure, the controls on the right of the header (expand, the size menu, and the
+   drag grip) show while the card is pointed at or holds focus, and always on a touch screen, so the
+   cards stay plain while they are only read. What a card offers comes from its SectionView:
+   has_height adds the height choice, expandable an Expand button that opens the body's larger
+   form in a dialog, and grouped an Expand all / Collapse all button for its <details> groups. #}
 {% macro section_card(section, view) -%}
-<section role="listitem" class="flex min-w-0 flex-col rounded-xl bg-container shadow-border-xs group-data-[columns=2]:@4xl:data-[width=full]:col-span-2"
+{%- set controllers = "dashboard-section" ~ (" dialog" if section.expandable else "") -%}
+<section role="listitem" class="group/card flex min-w-0 flex-col rounded-xl bg-container shadow-border-xs @4xl:data-[width=full]:col-span-2"
   data-dashboard-sortable-target="section"
   data-section-key="{{ section.key }}"
   data-width="{{ 'half' if section.half else 'full' }}"
-  data-controller="dashboard-section"
+  {%- if section.has_height %} data-height="{{ section.height }}"{% endif %}
+  data-controller="{{ controllers }}"
   data-dashboard-section-collapsed-value="{{ 'true' if section.collapsed else 'false' }}"
   data-collapsed="{{ 'true' if section.collapsed else 'false' }}">
   <header role="group" tabindex="0" draggable="true"
@@ -117,15 +100,17 @@
       {{ pill(section.scope, tone="neutral") }}<span class="sr-only">Relative to today, not the selected period</span>
       {%- endif %}
     </div>
-    <div class="flex items-center gap-1 text-secondary">
-      <button type="button"
-        class="hidden size-6 items-center justify-center rounded-md hover:bg-container-inset-hover hover:text-primary aria-pressed:text-primary focus-ring group-data-[columns=2]:@4xl:inline-flex"
-        aria-label="Half width: {{ section.title }}"
-        aria-pressed="{{ 'true' if section.half else 'false' }}"
-        data-dashboard-sortable-target="widthButton"
-        data-action="dashboard-sortable#toggleWidth">
-        {{ icon("columns-2", 16) }}
+    <div class="flex items-center gap-1 text-secondary opacity-0 transition-opacity group-hover/card:opacity-100 group-focus-within/card:opacity-100 pointer-coarse:opacity-100">
+      {%- if section.grouped %}
+      {{ groups_button(section) }}
+      {%- endif %}
+      {%- if section.expandable %}
+      <button type="button" class="icon-tip inline-flex size-6 items-center justify-center rounded-md hover:bg-container-inset-hover hover:text-primary focus-ring pointer-coarse:size-11"
+        aria-label="Expand {{ section.title }}" data-tip="Expand" data-action="dialog#open">
+        {{ icon("maximize-2", 16) }}
       </button>
+      {%- endif %}
+      {{ size_menu(section) }}
       <span aria-hidden="true">{{ icon("grip-vertical", 16) }}</span>
     </div>
   </header>
@@ -149,7 +134,49 @@
     </div>
     {%- endif %}
   </div>
+  {%- if section.key == "cash_flow" and section.expandable %}
+  {% call dialog_panel(section.key ~ "-expanded", section.title, width="full") %}{{ cash_flow_expanded(view.flows) }}{% endcall %}
+  {%- endif %}
 </section>
+{%- endmacro %}
+
+{# The size menu: Half or Full width, and for a section that offers it, Compact, Auto or Tall
+   height. Width only matters where two columns fit, so it hides below that, and a section with no
+   height choice then has no size menu at all. #}
+{% macro size_menu(section) -%}
+{%- set width_seg = [
+  {"label": "Half", "active": section.half, "attrs": {"data-action": "dashboard-sortable#setWidth", "data-dashboard-sortable-width-param": "half"}},
+  {"label": "Full", "active": not section.half, "attrs": {"data-action": "dashboard-sortable#setWidth", "data-dashboard-sortable-width-param": "full"}},
+] -%}
+{%- call popover(section.key ~ "-size", "Adjust size", "sliders-horizontal", class_="" if section.has_height else "hidden @4xl:block") %}
+<div class="flex flex-col gap-3">
+  <div class="hidden flex-col gap-1.5 @4xl:flex">
+    <p class="flex items-center gap-1.5 text-xs text-secondary">{{ icon("move-horizontal", 14) }}Width</p>
+    {{ segmented_control(width_seg, label="Width", full_width=true, attrs={"data-size": "width"}) }}
+  </div>
+  {%- if section.has_height %}
+  {%- set height_seg = [] -%}
+  {%- for value, label in [("compact", "Compact"), ("auto", "Auto"), ("tall", "Tall")] %}
+  {%- set _ = height_seg.append({"label": label, "active": section.height == value, "attrs": {"data-action": "dashboard-sortable#setHeight", "data-dashboard-sortable-height-param": value}}) -%}
+  {%- endfor %}
+  <div class="flex flex-col gap-1.5">
+    <p class="flex items-center gap-1.5 text-xs text-secondary">{{ icon("move-vertical", 14) }}Height</p>
+    {{ segmented_control(height_seg, label="Height", full_width=true, attrs={"data-size": "height"}) }}
+  </div>
+  {%- endif %}
+</div>
+{%- endcall %}
+{%- endmacro %}
+
+{# Opens or closes every <details> group in the card at once, as Sure's balance sheet does. Its name
+   and icon follow the groups: Expand all while any is closed, Collapse all once all are open. #}
+{% macro groups_button(section) -%}
+<button type="button" class="icon-tip inline-flex size-6 items-center justify-center rounded-md hover:bg-container-inset-hover hover:text-primary focus-ring pointer-coarse:size-11"
+  aria-label="Expand all" data-tip="Expand all"
+  data-dashboard-section-target="groupsButton" data-action="dashboard-section#toggleGroups">
+  <span data-dashboard-section-target="expandIcon">{{ icon("chevrons-up-down", 16) }}</span>
+  <span hidden data-dashboard-section-target="collapseIcon">{{ icon("chevrons-down-up", 16) }}</span>
+</button>
 {%- endmacro %}
 
 {# What needs a look, each row a link to the page that lists exactly what it counts. A row with a
@@ -214,11 +241,21 @@
     <div class="flex items-baseline gap-2"><dt class="text-secondary">Net</dt><dd class="font-medium tabular-nums {{ flows.net_tone }}">{{ flows.net|sensitive }}</dd></div>
   </dl>
   {%- if flows.has_flows %}
-  <div class="relative h-96 w-full" role="img" aria-label="{{ flows.label }}" data-controller="sankey-chart" data-sankey-chart-data-value='{{ flows.data|tojson }}'></div>
+  <div class="relative h-80 w-full" role="img" aria-label="{{ flows.label }}" data-controller="sankey-chart" data-sankey-chart-data-value='{{ flows.data|tojson }}'></div>
   {%- else %}
   <p class="text-sm text-secondary">No income or spending in this period.</p>
   {%- endif %}
 </div>
+{%- endmacro %}
+
+{# The sankey alone, filling the expanded dialog, so every label has room. It is drawn when the
+   dialog opens, since a closed dialog has no size. #}
+{% macro cash_flow_expanded(flows) -%}
+{%- if flows.has_flows %}
+<div class="relative h-[min(80vh,60rem)] min-h-80 w-full" role="img" aria-label="{{ flows.label }}" data-controller="sankey-chart" data-sankey-chart-data-value='{{ flows.data|tojson }}'></div>
+{%- else %}
+<p class="text-sm text-secondary">No income or spending in this period.</p>
+{%- endif %}
 {%- endmacro %}
 
 {# This period's running total against the period before it of the same length, day by day. #}
@@ -244,7 +281,7 @@
     </div>
   </div>
   {%- if trend.has_spending %}
-  <div class="relative h-56 w-full" role="img" aria-label="Cumulative spending by day. This period: {{ trend.current_total }}. Previous period: {{ trend.previous_total }}." data-controller="spending-chart" data-spending-chart-data-value='{{ trend.data|tojson }}'></div>
+  <div class="relative h-56 w-full group-data-[height=compact]/card:h-36 group-data-[height=tall]/card:h-88" role="img" aria-label="Cumulative spending by day. This period: {{ trend.current_total }}. Previous period: {{ trend.previous_total }}." data-controller="spending-chart" data-spending-chart-data-value='{{ trend.data|tojson }}'></div>
   {%- else %}
   <p class="text-sm text-secondary">No spending in these two periods.</p>
   {%- endif %}

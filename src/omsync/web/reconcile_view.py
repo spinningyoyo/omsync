@@ -20,7 +20,6 @@ from omsync.reconcile.decisions import coverage
 from omsync.reconcile.engine import run
 from omsync.reconcile.history import MANUAL_RULE, UNKNOWN_RULE, rule_tally
 from omsync.reconcile.model import Draft, Explained, NotMatched, Queue, signature
-from omsync.reconcile.pool import load_pool
 from omsync.reconcile.rules.base import DESCRIPTIONS
 from omsync.web.amounts import money_html
 from omsync.web.contacts_view import ChoiceGroup, other_side_choices
@@ -136,19 +135,6 @@ class VendorView:
 
 
 @dataclass(frozen=True)
-class OpenRow:
-    """A transaction with an amount no link explains yet."""
-
-    txn_id: int
-    on: str
-    account: str
-    payee: str
-    open_amount: str
-    partly_linked: bool
-    proposed: bool
-
-
-@dataclass(frozen=True)
 class NotMatchedRow:
     """A transaction expected to have a counterpart that nothing accounts for."""
 
@@ -224,7 +210,6 @@ class Results:
     not_matched: tuple[NotMatchedRow, ...]
     explained: tuple[ExplainedRow, ...]
     side_choices: tuple[ChoiceGroup, ...]
-    unmatched: tuple[OpenRow, ...]
     linked: tuple[LinkRow, ...]
     tally: tuple[TallyRow, ...]
 
@@ -466,29 +451,7 @@ def _aliases(session: Session) -> dict[int, str | None]:
     return dict(session.execute(select(Account.id, Account.alias_last4)).all())
 
 
-# Unmatched and linked
-
-
-def unmatched_rows(
-    session: Session, *, start: date, end: date, proposed: set[int]
-) -> list[OpenRow]:
-    pool = load_pool(session, start=start, end=end)
-    aliases = _aliases(session)
-    rows: list[OpenRow] = []
-    # Recorded partner contributions are unmatched too: they are never linked.
-    for txn in sorted([*pool, *pool.parked()], key=lambda t: (t.posted_on, t.id)):
-        rows.append(
-            OpenRow(
-                txn_id=txn.id,
-                on=txn.posted_on.isoformat(),
-                account=account_label(txn.account_last4, aliases.get(txn.account_id)),
-                payee=txn.payee,
-                open_amount=money_html(txn.amount_cents),
-                partly_linked=pool.linked_cents(txn.id) > 0,
-                proposed=txn.id in proposed,
-            )
-        )
-    return rows
+# Linked
 
 
 def linked_rows(session: Session, *, start: date, end: date) -> list[LinkRow]:
@@ -657,7 +620,6 @@ def results_for(
     """Run every proposal rule and each receipt vendor for one range. Writes nothing."""
     result = run(session, start=start, end=end)
     drafts = list(result.drafts)
-    proposed = _txn_ids(drafts)
     vendors = tuple(
         vendor_view(
             run_vendor(session, settings, vendor.key, today=today, start=start, end=end),
@@ -676,7 +638,6 @@ def results_for(
         not_matched=tuple(not_matched_rows(session, result.not_matched)),
         explained=tuple(explained_rows(session, result.explained)),
         side_choices=other_side_choices(session),
-        unmatched=tuple(unmatched_rows(session, start=start, end=end, proposed=proposed)),
         linked=tuple(linked_rows(session, start=start, end=end)),
         tally=tuple(tally_rows(session)),
     )

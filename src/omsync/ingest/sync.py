@@ -125,7 +125,6 @@ def sync_provider(
     vault: Vault,
     prompt: Prompt,
     period: DateRange | None = None,
-    close_on_failure: bool = True,
 ) -> SyncResult:
     """Fetch a provider's statement files for its accounts, then import the newly fetched ones.
 
@@ -142,7 +141,6 @@ def sync_provider(
             vault=vault,
             prompt=prompt,
             period=period,
-            close_on_failure=close_on_failure,
         )
 
 
@@ -153,7 +151,6 @@ def sync_all(
     vault: Vault,
     prompt: Prompt,
     period: DateRange | None = None,
-    close_on_failure: bool = True,
     on_progress: ProgressCallback | None = None,
 ) -> list[ProviderSync]:
     """Sync every enabled provider, one after another, in institution key then provider key order,
@@ -177,7 +174,6 @@ def sync_all(
                 vault=vault,
                 prompt=prompt,
                 period=period,
-                close_on_failure=close_on_failure,
             )
             outcomes.append(outcome)
             if on_progress is not None:
@@ -193,7 +189,6 @@ def _sync_one(
     vault: Vault,
     prompt: Prompt,
     period: DateRange | None,
-    close_on_failure: bool,
 ) -> ProviderSync:
     try:
         result = _sync(
@@ -203,7 +198,6 @@ def _sync_one(
             vault=vault,
             prompt=prompt,
             period=period,
-            close_on_failure=close_on_failure,
         )
     except ConnectorError as exc:
         return ProviderSync(key, None, str(exc))
@@ -221,7 +215,6 @@ def _sync(
     vault: Vault,
     prompt: Prompt,
     period: DateRange | None,
-    close_on_failure: bool,
 ) -> SyncResult:
     plan = _prepare(session, provider_key)
     window = period or _default_period(
@@ -245,7 +238,6 @@ def _sync(
         window=window,
         vault=vault,
         prompt=prompt,
-        close_on_failure=close_on_failure,
     )
 
 
@@ -258,7 +250,6 @@ def _run(
     window: DateRange,
     vault: Vault,
     prompt: Prompt,
-    close_on_failure: bool,
 ) -> SyncResult:
     partial: PartialFetch | None = None
     try:
@@ -269,7 +260,6 @@ def _run(
             prompt,
             _institution_dir(settings, plan.institution_key),
             vault_item_id=plan.vault_item_id,
-            close_on_failure=close_on_failure,
         )
     except PartialFetch as exc:
         # Some accounts failed and some did not: what was fetched is imported, then reported.

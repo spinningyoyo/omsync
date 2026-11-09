@@ -53,13 +53,16 @@ charts so the financial result is not communicated solely by visual geometry.
 
 Every row links to the view that lists exactly the items it counts, and the count is taken
 by the query that view is built on. A second definition of "these items" would let the
-number and the list drift apart, so none exists.
+number and the list drift apart, so none exists. Uncategorized transactions opens Triage instead,
+because a keyword that covers many of them is the usual way to clear them, not an edit per row.
+Triage heads its tab with the same count, from the same query, and links to the register list.
+[Categories](categories.md#flow) draws the whole flow.
 
 | Item | Counted as | Opens |
 | --- | --- | --- |
 | Import reviews | Open [import reviews](import.md): unresolved statement rows | Register, Needs review |
 | Reconciliation to resolve | What a [reconciliation](reconciliation.md) run over the last 90 days, the range Reconcile opens with, leaves for a decision: review and manual proposals plus not-matched transactions. Automatic proposals and transactions whose other side is known are not counted | Reconcile, with that range in the link |
-| Uncategorized transactions | Transactions matching the register filter "category is empty": no category of their own and no categorized split, on any date | Register, with that filter |
+| Uncategorized transactions | Transactions matching the register filter "category is empty", on any date: an unsplit transaction with no category, or a split one with a line that has none, as a receipt leaves an item no keyword matched | Categories, on the Triage tab, which shows the same count and links to the register with that filter |
 | Recurring needing attention | The items in the Recurring Overview's Needs attention list for this calendar month: missed occurrences and open recurring questions, as in [recurring](recurring.md) | Recurring Overview, whose Needs attention list shows the same items |
 | Balance check failures | Each open account whose [balance check](accounts.md) reports an issue, listed by name | That account's page |
 | Sync problems | Each provider whose newest [sync](sync.md) run failed or needs user action, listed by name | Bank sync settings |
@@ -81,7 +84,7 @@ flowchart LR
     Ledger --> Attention[Counts, each from its destination view's query]
     Recurring[Confirmed series] --> Upcoming[Next 14 days, expected]
     Plan[Budget and goals for this month] --> Home
-    Layout[Saved order, collapsed state, widths, and columns] --> Home[Home presentation]
+    Layout[Saved order, collapsed state, widths, and heights] --> Home[Home presentation]
     CashFlow --> Home
     Trend --> Home
     Outflows --> Home
@@ -93,10 +96,14 @@ Sections can be reordered with pointer or keyboard interaction and individually 
 The default order is Needs attention, the three period sections, then Upcoming, Budget,
 and Goals. The saved layout applies across periods and reloads.
 
-The page can use one column or two. In two columns a section is **half width**, taking one
-column, or **full width**, spanning both. Each section's width is its own setting, and the
-page has one switch for one column or two, which keeps the widths so switching back
-restores them. By default Needs attention, Cash flow, and Goals are full width and the
+Where there is room for two columns a section is **half width**, taking one column, or **full
+width**, spanning both. Each section's width is its own setting, chosen in the section's size
+menu. The spending trend, the one chart over time, also has a **height**: compact, auto (the
+default), or tall. As in Sure, only time-series charts offer a height; the cash-flow diagram,
+the donut, and the lists size to their content. The cash-flow section can also open its diagram
+in a large dialog, where every label has room. A section whose rows are grouped gets an
+Expand all / Collapse all button for its groups; no section has grouped rows yet. A section's
+controls show while it is pointed at or holds focus, and always on a touch screen. By default Needs attention, Cash flow, and Goals are full width and the
 other sections are half width, so the two period charts share a row and Upcoming sits
 beside Budget. Sections keep one reading order whatever their widths: a dropped section
 lands before the first section the pointer is before in that order, so over a half-width
@@ -106,14 +113,15 @@ so what the page shows never differs from the order the keyboard moves through.
 
 Two columns apply only while the page area is wide enough for them, about 56 rem, not by
 screen size, because the open accounts panel takes room the screen alone does not show.
-Below that width every section is full width and the width controls are hidden, and the
-saved choice returns when there is room. Charts redraw to their section's width. It is a presentation
+Below that width every section is full width and the width choice is hidden, and the saved
+choice returns when there is room. Charts redraw to their section's width. It is a presentation
 preference, not an undoable financial batch. Unknown saved sections are ignored. A section
 missing from a saved layout, such as one added after the layout was saved, is placed after
 the nearest section before it in the default order that the layout holds, or first when none
 precedes it; so an existing layout gains Needs attention at the top rather than the end. A
-layout that names no widths gets the default widths. Invalid layout input, including a
-column count other than one or two, changes nothing.
+layout that names no widths gets the default widths, and a section with no saved height is
+auto. A column count saved by an earlier version is ignored. Invalid layout input, including a
+height other than compact, auto, or tall, changes nothing.
 
 ## Design rationale
 

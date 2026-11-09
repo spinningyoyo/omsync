@@ -56,7 +56,7 @@ class FakeConnector:
     errors: dict[str, Exception] = field(default_factory=dict)
     calls: list[dict] = field(default_factory=list)
 
-    def fetch(self, accounts, period, vault, prompt, dest, *, vault_item_id, close_on_failure=True):
+    def fetch(self, accounts, period, vault, prompt, dest, *, vault_item_id):
         self.calls.append(
             {
                 "vault_item_id": vault_item_id,

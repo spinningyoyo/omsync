@@ -45,26 +45,42 @@
 {%- endmacro %}
 
 {# One account in the panel. A closed account's page opens only with ?closed=1, and it has no
-   balance or sparkline to show. #}
+   balance or sparkline to show. The Joint chip follows the name; the second line shows only the
+   current number, with both numbers on hover when the card was reissued. #}
 {% macro panel_row(row, closed=false) -%}
   <li class="relative flex items-center gap-2 rounded-lg px-2 py-1.5{% if row.active %} bg-container shadow-border-xs{% else %} hover:bg-surface-hover{% endif %}">
     <div class="flex min-w-0 grow flex-col">
-      <a href="/accounts/{{ row.id }}{{ '?closed=1' if closed }}" title="{{ row.name }}" class="truncate text-sm text-primary after:absolute after:inset-0 after:rounded-lg focus-ring"{% if row.active %} aria-current="page"{% endif %}>{{ row.name }}</a>
+      <span class="flex min-w-0 items-center gap-1.5">
+        <a href="/accounts/{{ row.id }}{{ '?closed=1' if closed }}" title="{{ row.name }}" class="truncate text-sm text-primary after:absolute after:inset-0 after:rounded-lg focus-ring"{% if row.active %} aria-current="page"{% endif %}>{{ row.name }}</a>
+        {%- if row.joint %}<span class="shrink-0">{{ pill("Joint", tone="blue", size="sm") }}</span>{% endif %}
+      </span>
       <span class="flex min-w-0 items-center gap-1.5 text-xs text-secondary">
-        {%- if row.digits %}<span class="whitespace-nowrap">{{ row.digits }}</span>{% endif %}
-        {%- if row.joint %}{{ pill("Joint", tone="blue", size="sm") }}{% endif %}
+        {%- if row.digits_all %}
+        <span class="relative whitespace-nowrap" title="{{ row.digits_all }}"><span aria-hidden="true">{{ row.digits }}</span><span class="sr-only">{{ row.digits_all }}</span></span>
+        {%- elif row.digits %}
+        <span class="whitespace-nowrap">{{ row.digits }}</span>
+        {%- endif %}
         <a href="/transactions?account={{ row.id }}" class="relative shrink-0 underline-offset-2 hover:underline focus-ring rounded-sm">Transactions</a>
       </span>
     </div>
-    {%- if row.spark %}
-    <svg class="h-5 w-14 shrink-0" viewBox="0 0 56 20" aria-hidden="true" focusable="false">
-      <polyline points="{{ row.spark }}" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" style="stroke: {{ row.spark_color }}"></polyline>
-    </svg>
-    {%- endif %}
-    <span class="whitespace-nowrap text-sm tabular-nums text-primary">{{ row.balance }}</span>
-    {%- if row.warning %}
-    <span class="size-2 shrink-0 rounded-full bg-warning" title="Balance check has issues"><span class="sr-only">Balance check has issues</span></span>
-    {%- endif %}
+    <div class="flex shrink-0 flex-col items-end">
+      <span class="flex items-center gap-1.5">
+        {%- if row.warning %}
+        <span class="size-2 shrink-0 rounded-full bg-warning" title="Balance check has issues"><span class="sr-only">Balance check has issues</span></span>
+        {%- endif %}
+        <span class="whitespace-nowrap text-sm tabular-nums text-primary">{{ row.balance }}</span>
+      </span>
+      {%- if row.spark %}
+      <span class="relative flex items-center gap-1.5"{% if row.change %} title="{{ row.change_label }}"{% endif %}>
+        <svg class="h-4 w-12" viewBox="0 0 56 20" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+          <polyline points="{{ row.spark }}" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" style="stroke: {{ row.spark_color }}"></polyline>
+        </svg>
+        {%- if row.change %}
+        <span class="whitespace-nowrap text-xs tabular-nums" style="color: {{ row.spark_color }}"><span class="sr-only">{{ row.change_label }}: </span>{{ row.change }}</span>
+        {%- endif %}
+      </span>
+      {%- endif %}
+    </div>
   </li>
 {%- endmacro %}
 
@@ -122,11 +138,19 @@
 </div>
 {%- endmacro %}
 
+{# The page's title and the line under it. Called with a block, the block's controls sit on the right
+   (components/view_controls.html: the joint choice, the period, and the page's actions menu). #}
 {% macro page_header(title, subtitle=none) -%}
-<header class="flex flex-col gap-1">
-  <h1 class="text-2xl font-medium text-primary">{{ title }}</h1>
-  {%- if subtitle %}
-  <p class="text-sm text-secondary">{{ subtitle }}</p>
+{%- set controls = caller() if caller is defined else "" -%}
+<header class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+  <div class="flex min-w-0 flex-col gap-1">
+    <h1 class="text-2xl font-medium text-primary">{{ title }}</h1>
+    {%- if subtitle %}
+    <p id="page-summary" class="text-sm text-secondary">{{ subtitle }}</p>
+    {%- endif %}
+  </div>
+  {%- if controls | trim %}
+  <div class="flex flex-wrap items-center gap-2 md:justify-end">{{ controls }}</div>
   {%- endif %}
 </header>
 {%- endmacro %}

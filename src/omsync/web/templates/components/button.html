@@ -34,12 +34,15 @@
 ] | reject("equalto", "") | join(" ") }}
 {%- endmacro %}
 
-{# <button>. Pass text, or an icon with aria_label for an icon-only button. #}
-{% macro button(text=none, variant="primary", size="md", icon=none, icon_position="left", type="button", disabled=false, full_width=false, aria_label=none, class_="", attrs=none) -%}
+{# <button>. Pass text, or an icon with aria_label for an icon-only button. busy_text replaces the
+   text while an htmx request from the button or its form is in flight (htmx's htmx-request class);
+   pair it with hx-disabled-elt on the form, so the button cannot be pressed twice. #}
+{% macro button(text=none, variant="primary", size="md", icon=none, icon_position="left", type="button", disabled=false, full_width=false, aria_label=none, class_="", attrs=none, busy_text=none) -%}
 {%- set icon_only = variant == "icon" or (icon and not text) -%}
 <button type="{{ type }}" class="{{ button_classes(variant, size, icon_only, full_width, class_) }}"{% if disabled %} disabled{% endif %}{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}{{ html_attrs(attrs) }}>
   {%- if icon and icon_position != "right" %}{{ svg(icon, SIZES[size].icon_px, VARIANTS[variant].icon) }}{% endif -%}
-  {%- if text %}<span class="min-w-0 truncate">{{ text }}</span>{% endif -%}
+  {%- if text and busy_text %}<span class="min-w-0 truncate in-[.htmx-request]:hidden">{{ text }}</span><span class="hidden min-w-0 truncate in-[.htmx-request]:inline">{{ busy_text }}</span>
+  {%- elif text %}<span class="min-w-0 truncate">{{ text }}</span>{% endif -%}
   {%- if icon and icon_position == "right" %}{{ svg(icon, SIZES[size].icon_px, VARIANTS[variant].icon) }}{% endif -%}
 </button>
 {%- endmacro %}

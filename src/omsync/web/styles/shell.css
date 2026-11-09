@@ -116,3 +116,47 @@
     padding-inline: 0.75rem;
   }
 }
+
+/* The name of an icon-only button, shown at once on hover or keyboard focus, as the scene buttons'
+   is. It hangs below the button; icon-tip--left hangs it to the left, for a button at the bottom of a
+   scrolling list, where a label below would be cut off. The button's aria-label names it too. */
+.icon-tip {
+  position: relative;
+}
+
+.icon-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  left: 50%;
+  translate: -50% 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--utility-text-primary);
+  color: var(--color-container);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.icon-tip--left::after {
+  top: 50%;
+  left: auto;
+  right: calc(100% + 6px);
+  translate: 0 -50%;
+}
+
+.icon-tip:hover::after,
+.icon-tip:focus-visible::after {
+  opacity: 1;
+}
+
+/* A button whose panel is open names it already, and the label would cover the panel. */
+.icon-tip[aria-expanded="true"]::after {
+  opacity: 0;
+}

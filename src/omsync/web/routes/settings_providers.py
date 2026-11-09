@@ -5,7 +5,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
@@ -14,7 +14,6 @@ from omsync.ingest.connectors.config import enabled_provider_keys
 from omsync.ingest.institutions import bank_sync_groups, provider_group, sync_refusal
 from omsync.ingest.providers import ProviderSetupError, edit_provider, remove_provider
 from omsync.ledger.accounts_view import update_account
-from omsync.ledger.preferences import SYNC_CLOSE_ON_FAILURE, close_browser_on_failure, set_pref
 from omsync.web.accounts_panel import account_groups
 from omsync.web.deps import get_db
 from omsync.web.routes.settings_wizard import check_files
@@ -33,6 +32,7 @@ from omsync.web.vault_logins import (
     search_logins,
     unlock_vault,
     vault_login_name,
+    vault_status_view,
 )
 
 router = APIRouter()
@@ -40,6 +40,7 @@ DbSession = Annotated[Session, Depends(get_db)]
 PAGE = "pages/settings_providers.html"
 FRAGMENTS = "settings/provider_fragments.html"
 PATH = "/settings/providers"
+UNLOCKED_POLLS = 3  # the sync polls that keep "Vault unlocked" in view, about six seconds
 
 
 @router.get("/settings/providers", response_class=HTMLResponse)
@@ -51,19 +52,12 @@ def providers_page(request: Request, db: DbSession) -> HTMLResponse:
         page_title="Bank sync",
         groups=_group_views(request, db),
         sync=sync_status_view(request.app.state.sync_runner.view()),
-        close_on_failure=close_browser_on_failure(db),
+        vault_status=vault_status_view(request.app.state.vault),
     )
     return request.app.state.templates.TemplateResponse(request, PAGE, context)
 
 
 # Syncing from the page: a background job, its status region, and the question it may ask
-
-
-@router.post(f"{PATH}/sync/close-on-failure", status_code=204)
-def set_close_on_failure(db: DbSession, close: Annotated[str, Form()] = "") -> Response:
-    """Save whether a failed sync closes Chrome. An unticked checkbox sends nothing."""
-    set_pref(db, SYNC_CLOSE_ON_FAILURE, close == "1")
-    return Response(status_code=204)
 
 
 @router.post(f"{PATH}/sync_all", response_class=HTMLResponse)
@@ -100,14 +94,26 @@ def sync_unlock_route(
         )
     except VaultActionError as exc:
         return _sync_reply(request, db, status=422, unlock_scope=scope, unlock_message=exc.message)
-    return _start_sync(request, db, scope, keys)
+    return _start_sync(request, db, scope, keys, unlocked=UNLOCKED_POLLS)
 
 
 @router.get(f"{PATH}/sync/status", response_class=HTMLResponse)
-def sync_status_route(request: Request, db: DbSession, shown: int = 0) -> HTMLResponse:
+def sync_status_route(
+    request: Request, db: DbSession, shown: int = 0, unlocked: int = 0
+) -> HTMLResponse:
     """The status region, as a poll sends it. shown is the question the page already displays, so
-    the question form is sent again only when it has changed."""
-    return _sync_reply(request, db, poll=True, shown=shown)
+    the question form is sent again only when it has changed. unlocked counts down the polls that
+    still say the vault was just unlocked."""
+    return _sync_reply(request, db, poll=True, shown=shown, unlocked=max(unlocked - 1, 0))
+
+
+@router.get(f"{PATH}/vault-status", response_class=HTMLResponse)
+def vault_status_route(request: Request) -> HTMLResponse:
+    """The vault's status lines, which the Bank sync page polls: the vault locks itself after its
+    idle timeout without any request, so the page would otherwise go on saying it is unlocked."""
+    return _fragment(
+        request, "frag_vault_status", vault_status=vault_status_view(request.app.state.vault)
+    )
 
 
 @router.post(f"{PATH}/sync/answer", response_class=HTMLResponse)
@@ -189,6 +195,7 @@ def unlock_for_edit(
         query="",
         unlock_message=unlock_message,
         message="",
+        vault_status=vault_status_view(vault),
     )
 
 
@@ -365,12 +372,14 @@ def _sync_request(request: Request, db: Session, scope: str) -> HTMLResponse:
     return _start_sync(request, db, scope, keys)
 
 
-def _start_sync(request: Request, db: Session, scope: str, keys: list[str]) -> HTMLResponse:
+def _start_sync(
+    request: Request, db: Session, scope: str, keys: list[str], *, unlocked: int = 0
+) -> HTMLResponse:
     try:
         request.app.state.sync_runner.start(scope, keys)
     except SyncRefused as exc:
         return _sync_reply(request, db, status=422, notice=exc.message)
-    return _sync_reply(request, db)
+    return _sync_reply(request, db, unlocked=unlocked)
 
 
 def _sync_reply(
@@ -383,11 +392,13 @@ def _sync_reply(
     unlock_message: str = "",
     poll: bool = False,
     shown: int = 0,
+    unlocked: int = 0,
 ) -> HTMLResponse:
     """The status region. While a job runs, a poll sends only the region and, when the question or
     notice changed, the question slot, so the buttons and the list are not redrawn each time.
-    Otherwise the buttons and the provider list go out of band too, so they show the job's
-    state."""
+    Otherwise the buttons, the provider list and the user menus' vault status go out of band too,
+    so they show the job's state. unlocked is the polls left that say the vault was just
+    unlocked."""
     sync = sync_status_view(request.app.state.sync_runner.view())
     controls = not (poll and sync.running)
     return _fragment(
@@ -398,8 +409,11 @@ def _sync_reply(
         notice=notice,
         unlock_scope=unlock_scope,
         unlock_message=unlock_message,
+        unlocked=unlocked if sync.running else 0,
         include_question=not poll or shown != sync.shown_number,
         groups=_group_views(request, db) if controls else None,
+        vault_status=vault_status_view(request.app.state.vault),
+        poll=poll,
     )
 
 

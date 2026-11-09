@@ -182,7 +182,6 @@ def plan_keyword_import(
                         "pattern": pattern,
                         "is_regex": True,
                         "category_id": category_ids[category],
-                        "priority": 0,
                         "enabled": True,
                     },
                 )
@@ -228,7 +227,7 @@ def apply_keyword_import(
 def _check_list_key(list_key: str) -> None:
     if is_list_key(list_key):
         return
-    raise ValueError("The list must be unique, generic, or a lowercase vendor key, such as amazon.")
+    raise ValueError("The list must be payee or a lowercase vendor key, such as amazon.")
 
 
 def _check_pattern(category: str, index: int, pattern: object) -> None:

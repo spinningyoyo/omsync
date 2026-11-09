@@ -10,7 +10,9 @@ panel and balance-history view.
 ## Behavior
 
 The accounts panel lists open accounts grouped by type, with name, masked last four digits,
-joint status, latest ledger balance, and recent balance trend. Group subtotals sum known
+joint status, latest ledger balance, and under it the balance trend over the 30 days up to
+that balance, as a sparkline and a percent change from the balance the account held when those
+days began. Group subtotals sum known
 balances; absent evidence appears as absent, not as an invented zero balance. A viewer option
 groups them by institution instead, one group per institution named by its display name, with
 no subtotals because netting a card's debt against a checking balance is meaningless. Each

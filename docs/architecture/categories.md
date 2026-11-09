@@ -7,9 +7,12 @@ becoming a general-purpose rule system or replacing deliberate user choices. Eve
 choice must be explainable and revisable.
 
 A **keyword** is a text pattern assigning a category. A **keyword list** defines its scope:
-Unique and Generic for statement payees, or a vendor-specific list for receipt items.
-**Categorize** applies those keywords to eligible transactions. **Triage** turns unresolved
-payees and receipt items into reusable classification choices.
+**Payees** for who was paid on a statement, or a vendor-specific list for receipt items. A
+**payment method** is how the money moved (a transfer, a check, cash, PayPal, Square, and so on),
+which omsync reads from the bank's wording. **Rules** categorize what no keyword matched, by payment
+method, amount, other side, and account. **Categorize** applies keywords and rules to eligible
+transactions; it runs after every keyword or rule change, so categories follow them at once. **Triage** turns unresolved payees and receipt items into
+reusable classification choices.
 
 ## Behavior
 
@@ -24,10 +27,8 @@ categories remain on historical transactions but leave ordinary pickers. A categ
 deleted plainly. One in use is deleted by **delete and move**: its uses move to another category as
 one batch, which undo reverses. Transactions and splits move with their origin kept; keywords move
 as they are; budget lines and recurring series move to the target; saved filters that name it and
-rental category names are renamed to it. A rule that would name the target on both sides is
-dropped, and the preview says so. A month the target already budgets refuses the move, and so does
-any pair of rules that would end with the same conditions; nothing is merged, and the person chooses
-which to keep. Hiding keeps both history and a clean picker without moving anything.
+rental category names are renamed to it, and rules that set it set the target. A month the target
+already budgets refuses the move; nothing is merged, and the person chooses which to keep. Hiding keeps both history and a clean picker without moving anything.
 
 A category may also have an **icon**, any [Lucide](https://lucide.dev) icon; one with none shows
 `shapes`. The icon is chosen in a dialog that searches the whole set by name and tag. It is
@@ -46,24 +47,55 @@ the view in the same way. The categories and the keywords of the open list are s
 however many, each table scrolling inside its column under its header row while the controls around
 it stay in view.
 
-Unique keywords outrank Generic keywords. Within a list, priority wins first, then the
-longer pattern, then stable creation identity. Patterns are case-insensitive and explicitly
-choose regular expression or literal substring matching. Disabled keywords do not match.
+The page has two sides. The left is the categories table, with **New category** in its header. The
+right holds the tools that assign categories, as the tabs **Triage**, **Keywords**, and **Rules**,
+with Triage first and opened by default. The payee tester, beside the keyword search, and keyword
+import open as dialogs from the Keywords tab. Each dialog closes with an X or Esc and has one action,
+so none has a Cancel button.
+
+Every keyword and rule form, in Triage, Keywords, and Rules, ends with the same buttons, right-aligned:
+**Clear** or **Cancel**, **Preview**, and the action (**Add keyword**, **Add rule**, or **Save** for
+an edit).
+Preview says how many transactions the draft would change and lists up to 50 of them, with their
+current and new categories, in a list that shows about ten and scrolls; it writes nothing. A receipt
+list's keyword changes no transaction there, so its preview says to apply that vendor's receipts again
+instead. An add form is always on the page, so its first button is Clear, which empties what was
+typed and the preview; Cancel closes an edit or a triage form.
+
+Above the buttons, a form's fields read as what they make, on lines that wrap only when the space
+runs out. A keyword form is one line: the pattern, which takes the width left over, Regex beside it,
+then the category. A rule form holds more, so it has two fixed lines that share columns: Paid by,
+under, and at least, then with, in, and the category it sets. Its controls have fixed widths, so
+nothing moves while it is filled in; Paid by is a button that opens the methods and names the ticked
+ones, cutting a long list short rather than growing.
+
+Within a list, the longer pattern wins, then stable creation identity: the specific name beats
+the general place word (`river park` over `park`). There is no priority to overrule it; to change
+the winner, write a more specific keyword. Patterns are case-insensitive and explicitly choose
+regular expression or literal substring matching. Disabled keywords do not match.
 A repeated pattern within its list is refused.
 
 Statement classification starts with source payee text, falling back to display payee when
-there is no raw text. Only when that text matches no keyword does it try source MEMO, and
-the MEMO fallback uses Unique keywords only, because Generic patterns are loose payee
-fragments that misfire on memo location text. A MEMO match must not override a payee match.
-Receipt items use their vendor's own list.
+there is no raw text. Only when that text matches no payee keyword does it try source MEMO, and a
+MEMO match must not override a payee match. Only when neither matches does it read the payment
+method. Receipt items use their vendor's own list.
 
-A **rule** sets a category when all of its conditions hold. Rules are an ordered list: they are tried
-in position order, the first that holds sets its category, and a rule's result never triggers another
-rule. A rule needs at least one condition, and a condition that is not set does not matter:
+The payment method is read from the start of the payee text by the wording of Sure's label
+normalizer (ported from [Sure](https://github.com/we-promise/sure), AGPL-3.0), which covers banks in
+the US, the UK, Canada, and Europe, and from a short list of US wordings omsync adds, found on real
+statements. A marker such as `ONLINE TRANSFER`, `ZELLE`, `CHECK 1234`, or `ATM WITHDRAWAL` names a
+transfer, a check, or cash; an aggregator prefix such as `PAYPAL *`, `SQ *`, or `TST*` names PayPal,
+Square, or Toast; and a US ACH line (`… DES:… ID:…`) is a transfer. The wording lives in code,
+not in the user's data: a bank wording that is missing goes to triage rather than to a wrong
+category, and is a one-line addition.
 
-- **Keyword**: the category the winning keyword assigns, and optionally only when that keyword came
-  from the Unique or Generic list. A rule with no keyword condition can hold for a payee that no
-  keyword matched.
+A **rule** sets a category for a transaction no payee keyword matched, when all of its conditions
+hold. A keyword always beats a rule, so what was bought beats how it was paid: a Square payment at a
+bakery that has a keyword follows the keyword. Rules are an ordered list: they are tried top to
+bottom, the first that holds sets its category, and a rule's result never triggers another rule. A
+rule needs at least one condition, and a condition that is not set does not matter:
+
+- **Paid by**: one or more payment methods, read from the bank's wording.
 - **Amount**: the absolute amount is strictly under a limit, or at least a minimum, or both, which is
   a range whose limit is above its minimum. The amount is absolute, so a refund follows its
   purchase, and an amount equal to the limit does not qualify.
@@ -78,15 +110,13 @@ rule. A rule needs at least one condition, and a condition that is not set does 
   Otherwise a name that no contact has counts as a person as written.
 - **Account**: the account the transaction is in.
 
-Keywords still do all matching of description text. The winning keyword is found as before: the first
-hit in Unique, then in Generic, with the MEMO fallback for Unique keywords only. A rule reads that
-winner's category and list, and the other side. The person condition reads the name a description
-gives only when no other side is stored, as the rule above describes.
-
-A rule sets its category with origin **rule**. A rule ranks with a keyword: each may replace the
-other, so categorize can rerun, while your choices and receipts outrank both. When no rule holds, the
-keyword's category stands with origin keyword, or the category is unset when no keyword matched. A
-rule must set a category other than the one it reads from. Disabled rules do not hold. A rule with
+Keywords do all matching of who was paid. The winning keyword is the first hit among payee
+keywords, with the MEMO fallback, and it sets its category with origin **keyword**. Only when none
+matched are the rules tried, and the first that holds sets its category with origin **rule**; with
+neither, the category is unset and the payee goes to triage. Your choices and receipts outrank both,
+so categorize can rerun. The person condition reads the name a description gives only when no other
+side is stored, as the rule above describes. A payment method alone sets nothing: a rule such as
+"Paid by Transfer, Check or Cash → Transfer" says what it means. Disabled rules do not hold. A rule with
 the same conditions as another is refused, because one of the two would never apply. Because the
 order decides, a broad rule placed before a narrow one hides it; the payee tester and the transaction
 say which rule decided.
@@ -97,11 +127,13 @@ categorizing on demand reads the other side as it is stored.
 
 The **Rules** tab of the Categories page lists the rules in order, each as its sentence, with buttons
 to move it up or down, a switch to turn it on or off, Edit, and Delete. The form for a new rule and for
-an edit names every condition a rule has, so an edit keeps none that the form cannot show. **Preview**
-says how many transactions the draft would change, lists up to 50 of them with their current and new
-categories, and writes nothing. Saving, editing, turning on or off, moving, and deleting a rule each run
-the automatic step, so the categories follow the rules at once; the toast says how many transactions
-changed, and undo reverses the change and that step together.
+an edit names every condition a rule has, so an edit keeps none that the form cannot show. Saving,
+editing, turning on or off, moving, and deleting a rule each run the automatic step, so the categories
+follow the rules at once; the toast says how many transactions changed, and undo reverses the change
+and that step together. Keywords work the same way: adding (from Triage or Keywords), editing,
+turning on or off, deleting, and importing keywords each run the automatic step, with the same toast
+and undo. Nothing waits to be applied, so there is no separate categorize step on the page; `omsync
+categorize` remains for the command line.
 
 Categorize changes only unset, keyword-origin, and rule-origin transactions that are unsplit. Manual
 and receipt-origin categories and all split transactions are protected. A category set by a keyword
@@ -110,29 +142,44 @@ changes nothing.
 
 ## Flow
 
+Clearing uncategorized transactions starts on Home and has three ways out of Triage: a keyword for
+payees, which applies when it is added; a keyword then applying the vendor's receipts again for
+receipt items; and editing rows by hand in the register. Each brings Home's count down.
+
 ```mermaid
-flowchart LR
-    Unknown[Uncategorized payees or receipt items] --> Triage
-    Triage --> Keyword[Choose list, pattern, and category]
-    Keyword --> Test[Test matches and precedence]
-    Test --> Preview[Preview transaction classification changes]
-    Preview --> Apply[Apply one batch]
-    Apply --> Unknown
+flowchart TD
+    Home[Home: Needs attention<br/>Uncategorized transactions, N] --> Triage[Categories: Triage tab<br/>same N]
+    Triage -->|by hand| Register[Transactions<br/>filter: category is empty]
+    Triage --> Payee[Uncategorized payee]
+    Triage --> Item[Unknown receipt item]
+    Payee --> Form[Keyword form:<br/>pattern, category]
+    Item --> Form
+    Form -.->|Preview| Preview[Transactions it<br/>would change]
+    Form -->|Add keyword, payee| Apply[Applied at once<br/>Undo in toast]
+    Form -->|Add keyword, receipt item| Receipts[Reconcile: apply<br/>the vendor's receipts again]
+    Register --> Fewer[N goes down]
+    Apply --> Fewer
+    Receipts --> Fewer
+    Fewer --> Home
 ```
 
-The payee tester lists matching keywords in precedence order and marks the winner. Given an optional
-amount, and whether the payment is with a person, it also names the rule that decides the category, if
-one holds, even when no keyword matched. Conflict
-inspection identifies identical patterns pointing to different categories, including
-across Unique and Generic. It titles the finding "Needs attention", lists each pattern with the
-category each list gives it, and marks the keyword that applies, chosen by the precedence above.
+The payee tester lists matching keywords in precedence order and marks the winner. When none
+matches, it names the payment method the wording shows. Given an optional amount, and whether the
+payment is with a person, it also names the rule that decides the category, if one holds, even when
+no keyword matched. Conflict inspection identifies identical patterns in one list pointing to
+different categories. It titles the finding "Needs attention", lists each pattern with the category
+each keyword gives it, and marks the keyword that applies, chosen by the precedence above.
 Each entry links to its keyword row, which scrolls into view and flashes. Conflicts are visible
 without pretending that syntactically different regular expressions can all be proven disjoint.
 
 Triage groups repeated uncategorized payees and receipt-item text so the user can make one
-useful choice instead of editing every occurrence. A suggested pattern is editable evidence,
-not an automatically accepted keyword. Adding a keyword and applying categorization are
-separate actions.
+useful choice instead of editing every occurrence. It opens with how many transactions have no
+category, counted as Home's [Needs attention](dashboard.md#needs-attention) counts them, and a link
+that lists them in the register for anyone who would rather set them by hand. A receipt item that
+matched no keyword leaves its split line without a category; once a keyword covers it, applying
+that vendor's receipts again fills the line in, because categorize leaves split transactions alone.
+A suggested pattern is editable evidence, not an automatically accepted keyword: nothing is written
+until Add keyword, and Preview shows first what it would change.
 
 ## Keyword import and changes
 
@@ -142,10 +189,10 @@ can be accepted with its location reported; other malformed JSON or invalid patt
 refused without repeating private contents. Newly named categories start unassigned.
 Uploaded files are temporary input, not live configuration files.
 
-Category, keyword, and rule edits (an icon choice among them), delete and move, file import, and
-categorize apply use [batches](changes.md).
-A stale categorize preview is refused. Undo cannot erase a later user edit to a transaction
-that categorization changed.
+Category, keyword, and rule edits (an icon choice among them), delete and move, and file import use
+[batches](changes.md), and the categorizing that follows a keyword or rule change is a batch of its
+own that undo reverses with it. A stale import preview is refused. Undo cannot erase a later user
+edit to a transaction that categorization changed.
 
 ## Design rationale
 
@@ -153,14 +200,26 @@ Separating keyword scope makes a product description different from a statement 
 the same word need not mean the same category in both. Explicit precedence keeps the
 result deterministic rather than dependent on incidental query order.
 
-One word can mean a four-dollar snack or a sixty-dollar dinner, so a keyword alone cannot always
-choose a category. Rules answer that with conditions that a transaction already carries: the
-keyword's category, the amount, the other side, and the account. The amount alone cannot tell a lunch
-paid to a friend from a transfer to your own account or a joint contribution, so a rule may be
-limited by who is on the other side, which omsync already knows. A rule may stand without a keyword,
-which goes beyond refining keywords. It still reads only what a transaction already carries, sets
-one category, and the first rule that holds decides, so the outcome stays as explainable as the
-keyword that produced it.
+A payee keyword says who was paid, and only the user knows the merchants they pay, so keywords are
+the user's data. How money moved is the bank's wording, the same for everyone, so it is code shared
+with Sure rather than a second keyword list for the user to maintain. Keeping the two apart is what
+lets a word like `zelle` never compete with a store's name: the method is read only when no keyword
+says who was paid. See [ADR 0003](../adr/0003-read-how-money-moved.md).
+
+A payment no keyword names, such as a Zelle to a friend, can mean a four-dollar snack or a
+sixty-dollar dinner. Rules answer that with conditions the transaction already carries: the payment
+method, the amount, the other side, and the account. The amount alone cannot tell a lunch paid to a
+friend from a transfer to your own account or a joint contribution, so a rule may be limited by who
+is on the other side, which omsync already knows. Rules never change what a keyword decided: a rule
+that could would need a hidden exception for each kind of condition, and a payee's keyword should
+mean the same thing every time. A keyword names one category, so a payee that needs two, by amount,
+is not expressible; none of the user's rules needed it. A rule reads only what a transaction already
+carries, sets one category, and the first rule that holds decides, so the outcome stays as
+explainable as a keyword.
+
+Keywords apply when saved, as rules do, because a keyword is a deterministic choice the user has
+just previewed. A separate apply step only left changes waiting, with no draft to discard: what
+was waiting was recomputed from the saved keywords each time, so undo is the one way back.
 
 Origin protection distinguishes automation that may be recomputed from user decisions
 that must remain authoritative. The database owns the live keyword lists; imported JSON

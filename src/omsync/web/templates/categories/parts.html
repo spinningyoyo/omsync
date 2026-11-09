@@ -7,7 +7,7 @@
    the buttons inside a region. A row reply starts with its <tr>, and the toast follows out of band. #}
 {% from "components/alert.html" import alert with context %}
 {% from "components/button.html" import button %}
-{% from "components/icon.html" import category_icon %}
+{% from "components/icon.html" import category_icon, icon %}
 {% from "components/pill.html" import pill %}
 {% from "components/segmented_control.html" import segmented_control %}
 {% from "components/toggle.html" import toggle %}
@@ -15,6 +15,64 @@
 
 {# A labelled input in the design system's form-field frame (see components.css). Use it for every
    text, number, select, and file field, so each one has its border, fill, and focus ring. #}
+{# A dialog's title row: the title, and an X that closes it. Esc closes it as well, so a dialog has
+   no Cancel button. #}
+{% macro dialog_header(title_id, title) -%}
+<div class="flex items-center justify-between gap-2">
+  <h2 id="{{ title_id }}" class="font-medium text-primary">{{ title }}</h2>
+  {{ button(variant="icon", size="sm", icon="x", aria_label="Close", attrs={"data-action": "categories#closeDialog"}) }}
+</div>
+{%- endmacro %}
+
+{# The buttons under every keyword and rule form, right-aligned in one order: Cancel or Clear, Preview,
+   then the action. Preview shows what the draft would change in the form's preview slot and writes
+   nothing; the action saves it, and categories follow at once. Cancel closes an edit or a triage
+   form. An add form is always on the page, so nothing closes: its first button is Clear, which
+   empties what was typed and the preview. #}
+{% macro form_actions(cancel_attrs, preview_attrs, submit_label, submit_icon="plus", cancel_label="Cancel") -%}
+<div class="flex flex-wrap items-center justify-end gap-2">
+  {{ button(cancel_label, variant="ghost", size="sm", attrs=cancel_attrs) }}
+  {{ button("Preview", variant="outline", size="sm", icon="eye", attrs=preview_attrs) }}
+  {{ button(submit_label, variant="primary", size="sm", icon=submit_icon, type="submit") }}
+</div>
+{%- endmacro %}
+
+{# What a preview says: how many transactions the draft would change, and the first of them, in a
+   list that shows about ten rows and scrolls for the rest. An error or a note replaces it. #}
+{% macro change_preview(count, moves, error, note="") -%}
+{%- if error %}
+<p class="text-sm text-destructive" role="alert">{{ error }}</p>
+{%- elif note %}
+<p class="text-sm text-secondary">{{ note }}</p>
+{%- elif not count %}
+<p class="text-sm text-secondary">No transaction would change.</p>
+{%- else %}
+<p class="text-sm text-primary">{{ count }} {{ "transaction" if count == 1 else "transactions" }} would change{% if count > moves|length %}. The first {{ moves|length }} are listed{% endif %}.</p>
+<div class="table-scroll max-h-96 overflow-y-auto shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Transactions this would change">
+  <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+    <thead class="sticky top-0 bg-container">
+      <tr>
+        <th scope="col" class="px-2 py-2 text-left text-xs font-medium uppercase text-secondary">Date</th>
+        <th scope="col" class="px-2 py-2 text-left text-xs font-medium uppercase text-secondary">Payee</th>
+        <th scope="col" class="px-2 py-2 text-right text-xs font-medium uppercase text-secondary">Amount</th>
+        <th scope="col" class="px-2 py-2 text-left text-xs font-medium uppercase text-secondary">Category</th>
+      </tr>
+    </thead>
+    <tbody>
+      {%- for move in moves %}
+      <tr class="border-t border-subdued">
+        <td class="px-2 py-2 whitespace-nowrap tabular-nums">{{ move.posted_on.isoformat() }}</td>
+        <td class="px-2 py-2 break-words">{{ move.payee }}</td>
+        <td class="px-2 py-2 text-right whitespace-nowrap tabular-nums">{{ move.amount_cents|money }}</td>
+        <td class="px-2 py-2">{{ move.from_name or "Uncategorized" }} → {{ move.to_name or "Uncategorized" }}</td>
+      </tr>
+      {%- endfor %}
+    </tbody>
+  </table>
+</div>
+{%- endif %}
+{%- endmacro %}
+
 {% macro field(label, classes="") -%}
 <label class="form-field {{ classes }}"><span class="form-field__label">{{ label }}</span>{{ caller() }}</label>
 {%- endmacro %}
@@ -98,14 +156,17 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 </form>
 {%- endmacro %}
 
-{# The category table with its type filter and the Show hidden switch. It reloads itself after any
-   category or keyword change. New category is in the page header, outside this region, so its focus
-   survives a reload. #}
+{# The category table with its New category button, type filter, and Show hidden switch. It reloads
+   itself after any category or keyword change. The button keeps its id across a reload, so focus
+   returns to the new one when its dialog closes. #}
 {% macro category_list(rows, view, drafts, errors, message="") -%}
 <section id="category-list" class="fill-chain flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="category-list-title"
   hx-get="/categories/list?{{ view.query }}" hx-trigger="categories-changed from:body" hx-target="#category-list" hx-swap="outerHTML">
   <div class="flex flex-col gap-1">
-    <h2 id="category-list-title" class="font-medium text-primary">Categories</h2>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <h2 id="category-list-title" class="font-medium text-primary">Categories</h2>
+      {{ button("New category", variant="primary", size="sm", icon="plus", attrs={"id": "new-category-open", "data-action": "categories#openDialog", "data-dialog-id": "new-category-dialog"}) }}
+    </div>
     <p class="text-xs text-secondary">Type sets how a category is budgeted. Income feeds income in reports. Excluded and Owed leave a category out of them, as for transfers and loans; a contact's balance counts Owed.</p>
   </div>
   <form class="flex flex-wrap items-center justify-between gap-3" hx-get="/categories/list" hx-target="#category-list" hx-swap="outerHTML" hx-trigger="change" aria-label="Filter categories">
@@ -131,7 +192,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
     <p class="text-sm text-secondary">No categories have this type.</p>
     {{ button("Show all types", variant="outline", size="sm", attrs={"hx-get": "/categories/list?" ~ view.cleared().query, "hx-target": "#category-list", "hx-swap": "outerHTML"}) }}
     {%- else %}
-    <p class="text-sm text-secondary">No categories yet. Add one with New category, or import a keyword file.</p>
+    <p class="text-sm text-secondary">No categories yet. Add one with New category, or import keywords from the Keywords tab.</p>
     {%- endif %}
   </div>
   {%- else %}
@@ -213,10 +274,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   {%- if form.error %}
   <p class="text-sm text-destructive" role="alert">{{ form.error }}</p>
   {%- endif %}
-  <div class="flex items-center justify-end gap-2">
-    {{ button("Cancel", variant="ghost", size="sm", attrs={"data-action": "categories#closeDialog"}) }}
-    {{ button("Create category", variant="primary", size="sm", type="submit") }}
-  </div>
+  {{ button("Create", variant="primary", size="sm", type="submit", full_width=true) }}
 </form>
 {%- endmacro %}
 
@@ -224,10 +282,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
    they move to. Choosing one asks again, so the statement shown is for that target. Apply sends the
    digest of the preview shown, so a change made since then is refused and the dialog asks again. #}
 {% macro move_dialog(category, uses, choices, target, preview, error, key) -%}
-<div class="flex items-center justify-between gap-2">
-  <h2 id="move-category-title" class="font-medium text-primary">Delete {{ category.name }}</h2>
-  {{ button(variant="icon", size="sm", icon="x", aria_label="Close", attrs={"data-action": "categories#closeDialog"}) }}
-</div>
+{{ dialog_header("move-category-title", "Delete " ~ category.name) }}
 <p class="text-sm text-secondary">{{ category.name }} is in use. Its uses move to another category, and then it is deleted. One undo from the toast restores all of it.</p>
 <ul class="flex flex-col gap-1 text-sm text-primary" aria-label="Uses of {{ category.name }}">
   {%- for use in uses %}
@@ -245,17 +300,11 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
     </select>{% endcall %}
   {%- if preview %}
   <p class="text-sm text-primary">Delete {{ category.name }} and move {{ uses|map(attribute="text")|join(", ") }} to {{ preview.target_name }}.</p>
-  {%- if preview.dropped_rules %}
-  <p class="text-sm text-secondary">{{ preview.dropped_rules }} {{ "rule" if preview.dropped_rules == 1 else "rules" }} would have {{ preview.target_name }} on both sides, so {{ "it is" if preview.dropped_rules == 1 else "they are" }} dropped.</p>
-  {%- endif %}
   {%- endif %}
   {%- if error %}
   <p class="text-sm text-destructive" role="alert">{{ error }}</p>
   {%- endif %}
-  <div class="flex items-center justify-end gap-2">
-    {{ button("Cancel", variant="ghost", size="sm", attrs={"data-action": "categories#closeDialog"}) }}
-    {{ button("Delete and move", variant="primary", size="sm", type="submit", disabled=not preview) }}
-  </div>
+  {{ button("Delete and move", variant="primary", size="sm", type="submit", disabled=not preview, full_width=true) }}
 </form>
 {%- endmacro %}
 
@@ -273,7 +322,6 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 <tr id="keyword-{{ row.id }}" class="border-t border-subdued align-middle{% if not row.enabled %} opacity-60{% endif %}">
   <td class="min-w-[10rem] font-mono wrap-anywhere">{{ row.pattern }}</td>
   <td>{{ row.category_name }}{% if row.category_hidden %} <span class="text-secondary">(hidden)</span>{% endif %}</td>
-  <td class="text-right tabular-nums">{{ row.priority }}</td>
   <td>{{ "Regex" if row.is_regex else "Plain" }}</td>
   <td>{{ enabled_switch(row, "/categories/keywords/" ~ row.id ~ "/enabled", "Keyword enabled: " ~ row.pattern) }}</td>
   <td>
@@ -285,63 +333,67 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 </tr>
 {%- endmacro %}
 
-{# The inline edit row for a keyword. A refused edit stays open with its message. #}
+{# The inline edit row for a keyword. Preview fills its own slot, and Save applies the edit. A refused
+   edit stays open with its message. #}
+{# The style of a compact control in a keyword or rule form: sized to what it holds, not stretched. #}
+{% set inline_control = "rounded-md border border-secondary bg-container px-2 py-1.5 text-sm text-primary focus-ring" %}
+
+{# The fields every keyword form shares, on one line that wraps on a narrow screen: the pattern, which
+   takes the width left over, Regex beside it because it changes how the pattern reads, and the
+   category, as wide as its names. pick shows the "Pick a category" choice for a new keyword. A
+   refused form focuses the pattern; focus_pattern focuses it always, as an edit does. #}
+{% macro keyword_fields(form, choices, pick=true, focus_pattern=false) -%}
+<div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-primary">
+  <input name="pattern" value="{{ form.pattern }}" required autocomplete="off" placeholder="Pattern" aria-label="Pattern" class="{{ inline_control }} min-w-[12rem] flex-1 font-mono"{% if form.error %} aria-invalid="true"{% endif %}{% if form.error or focus_pattern %} data-autofocus{% endif %}>
+  <label class="flex items-center gap-1.5"><input type="checkbox" name="is_regex" value="1"{% if form.is_regex %} checked{% endif %}> Regex</label>
+  <label class="flex min-w-0 items-center gap-1.5"><span class="text-secondary" aria-hidden="true">→</span><select name="category_id" required aria-label="Category" class="{{ inline_control }} min-w-0 max-w-full">
+      {%- if pick %}
+      <option value=""{% if not form.category_id %} selected{% endif %} disabled>Pick a category</option>
+      {%- endif %}
+      {%- for cid, name in choices %}
+      <option value="{{ cid }}"{% if cid|string == form.category_id|string %} selected{% endif %}>{{ name }}</option>
+      {%- endfor %}
+    </select></label>
+</div>
+{%- endmacro %}
+
 {% macro keyword_edit_row(form, choices) -%}
 <tr id="keyword-{{ form.id }}" class="border-t border-subdued bg-container-inset">
-  <td colspan="6" class="p-3">
+  <td colspan="5" class="p-3">
     <form hx-post="/categories/keywords/{{ form.id }}" hx-target="closest tr" hx-swap="outerHTML" class="flex flex-col gap-3" aria-label="Edit keyword">
       <input type="hidden" name="idempotency_key" value="{{ form.key }}">
       <input type="hidden" name="list_key" value="{{ form.list_key }}">
-      <div class="grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
-        {% call field("Pattern", "col-span-2") %}<input name="pattern" value="{{ form.pattern }}" required autocomplete="off" class="form-field__input font-mono" data-autofocus{% if form.error %} aria-invalid="true"{% endif %}>{% endcall %}
-        {% call field("Category") %}<select name="category_id" required class="form-field__input">
-            {%- for cid, name in choices %}
-            <option value="{{ cid }}"{% if cid|string == form.category_id|string %} selected{% endif %}>{{ name }}</option>
-            {%- endfor %}
-          </select>{% endcall %}
-        {% call field("Priority") %}<input type="number" name="priority" value="{{ form.priority }}" step="1" class="form-field__input">{% endcall %}
-      </div>
-      <label class="flex items-center gap-2 text-sm text-primary">
-        <input type="checkbox" name="is_regex" value="1"{% if form.is_regex %} checked{% endif %}> Regex
-      </label>
+      {{ keyword_fields(form, choices, pick=false, focus_pattern=true) }}
+      <div id="keyword-preview-{{ form.id }}" class="flex flex-col gap-2" aria-live="polite"></div>
       {%- if form.error %}
       <p class="text-sm text-destructive" role="alert">{{ form.error }}</p>
       {%- endif %}
-      <div class="flex items-center gap-2">
-        {{ button("Save", variant="primary", size="sm", type="submit") }}
-        {{ button("Cancel", variant="ghost", size="sm", attrs={"hx-get": "/categories/keywords/" ~ form.id ~ "/row", "hx-target": "closest tr", "hx-swap": "outerHTML"}) }}
-      </div>
+      {{ form_actions(
+        {"hx-get": "/categories/keywords/" ~ form.id ~ "/row", "hx-target": "closest tr", "hx-swap": "outerHTML"},
+        {"hx-post": "/categories/keywords/" ~ form.id ~ "/preview", "hx-target": "#keyword-preview-" ~ form.id, "hx-swap": "innerHTML"},
+        "Save", submit_icon=none) }}
     </form>
   </td>
 </tr>
 {%- endmacro %}
 
-{# The add form above the table. It is replaced by its reply, so a saved form comes back empty. #}
+{# The add form above the table. It is replaced by its reply, so a saved form comes back empty. Preview
+   fills its own slot, and Add keyword saves the keyword and applies it. #}
 {% macro keyword_add_form(form, list_key, choices) -%}
-<form id="keyword-add" hx-post="/categories/keywords" hx-target="#keyword-add" hx-swap="outerHTML" class="flex flex-col gap-3 rounded-xl bg-container-inset p-4" aria-label="Add a keyword to {{ list_key }}">
+<form id="keyword-add" hx-post="/categories/keywords" hx-target="#keyword-add" hx-swap="outerHTML" class="flex flex-col gap-3 rounded-xl bg-container-inset p-4" aria-label="Add a keyword to {{ list_name(list_key) }}">
   <input type="hidden" name="list_key" value="{{ list_key }}">
   <input type="hidden" name="idempotency_key" value="{{ form.key }}">
-  <div class="grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
-    {% call field("Pattern", "col-span-2") %}<input name="pattern" value="{{ form.pattern }}" required autocomplete="off" class="form-field__input font-mono"{% if form.error %} aria-invalid="true" data-autofocus{% endif %}>{% endcall %}
-    {% call field("Category") %}<select name="category_id" required class="form-field__input">
-        <option value=""{% if not form.category_id %} selected{% endif %} disabled>Pick a category</option>
-        {%- for cid, name in choices %}
-        <option value="{{ cid }}"{% if cid|string == form.category_id|string %} selected{% endif %}>{{ name }}</option>
-        {%- endfor %}
-      </select>{% endcall %}
-    {% call field("Priority") %}<input type="number" name="priority" value="{{ form.priority }}" step="1" class="form-field__input">{% endcall %}
-  </div>
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <label class="flex items-center gap-2 text-sm text-primary">
-      <input type="checkbox" name="is_regex" value="1"{% if form.is_regex %} checked{% endif %}> Regex
-    </label>
-    {{ button("Add keyword", variant="primary", size="sm", type="submit") }}
-  </div>
+  {{ keyword_fields(form, choices) }}
+  <div id="keyword-add-preview" class="flex flex-col gap-2" aria-live="polite"></div>
   {%- if form.error %}
   <p class="text-sm text-destructive" role="alert">{{ form.error }}</p>
   {%- elif not choices %}
   <p class="text-sm text-secondary">Add a category first, then come back to add a keyword for it.</p>
   {%- endif %}
+  {{ form_actions(
+    {"data-action": "categories#resetForm"},
+    {"hx-post": "/categories/keywords/preview", "hx-target": "#keyword-add-preview", "hx-swap": "innerHTML"},
+    "Add keyword", cancel_label="Clear") }}
 </form>
 {%- endmacro %}
 
@@ -356,7 +408,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   <li>
     <span class="font-mono">{{ conflict.pattern }}</span>:
     {%- for member in conflict.members %}
-    <a href="/settings/categories?tab=keywords&amp;list={{ member.list_key|urlencode }}#keyword-{{ member.keyword_id }}" class="underline focus-ring rounded-sm" data-action="categories#reveal">{{ member.list_key }} → {{ member.category_name }}</a>
+    <a href="/settings/categories?tab=keywords&amp;list={{ member.list_key|urlencode }}#keyword-{{ member.keyword_id }}" class="underline focus-ring rounded-sm" data-action="categories#reveal">{{ list_name(member.list_key) }} → {{ member.category_name }}</a>
     {%- if member.keyword_id == conflict.winner_id %} <span class="font-medium">(applies)</span>{% endif %}{% if not loop.last %},{% endif %}
     {%- endfor %}
   </li>
@@ -370,13 +422,12 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 {# The keyword table for one list, in precedence order. A search that matches nothing says so. #}
 {% macro keyword_table(list_key, rows, total, query) -%}
 {%- if rows %}
-<div class="table-scroll fill-region shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Keywords in {{ list_key }}">
+<div class="table-scroll fill-region shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Keywords in {{ list_name(list_key) }}">
   <table class="register keywords-table">
     <thead>
       <tr>
         <th scope="col">Pattern</th>
         <th scope="col">Category</th>
-        <th scope="col" class="num">Priority</th>
         <th scope="col">Match</th>
         <th scope="col">On</th>
         <th scope="col"><span class="sr-only">Actions</span></th>
@@ -407,22 +458,30 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 </div>
 {%- endmacro %}
 
-{# The Keywords tab: list tabs, conflicts, the add form, the search, and the table. It reloads itself
+{# The Keywords tab: list tabs with import beside them, conflicts, the add form, the search with the
+   payee tester beside it, and the table. The tester and import open dialogs that live outside this
+   region, and their buttons keep their ids, so focus survives a reload. It reloads itself
    after any category or keyword change, and its list tabs replace it. Each of those reloads sends the
    search text in #keyword-search, so the view keeps its search. Only the results swap while typing. #}
 {% macro keyword_panel(list_key, lists, conflicts, rows, choices, form, query, total) -%}
 <div id="keyword-panel" class="fill-chain flex flex-col gap-4"
   hx-get="/categories/keywords?list={{ list_key|urlencode }}" hx-include="#keyword-search" hx-trigger="categories-changed from:body" hx-target="#keyword-panel" hx-swap="outerHTML">
-  <div role="group" aria-label="Keyword lists" class="segmented-control flex flex-wrap self-start">
-    {%- for key, label in lists %}
-    <button type="button" class="segmented-control__segment focus-ring{% if key == list_key %} segmented-control__segment--active{% endif %}" aria-pressed="{{ 'true' if key == list_key else 'false' }}"
-      hx-get="/categories/keywords?list={{ key|urlencode }}" hx-include="#keyword-search" hx-target="#keyword-panel" hx-swap="outerHTML">{{ label }}</button>
-    {%- endfor %}
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <div role="group" aria-label="Keyword lists" class="segmented-control flex flex-wrap self-start">
+      {%- for key, label in lists %}
+      <button type="button" class="segmented-control__segment focus-ring{% if key == list_key %} segmented-control__segment--active{% endif %}" aria-pressed="{{ 'true' if key == list_key else 'false' }}"
+        hx-get="/categories/keywords?list={{ key|urlencode }}" hx-include="#keyword-search" hx-target="#keyword-panel" hx-swap="outerHTML">{{ label }}</button>
+      {%- endfor %}
+    </div>
+    {{ button("Import keywords", variant="outline", size="sm", icon="upload", attrs={"id": "import-open", "data-action": "categories#openDialog", "data-dialog-id": "import-dialog"}) }}
   </div>
   {{ conflicts_banner(conflicts) }}
   {{ keyword_add_form(form, list_key, choices) }}
-  {% call field("Search keywords") %}<input id="keyword-search" type="search" name="q" value="{{ query }}" autocomplete="off" placeholder="Pattern or category" class="form-field__input"
+  <div class="flex flex-wrap items-end gap-2">
+  {% call field("Search keywords", "min-w-0 flex-1") %}<input id="keyword-search" type="search" name="q" value="{{ query }}" autocomplete="off" placeholder="Pattern or category" class="form-field__input"
       aria-controls="keyword-results" hx-get="/categories/keywords?list={{ list_key|urlencode }}" hx-trigger="input changed delay:250ms, search" hx-target="#keyword-results" hx-select="#keyword-results" hx-swap="outerHTML">{% endcall %}
+    {{ button("Test a payee", variant="outline", size="md", icon="search-check", attrs={"id": "test-payee-open", "data-action": "categories#openDialog", "data-dialog-id": "test-payee-dialog"}) }}
+  </div>
   {{ keyword_results(list_key, rows, total, query) }}
 </div>
 {%- endmacro %}
@@ -444,83 +503,60 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 </tr>
 {%- endmacro %}
 
-{# The fields every rule form shares. Keywords say a category from a keyword list; the amount is under a
-   limit, at least a minimum, or both; the other side and the account are the payment's; and the category
-   set is what the rule does. Blank means any, except the category set, which is required. #}
+{# The fields every rule form shares, on two fixed lines: how it was paid and how much, then who, which
+   account, and the category the rule sets. Every control has a fixed width and the two lines share
+   columns, so nothing moves while you fill it in: Paid by names the ticked methods and cuts a long
+   list short rather than growing (the categories controller keeps its name in step). Blank means
+   any, except the category set, which is required. On a phone each line stacks under its label. #}
 {% macro rule_fields(form, choices, contacts, accounts) -%}
-<div class="grid grid-cols-2 gap-3">
-  {% call field("Keywords say") %}<select name="from_category_id" class="form-field__input">
-      <option value=""{% if not form.from_category_id %} selected{% endif %}>Any category</option>
-      {%- for cid, name in choices %}
-      <option value="{{ cid }}"{% if cid|string == form.from_category_id|string %} selected{% endif %}>{{ name }}</option>
+{%- set ticked = payment_methods | selectattr(0, "in", form.paid_by) | map(attribute=1) | list %}
+{%- set paid_text = "Any" if not ticked else (ticked[:2] | join(", ")) ~ (" +" ~ (ticked|length - 2) if ticked|length > 2 else "") %}
+{%- set paid_all = ticked | join(", ") or "Any" %}
+<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 text-sm text-primary sm:grid-cols-[auto_11rem_minmax(0,1fr)]">
+  <span class="text-secondary" aria-hidden="true">Paid by</span>
+  <div class="relative" data-controller="popover" data-action="keydown->popover#keydown click@window->popover#clickOutside">
+    <button type="button" class="{{ inline_control }} flex w-full items-center justify-between gap-1" aria-expanded="false" data-popover-target="button" data-action="popover#toggle" aria-label="Paid by: {{ paid_all }}" title="{{ paid_all }}" data-paid-by-button>
+      <span class="truncate" data-paid-by-text>{{ paid_text }}</span>{{ icon("chevron-down", 16, "shrink-0 text-secondary") }}
+    </button>
+    <div role="group" aria-label="Paid by" hidden data-popover-target="panel" data-action="change->categories#paidByChanged"
+      class="absolute left-0 top-full z-50 mt-2 grid min-w-44 grid-cols-2 gap-x-4 gap-y-1.5 rounded-lg bg-container p-3 shadow-border-lg">
+      {%- for value, label in payment_methods %}
+      <label class="flex items-center gap-1.5 whitespace-nowrap"><input type="checkbox" class="checkbox" name="paid_by" value="{{ value }}" data-label="{{ label }}"{% if value in form.paid_by %} checked{% endif %}> {{ label }}</label>
       {%- endfor %}
-    </select>{% endcall %}
-  {% call field("From keyword list") %}<select name="list_key" class="form-field__input">
-      {%- for value, label in (("", "Any keyword"), ("unique", "A Unique keyword"), ("generic", "A Generic keyword")) %}
-      <option value="{{ value }}"{% if value == form.list_key %} selected{% endif %}>{{ label }}</option>
+    </div>
+  </div>
+  <div class="col-span-2 flex flex-wrap items-center gap-x-3 gap-y-2 sm:col-span-1">
+    <label class="flex items-center gap-1.5"><span class="w-16 text-right text-secondary">under $</span><input name="below" value="{{ form.below }}" inputmode="decimal" autocomplete="off" placeholder="any" aria-label="Amount under, in dollars" class="{{ inline_control }} w-24 text-right tabular-nums"></label>
+    <label class="flex items-center gap-1.5"><span class="text-secondary">at least $</span><input name="at_least" value="{{ form.at_least }}" inputmode="decimal" autocomplete="off" placeholder="any" aria-label="Amount at least, in dollars" class="{{ inline_control }} w-24 text-right tabular-nums"></label>
+  </div>
+  <span class="text-secondary" aria-hidden="true">with</span>
+  <select name="other_side" aria-label="Other side" class="{{ inline_control }} w-full">
+    <option value=""{% if not form.other_side %} selected{% endif %}>Anyone</option>
+    <option value="person"{% if form.other_side == "person" %} selected{% endif %}>A person</option>
+    <option value="owner_account"{% if form.other_side == "owner_account" %} selected{% endif %}>One of my accounts</option>
+    {%- if contacts %}
+    <optgroup label="A contact">
+      {%- for cid, name in contacts %}
+      <option value="contact:{{ cid }}"{% if form.other_side == "contact:" ~ cid %} selected{% endif %}>{{ name }}</option>
       {%- endfor %}
-    </select>{% endcall %}
-  {% call field("Under ($)") %}<input name="below" value="{{ form.below }}" inputmode="decimal" autocomplete="off" class="form-field__input tabular-nums">{% endcall %}
-  {% call field("At least ($)") %}<input name="at_least" value="{{ form.at_least }}" inputmode="decimal" autocomplete="off" class="form-field__input tabular-nums">{% endcall %}
-  {% call field("Other side") %}<select name="other_side" class="form-field__input">
-      <option value=""{% if not form.other_side %} selected{% endif %}>Anyone</option>
-      <option value="person"{% if form.other_side == "person" %} selected{% endif %}>A person</option>
-      <option value="owner_account"{% if form.other_side == "owner_account" %} selected{% endif %}>One of my accounts</option>
-      {%- if contacts %}
-      <optgroup label="A contact">
-        {%- for cid, name in contacts %}
-        <option value="contact:{{ cid }}"{% if form.other_side == "contact:" ~ cid %} selected{% endif %}>{{ name }}</option>
+    </optgroup>
+    {%- endif %}
+  </select>
+  <div class="col-span-2 flex flex-wrap items-center gap-x-3 gap-y-2 sm:col-span-1">
+    <label class="flex items-center gap-1.5"><span class="w-16 text-right text-secondary">in</span><select name="account_id" aria-label="Account" class="{{ inline_control }} w-40">
+        <option value="">Any account</option>
+        {%- for aid, name in accounts %}
+        <option value="{{ aid }}"{% if aid|string == form.account_id|string %} selected{% endif %}>{{ name }}</option>
         {%- endfor %}
-      </optgroup>
-      {%- endif %}
-    </select>{% endcall %}
-  {% call field("Account") %}<select name="account_id" class="form-field__input">
-      <option value="">Any account</option>
-      {%- for aid, name in accounts %}
-      <option value="{{ aid }}"{% if aid|string == form.account_id|string %} selected{% endif %}>{{ name }}</option>
-      {%- endfor %}
-    </select>{% endcall %}
-  {% call field("Then set category", "col-span-2") %}<select name="to_category_id" required class="form-field__input"{% if form.error %} aria-invalid="true"{% endif %}>
-      <option value=""{% if not form.to_category_id %} selected{% endif %} disabled>Pick a category</option>
-      {%- for cid, name in choices %}
-      <option value="{{ cid }}"{% if cid|string == form.to_category_id|string %} selected{% endif %}>{{ name }}</option>
-      {%- endfor %}
-    </select>{% endcall %}
+      </select></label>
+    <label class="flex items-center gap-1.5"><span class="text-secondary" aria-hidden="true">→</span><select name="to_category_id" required aria-label="Set category" class="{{ inline_control }} w-40"{% if form.error %} aria-invalid="true"{% endif %}>
+        <option value=""{% if not form.to_category_id %} selected{% endif %} disabled>Pick a category</option>
+        {%- for cid, name in choices %}
+        <option value="{{ cid }}"{% if cid|string == form.to_category_id|string %} selected{% endif %}>{{ name }}</option>
+        {%- endfor %}
+      </select></label>
+  </div>
 </div>
-{%- endmacro %}
-
-{# What a preview says: how many transactions the rule would change, and the first of them. An error
-   replaces it. #}
-{% macro rule_preview(count, moves, error) -%}
-{%- if error %}
-<p class="text-sm text-destructive" role="alert">{{ error }}</p>
-{%- elif not count %}
-<p class="text-sm text-secondary">No transaction would change.</p>
-{%- else %}
-<p class="text-sm text-primary">{{ count }} {{ "transaction" if count == 1 else "transactions" }} would change{% if count > moves|length %}. The first {{ moves|length }} are listed{% endif %}.</p>
-<div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Transactions this rule would change">
-  <table class="w-full border-separate border-spacing-0 text-sm text-primary">
-    <thead>
-      <tr>
-        <th scope="col" class="px-2 py-2 text-left text-xs font-medium uppercase text-secondary">Date</th>
-        <th scope="col" class="px-2 py-2 text-left text-xs font-medium uppercase text-secondary">Payee</th>
-        <th scope="col" class="px-2 py-2 text-right text-xs font-medium uppercase text-secondary">Amount</th>
-        <th scope="col" class="px-2 py-2 text-left text-xs font-medium uppercase text-secondary">Category</th>
-      </tr>
-    </thead>
-    <tbody>
-      {%- for move in moves %}
-      <tr class="border-t border-subdued">
-        <td class="px-2 py-2 whitespace-nowrap tabular-nums">{{ move.posted_on.isoformat() }}</td>
-        <td class="px-2 py-2 break-words">{{ move.payee }}</td>
-        <td class="px-2 py-2 text-right whitespace-nowrap tabular-nums">{{ move.amount_cents|money }}</td>
-        <td class="px-2 py-2">{{ move.from_name or "Uncategorized" }} → {{ move.to_name or "Uncategorized" }}</td>
-      </tr>
-      {%- endfor %}
-    </tbody>
-  </table>
-</div>
-{%- endif %}
 {%- endmacro %}
 
 {# The add form above the table. It is replaced by its reply, so a saved form comes back empty. Preview
@@ -535,10 +571,10 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   {%- elif not choices %}
   <p class="text-sm text-secondary">Add a category first, then come back to add a rule for it.</p>
   {%- endif %}
-  <div class="flex flex-wrap items-center justify-end gap-2">
-    {{ button("Preview", variant="outline", size="sm", attrs={"hx-post": "/categories/rules/preview", "hx-target": "#rule-add-preview", "hx-swap": "innerHTML"}) }}
-    {{ button("Add rule", variant="primary", size="sm", type="submit") }}
-  </div>
+  {{ form_actions(
+    {"data-action": "categories#resetForm"},
+    {"hx-post": "/categories/rules/preview", "hx-target": "#rule-add-preview", "hx-swap": "innerHTML"},
+    "Add rule", cancel_label="Clear") }}
 </form>
 {%- endmacro %}
 
@@ -554,11 +590,10 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
       {%- if form.error %}
       <p class="text-sm text-destructive" role="alert">{{ form.error }}</p>
       {%- endif %}
-      <div class="flex flex-wrap items-center gap-2">
-        {{ button("Save", variant="primary", size="sm", type="submit") }}
-        {{ button("Preview", variant="outline", size="sm", attrs={"hx-post": "/categories/rules/" ~ form.id ~ "/preview", "hx-target": "#rule-preview-" ~ form.id, "hx-swap": "innerHTML"}) }}
-        {{ button("Cancel", variant="ghost", size="sm", attrs={"hx-get": "/categories/rules/" ~ form.id ~ "/row", "hx-target": "closest tr", "hx-swap": "outerHTML"}) }}
-      </div>
+      {{ form_actions(
+        {"hx-get": "/categories/rules/" ~ form.id ~ "/row", "hx-target": "closest tr", "hx-swap": "outerHTML"},
+        {"hx-post": "/categories/rules/" ~ form.id ~ "/preview", "hx-target": "#rule-preview-" ~ form.id, "hx-swap": "innerHTML"},
+        "Save", submit_icon=none) }}
     </form>
   </td>
 </tr>
@@ -593,16 +628,16 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 {% macro rule_panel(rows, choices, contacts, accounts, form) -%}
 <div id="rule-panel" class="flex flex-col gap-4"
   hx-get="/categories/rules" hx-trigger="categories-changed from:body" hx-target="#rule-panel" hx-swap="outerHTML">
-  <p class="text-sm text-secondary">A rule sets a category when all of its conditions hold. Rules are tried in order, and the first that holds sets the category. A rule reads the category a keyword assigns, the amount, who is on the other side, and the account; keywords still do all the matching of payee text. Preview shows what would change before you save. Saving runs the automatic step, and Undo reverses both.</p>
+  <p class="text-sm text-secondary">Rules categorize what no keyword matched, top to bottom: the first rule whose conditions all hold sets the category. A rule reads how it was paid, the amount, who is on the other side, and the account. Preview shows what would change before you save. Saving runs the automatic step, and Undo reverses both.</p>
   {{ rule_add_form(form, choices, contacts, accounts) }}
   {{ rule_table(rows) }}
 </div>
 {%- endmacro %}
 
 {# The payee tester. Its inputs wait 250 ms after typing, then ask for the matches. The amount is
-   optional, and with it the winner shows the rule that applies; the checkbox says whether the payment is
-   with a person, which a rule about a person needs. #}
-{% macro payee_results(payee, person, matches, names, error, rule) -%}
+   optional, and with it a payee no keyword matches shows the rule that applies; the checkbox says whether
+   the payment is with a person, which a rule about a person needs. #}
+{% macro payee_results(payee, person, matches, names, error, rule, method=none) -%}
 <div id="payee-results" class="flex flex-col gap-2" aria-live="polite"
   hx-get="/categories/test" hx-include="#payee-input, #payee-amount, #payee-person" hx-trigger="categories-changed from:body" hx-target="#payee-results" hx-swap="outerHTML">
   {%- if error %}
@@ -610,21 +645,17 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   {%- elif not payee %}
   <p class="text-sm text-secondary">Type a payee to see which keyword would win.</p>
   {%- elif not matches and not rule %}
-  <p class="text-sm text-secondary">No keyword matches this payee, so it stays in triage.</p>
+  <p class="text-sm text-secondary">No keyword matches this payee{% if method %}, and no rule covers paid by {{ method }}{% endif %}, so it stays in triage.</p>
   {%- elif not matches %}
-  <p class="text-sm text-primary">Set by rule: {{ rule.sentence }}</p>
+  <p class="text-sm text-primary">No keyword matches.{% if method %} Paid by {{ method }}.{% endif %} Set by rule: {{ rule.sentence }}</p>
   {%- else %}
   <ol class="flex flex-col gap-2" aria-label="Matching keywords, in precedence order">
     {%- for match in matches %}
     <li class="flex flex-wrap items-center gap-2 rounded-lg p-3 {{ 'border border-success/40 bg-success/10' if loop.first else 'border border-divider' }}">
       {%- if loop.first %}{{ pill("Winner", tone="green", size="sm") }}{% endif %}
-      <span class="text-sm text-secondary">{{ match.list_key }}</span>
       <code class="font-mono text-sm text-primary break-all">{{ match.pattern }}</code>
       <span class="text-sm text-secondary">→</span>
       <span class="text-sm text-primary">{{ names.get(match.category_id, "?") }}</span>
-      {%- if loop.first and rule %}
-      <span class="w-full text-sm text-secondary">Set by rule: {{ rule.sentence }}</span>
-      {%- endif %}
     </li>
     {%- endfor %}
   </ol>
@@ -635,7 +666,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 {% macro payee_tester(payee, amount, person, matches, names, error, rule) -%}
 <div class="flex flex-col gap-4">
   <div class="grid grid-cols-[minmax(0,1fr)_8rem] gap-3">
-    {% call field("Payee text, as a statement shows it") %}<input id="payee-input" type="search" name="payee" value="{{ payee }}" autocomplete="off" placeholder="BLUE BOTTLE COFFEE"
+    {% call field("Payee text, as a statement shows it") %}<input id="payee-input" type="search" name="payee" value="{{ payee }}" autocomplete="off" placeholder="BLUE BOTTLE COFFEE" data-autofocus
         class="form-field__input font-mono" hx-get="/categories/test" hx-include="#payee-amount, #payee-person" hx-trigger="input changed delay:250ms, search" hx-target="#payee-results" hx-swap="outerHTML">{% endcall %}
     {% call field("Amount (optional)") %}<input id="payee-amount" type="text" inputmode="decimal" name="amount" value="{{ amount }}" autocomplete="off" placeholder="4.50"
         class="form-field__input" hx-get="/categories/test" hx-include="#payee-input, #payee-person" hx-trigger="input changed delay:250ms" hx-target="#payee-results" hx-swap="outerHTML">{% endcall %}
@@ -655,12 +686,20 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   hx-target="#slot-{{ slot }}" hx-swap="innerHTML">Add keyword</button>
 {%- endmacro %}
 
-{# The triage panel: uncategorized payees, then unknown receipt items for each vendor. #}
-{% macro triage_panel(payees, vendors, choices) -%}
+{# The triage panel: how many transactions have no category, with a link to them in Transactions for
+   fixing by hand, then uncategorized payees, then unknown receipt items for each vendor. Home's
+   Uncategorized transactions row opens this tab, and the count here is the one Home shows. #}
+{% macro triage_panel(payees, vendors, choices, uncategorized, uncategorized_href) -%}
 <div id="triage-panel" class="flex flex-col gap-6" hx-get="/categories/triage" hx-trigger="categories-changed from:body" hx-target="#triage-panel" hx-swap="outerHTML">
+  <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-container-inset px-3 py-2">
+    <p class="text-sm text-primary">{% if uncategorized %}<span class="font-medium tabular-nums">{{ uncategorized }}</span> {{ "transaction has" if uncategorized == 1 else "transactions have" }} no category.{% else %}Every transaction has a category.{% endif %}</p>
+    {%- if uncategorized %}
+    <a href="{{ uncategorized_href }}" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-primary focus-ring hover:bg-container-inset-hover">Open in Transactions</a>
+    {%- endif %}
+  </div>
   <section aria-labelledby="triage-payees" class="flex flex-col gap-2">
     <h3 id="triage-payees" class="font-medium text-primary">Uncategorized payees</h3>
-    <p class="text-sm text-secondary">Transactions with no category, most frequent first. Add a keyword, then preview categorize.</p>
+    <p class="text-sm text-secondary">Payees of transactions with no category, most frequent first. Preview a keyword to see what it would change; adding it applies it.</p>
     {%- if payees %}
     <ul class="flex flex-col" aria-label="Uncategorized payees">
       {%- for payee, count, total in payees %}
@@ -677,11 +716,12 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
       {%- endfor %}
     </ul>
     {%- else %}
-    <p class="text-sm text-secondary">Every transaction has a category.</p>
+    <p class="text-sm text-secondary">No payee is left without a category.</p>
     {%- endif %}
   </section>
   <section aria-labelledby="triage-receipts" class="flex flex-col gap-3">
     <h3 id="triage-receipts" class="font-medium text-primary">Unknown receipt items</h3>
+    <p class="text-sm text-secondary">Receipt items no keyword matches. Add a keyword, then apply the vendor's receipts again from Reconcile, which fills in the transactions they split.</p>
     {%- if not vendors %}
     <p class="text-sm text-secondary">No receipt vendors are set up yet, so there are no receipt items to triage.</p>
     {%- endif %}
@@ -714,55 +754,40 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 </div>
 {%- endmacro %}
 
-{# The keyword form that opens in a triage row. The pattern is suggested from the text. #}
+{# The keyword form that opens in a triage row, under the text it is for, which the row already shows.
+   The pattern is suggested from the text. Preview fills its own slot, and Add keyword saves the
+   keyword and applies it. #}
 {% macro triage_form(form, kind, text, slot, list_key, choices) -%}
-<form hx-post="/categories/triage/keywords" hx-target="#slot-{{ slot }}" hx-swap="innerHTML" class="flex flex-col gap-3 rounded-xl bg-container-inset p-4" aria-label="Add a keyword for {{ text }}">
+<form hx-post="/categories/triage/keywords" hx-target="#slot-{{ slot }}" hx-swap="innerHTML" class="flex flex-col gap-3 rounded-lg bg-container-inset p-3" aria-label="Add a keyword for {{ text }}">
   <input type="hidden" name="idempotency_key" value="{{ form.key }}">
   <input type="hidden" name="kind" value="{{ kind }}">
   <input type="hidden" name="text" value="{{ text }}">
   <input type="hidden" name="slot" value="{{ slot }}">
-  <p class="text-sm text-secondary">For <span class="break-all font-mono text-primary">{{ text }}</span></p>
-  <div class="grid grid-cols-2 gap-3">
-    {% call field("Pattern", "col-span-2") %}<input name="pattern" value="{{ form.pattern }}" required autocomplete="off" class="form-field__input font-mono"{% if form.error %} aria-invalid="true" data-autofocus{% endif %}>{% endcall %}
-    {%- if kind == "payee" %}
-    {% call field("List") %}<select name="list_key" class="form-field__input">
-        <option value="unique"{% if list_key == "unique" %} selected{% endif %}>Unique</option>
-        <option value="generic"{% if list_key == "generic" %} selected{% endif %}>Generic</option>
-      </select>{% endcall %}
-    {%- else %}
-    <input type="hidden" name="list_key" value="{{ list_key }}">
-    {%- endif %}
-    {% call field("Category") %}<select name="category_id" required class="form-field__input">
-        <option value=""{% if not form.category_id %} selected{% endif %} disabled>Pick a category</option>
-        {%- for cid, name in choices %}
-        <option value="{{ cid }}"{% if cid|string == form.category_id|string %} selected{% endif %}>{{ name }}</option>
-        {%- endfor %}
-      </select>{% endcall %}
-  </div>
-  <label class="flex items-center gap-2 text-sm text-primary">
-    <input type="checkbox" name="is_regex" value="1"{% if form.is_regex %} checked{% endif %}> Regex
-  </label>
+  <input type="hidden" name="list_key" value="{{ list_key }}">
+  {{ keyword_fields(form, choices) }}
+  <div id="triage-preview-{{ slot }}" class="flex flex-col gap-2" aria-live="polite"></div>
   {%- if form.error %}
   <p class="text-sm text-destructive" role="alert">{{ form.error }}</p>
   {%- endif %}
-  <div class="flex items-center gap-2">
-    {{ button("Add keyword", variant="primary", size="sm", type="submit") }}
-    {{ button("Cancel", variant="ghost", size="sm", attrs={"data-action": "click->categories#clearSlot"}) }}
-  </div>
+  {{ form_actions(
+    {"data-action": "click->categories#clearSlot"},
+    {"hx-post": "/categories/keywords/preview", "hx-target": "#triage-preview-" ~ slot, "hx-swap": "innerHTML"},
+    "Add keyword") }}
 </form>
 {%- endmacro %}
 
-{# The Import tab: a JSON file and the list it goes to. Its preview replaces the result area. #}
+{# The import dialog's body: a JSON file and the list it goes to. Its preview replaces the result area,
+   and the dialog clears both when it closes. #}
 {% macro import_form(lists) -%}
 <form hx-post="/categories/import/preview" hx-encoding="multipart/form-data" hx-target="#import-result" hx-swap="innerHTML" class="flex flex-col gap-3">
   {% call field("Keyword file (JSON)") %}<input type="file" name="file" accept=".json,application/json" required class="form-field__input">{% endcall %}
   {% call field("List") %}<select name="list_key" class="form-field__input">
       {%- for key, label in lists %}
-      <option value="{{ key }}"{% if key == "unique" %} selected{% endif %}>{{ label }}</option>
+      <option value="{{ key }}"{% if key == "payee" %} selected{% endif %}>{{ label }}</option>
       {%- endfor %}
     </select>{% endcall %}
   <p class="text-sm text-secondary">A JSON object maps each category name to a list of patterns. Missing categories go to Ungrouped.</p>
-  <div>{{ button("Preview import", variant="primary", size="sm", type="submit") }}</div>
+  {{ button("Preview import", variant="outline", size="sm", icon="eye", type="submit", full_width=true) }}
 </form>
 <div id="import-result" class="mt-4" aria-live="polite"></div>
 {%- endmacro %}
@@ -779,7 +804,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   {%- endif %}
   <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
     <dt class="text-secondary">New categories</dt><dd class="tabular-nums text-primary">{{ plan.new_categories }}</dd>
-    <dt class="text-secondary">New keywords in {{ list_key }}</dt><dd class="tabular-nums text-primary">{{ plan.new_keywords }}</dd>
+    <dt class="text-secondary">New keywords in {{ list_name(list_key) }}</dt><dd class="tabular-nums text-primary">{{ plan.new_keywords }}</dd>
     <dt class="text-secondary">Already in this list</dt><dd class="tabular-nums text-primary">{{ plan.skipped_duplicates }}</dd>
   </dl>
   {%- if plan.new_categories or plan.new_keywords %}
@@ -788,41 +813,11 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
     <input type="hidden" name="list_key" value="{{ list_key }}">
     <input type="hidden" name="revision" value="{{ revision }}">
     <input type="hidden" name="idempotency_key" value="{{ key }}">
-    <p class="text-sm text-secondary">Apply writes one batch. The toast can undo it.</p>
-    <div>{{ button("Apply", variant="primary", size="sm", type="submit") }}</div>
+    <p class="text-sm text-secondary">Importing writes one batch. The toast can undo it.</p>
+    {{ button("Confirm and Import", variant="primary", size="sm", type="submit", full_width=true) }}
   </form>
   {%- else %}
   <p class="text-sm text-secondary">Nothing to import: every pattern is already in this list.</p>
-  {%- endif %}
-</div>
-{%- endmacro %}
-
-{# The categorize preview: the counts and the transitions, then Apply. #}
-{% macro categorize_body(plan, error, revision, key) -%}
-<h2 id="categorize-title" class="font-medium text-primary">Preview categorize</h2>
-{%- if error %}
-<p class="text-sm text-destructive" role="alert">{{ error }}</p>
-{%- endif %}
-{%- if plan %}
-<p class="text-sm text-primary">Considered {{ plan.considered }} {{ "transaction" if plan.considered == 1 else "transactions" }}; {{ plan.changed }} would change.</p>
-{%- if plan.transitions %}
-<ul class="flex flex-col gap-1 text-sm text-primary" aria-label="Changes by category">
-  {%- for transition in plan.transitions %}
-  <li>{% if transition.from_name == transition.to_name %}{{ transition.to_name }}, now set by {{ transition.origin.value }}{% else %}{{ transition.from_name or "Unset" }} → {{ transition.to_name or "Unset" }}{% endif %}: {{ transition.count }}</li>
-  {%- endfor %}
-</ul>
-{%- endif %}
-{%- endif %}
-<div class="flex items-center justify-end gap-2">
-  {%- if plan and plan.preview %}
-  {{ button("Cancel", variant="ghost", size="sm", attrs={"data-action": "categories#closeDialog"}) }}
-  <form hx-post="/categories/categorize/apply" hx-target="#categorize-body" hx-swap="innerHTML">
-    <input type="hidden" name="revision" value="{{ revision }}">
-    <input type="hidden" name="idempotency_key" value="{{ key }}">
-    {{ button("Apply", variant="primary", size="sm", type="submit") }}
-  </form>
-  {%- else %}
-  {{ button("Close", variant="ghost", size="sm", attrs={"data-action": "categories#closeDialog"}) }}
   {%- endif %}
 </div>
 {%- endmacro %}

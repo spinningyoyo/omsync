@@ -32,17 +32,15 @@ from omsync.ledger.keyword_import import (
     read_keyword_file,
 )
 from omsync.ledger.models import Account, Category, Contact, RuleOtherSide
+from omsync.ledger.payment_methods import PaymentMethod
 
-_SCOPE_LABELS = {"same_list": "Same list", "across_lists": "Unique and generic"}
 _PREVIEW_ONLY = "Preview only: nothing was written. Run again with --apply to {verb}."
 
 
 @keywords_app.command("import")
 def keywords_import(
     file: Annotated[Path, typer.Argument(help="A JSON file mapping category names to patterns.")],
-    list_key: Annotated[
-        str, typer.Option("--list", help="unique, generic, or a vendor key such as amazon.")
-    ],
+    list_key: Annotated[str, typer.Option("--list", help="payee, or a vendor key such as amazon.")],
     apply: Annotated[
         bool, typer.Option("--apply", help="Write the categories and keywords.")
     ] = False,
@@ -110,15 +108,15 @@ def keywords_test(
         except InvalidKeyword as exc:
             fail(str(exc))
         if not explanation.matches and explanation.rule is None:
-            typer.echo("No keyword matches. This payee would stay in triage.")
+            paid_by = "" if explanation.method is None else f" Paid by {explanation.method.value}."
+            typer.echo(f"No keyword matches.{paid_by} This payee would stay in triage.")
             return
+        if explanation.method is not None:
+            typer.echo(f"No keyword matches. Paid by {explanation.method.value}.")
         names = admin.category_names(session)
         for position, match in enumerate(explanation.matches):
             mark = "winner " if position == 0 else "       "
-            typer.echo(
-                f'{mark}{match.list_key:<8} "{match.pattern}" -> '
-                f"{names.get(match.category_id, '?')}"
-            )
+            typer.echo(f'{mark}"{match.pattern}" -> {names.get(match.category_id, "?")}')
         if explanation.rule is not None:
             row = admin.get_rule(session, explanation.rule.id)
             typer.echo(f"set by rule {row.id}: {row.sentence}")
@@ -126,7 +124,8 @@ def keywords_test(
 
 @rules_app.command("list")
 def rules_list() -> None:
-    """List rules in order. The first rule that holds sets its category; off rules are skipped."""
+    """List rules in order. For a transaction no keyword matched, the first rule that holds sets its
+    category; off rules are skipped."""
     with ready_session() as (_settings, session):
         rules = admin.rule_rows(session)
     if not rules:
@@ -140,13 +139,12 @@ def rules_list() -> None:
 @rules_app.command("add")
 def rules_add(
     to_name: Annotated[str, typer.Option("--to", help="The category to set when it holds.")],
-    from_name: Annotated[
-        str | None,
-        typer.Option("--from", help="Only when the keywords assign this category."),
-    ] = None,
-    list_key: Annotated[
-        str | None,
-        typer.Option("--list", help="With --from: only when the keyword is from this list."),
+    paid_by: Annotated[
+        list[PaymentMethod] | None,
+        typer.Option(
+            "--paid-by",
+            help="Only when the bank's wording says it was paid this way. Repeatable.",
+        ),
     ] = None,
     below: Annotated[
         str | None,
@@ -174,16 +172,16 @@ def rules_add(
         typer.Option("--account", help="Only for transactions in this account, by its name."),
     ] = None,
 ) -> None:
-    """Add a rule at the end of the order. Run `omsync categorize` to apply it. Amounts are in
-    dollars. Give at least one condition: --from, --below, --at-least, --other-side, or --account.
+    """Add a rule at the end of the order. Rules categorize what no keyword matched. Run `omsync
+    categorize` to apply it. Amounts are in dollars. Give at least one condition: --paid-by,
+    --below, --at-least, --other-side, or --account.
     """
     with ready_session() as (_settings, session):
         try:
             draft = _draft(
                 session,
                 to_name=to_name,
-                from_name=from_name,
-                list_key=list_key,
+                paid_by=paid_by,
                 below=below,
                 at_least=at_least,
                 other_side=other_side,
@@ -200,13 +198,12 @@ def rules_add(
 def rules_edit(
     rule_id: Annotated[int, typer.Argument(help="The rule's ID, from `omsync rules list`.")],
     to_name: Annotated[str, typer.Option("--to", help="The category to set when it holds.")],
-    from_name: Annotated[
-        str | None,
-        typer.Option("--from", help="Only when the keywords assign this category."),
-    ] = None,
-    list_key: Annotated[
-        str | None,
-        typer.Option("--list", help="With --from: only when the keyword is from this list."),
+    paid_by: Annotated[
+        list[PaymentMethod] | None,
+        typer.Option(
+            "--paid-by",
+            help="Only when the bank's wording says it was paid this way. Repeatable.",
+        ),
     ] = None,
     below: Annotated[
         str | None,
@@ -241,8 +238,7 @@ def rules_edit(
             draft = _draft(
                 session,
                 to_name=to_name,
-                from_name=from_name,
-                list_key=list_key,
+                paid_by=paid_by,
                 below=below,
                 at_least=at_least,
                 other_side=other_side,
@@ -318,14 +314,14 @@ def _set_enabled(rule_id: int, *, enabled: bool) -> None:
 
 @keywords_app.command("conflicts")
 def keywords_conflicts() -> None:
-    """List patterns that point at different categories, within a list or across unique/generic."""
+    """List patterns that point at different categories within one list."""
     with ready_session() as (_settings, session):
         conflicts = find_conflicts(session)
     if not conflicts:
         typer.echo("No conflicts.")
         return
     for conflict in conflicts:
-        typer.echo(f'{_SCOPE_LABELS[conflict.scope]}: "{conflict.pattern}"')
+        typer.echo(f'"{conflict.pattern}"')
         for member in conflict.members:
             typer.echo(f'  {member.list_key:<8} "{member.pattern}" -> {member.category_name}')
 
@@ -388,8 +384,7 @@ def _draft(
     session: Session,
     *,
     to_name: str,
-    from_name: str | None,
-    list_key: str | None,
+    paid_by: list[PaymentMethod] | None,
     below: str | None,
     at_least: str | None,
     other_side: RuleOtherSide | None,
@@ -399,8 +394,7 @@ def _draft(
     """The rule a rules command describes. Names become IDs here; amounts are dollars."""
     return admin.RuleDraft(
         to_category_id=_category_id(session, to_name),
-        from_category_id=None if from_name is None else _category_id(session, from_name),
-        list_key=list_key,
+        paid_by=paid_by or (),
         below_cents=None if below is None else admin.parse_dollars(below),
         at_least_cents=None if at_least is None else admin.parse_dollars(at_least),
         other_side=other_side,

@@ -8,16 +8,16 @@ to today, not to the period: the confirmed recurring occurrences still to come (
 upcoming_expected). The attention counts are in attention.py, and the budget and goals cards come
 from the Plan builders.
 
-The section layout (the order of the sections, which are collapsed, which take half the width, and
-how many columns the page uses) is the view preference dashboard_layout. It is not ledger data, so
-it is written directly, as preferences are.
+The section layout (the order of the sections, which are collapsed, which take half the width,
+and the chosen height of the sections that offer one) is the view preference dashboard_layout.
+It is not ledger data, so it is written directly, as preferences are.
 
 Every amount is integer cents. Nothing here formats text, and nothing here imports omsync.web.
 """
 
 import json
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
@@ -39,6 +39,11 @@ SECTIONS: tuple[str, ...] = (
 )
 # Sections that share a row by default: the two period charts, then Upcoming beside Budget.
 DEFAULT_HALF = frozenset({"spending_trend", "outflows", "upcoming", "budget"})
+# Sections whose height can be chosen: the line chart over time, as in Sure, where only the
+# time-series charts offer it. Auto is the default and is not saved.
+HEIGHT_SECTIONS = frozenset({"spending_trend"})
+HEIGHTS: tuple[str, ...] = ("compact", "auto", "tall")
+AUTO_HEIGHT = "auto"
 UPCOMING_DAYS = 14
 DASHBOARD_LAYOUT = "dashboard_layout"
 OUTFLOW_ROWS = 8
@@ -51,7 +56,6 @@ SURPLUS_KEY = "surplus"
 DEFICIT_KEY = "deficit"
 MAX_LAYOUT_CHARS = 2048
 MAX_LAYOUT_ITEMS = 32
-MAX_COLUMNS = 2
 MAX_KEY_CHARS = 64
 
 
@@ -319,30 +323,34 @@ def upcoming_expected(session: Session, *, today: date) -> Upcoming:
 
 @dataclass(frozen=True)
 class Layout:
-    """Every section in display order, the collapsed ones, and how wide each is. `columns` is how
-    many columns the page uses where there is room for two. A half-width section takes one column
-    and a full-width one spans both; with a single column every section is full width."""
+    """Every section in display order, the collapsed ones, how wide each is, and the heights chosen
+    other than auto. Where the page has room for two columns a half-width section takes one and a
+    full-width one spans both; with less room every section is full width."""
 
     order: tuple[str, ...]
     collapsed: frozenset[str]
     half: frozenset[str]
-    columns: int
+    heights: Mapping[str, str] = field(default_factory=dict)
+
+    def height(self, key: str) -> str:
+        return self.heights.get(key, AUTO_HEIGHT)
 
 
 def default_layout() -> Layout:
-    return Layout(order=SECTIONS, collapsed=frozenset(), half=DEFAULT_HALF, columns=MAX_COLUMNS)
+    return Layout(order=SECTIONS, collapsed=frozenset(), half=DEFAULT_HALF)
 
 
 def normalize_layout(
     order: Iterable[str],
     collapsed: Iterable[str],
     half: Iterable[str] | None = None,
-    columns: int = MAX_COLUMNS,
+    heights: Mapping[str, str] | None = None,
 ) -> Layout:
     """Known sections only, each once, in the saved order. Unknown keys are ignored. A section
     missing from the order goes after the nearest section before it in the default order that is
     present, or first when none is, so a section added later lands where it belongs by default
-    rather than at the end. A layout that says nothing about widths takes the default widths."""
+    rather than at the end. A layout that says nothing about widths takes the default widths. A
+    height is kept only for a section that offers one, and auto is left out."""
     ordered = list(dict.fromkeys(key for key in order if key in SECTIONS))
     for index, key in enumerate(SECTIONS):
         if key not in ordered:
@@ -351,7 +359,11 @@ def normalize_layout(
         order=tuple(ordered),
         collapsed=frozenset(key for key in collapsed if key in SECTIONS),
         half=DEFAULT_HALF if half is None else frozenset(key for key in half if key in SECTIONS),
-        columns=columns,
+        heights={
+            key: value
+            for key, value in (heights or {}).items()
+            if key in HEIGHT_SECTIONS and value in HEIGHTS and value != AUTO_HEIGHT
+        },
     )
 
 
@@ -381,15 +393,15 @@ def save_layout(session: Session, layout: Layout) -> None:
             "order": list(layout.order),
             "collapsed": sorted(layout.collapsed),
             "half": sorted(layout.half),
-            "columns": layout.columns,
+            "heights": dict(sorted(layout.heights.items())),
         },
     )
 
 
 def parse_layout(text: str) -> Layout:
     """Read the layout a browser sends: a JSON object with lists of section keys under "order" and
-    "collapsed", and optionally a list under "half" and a column count under "columns". Raises
-    LayoutError when the text is not that shape."""
+    "collapsed", and optionally a list under "half" and an object of section heights under
+    "heights". Raises LayoutError when the text is not that shape."""
     if len(text) > MAX_LAYOUT_CHARS:
         raise LayoutError("The layout is too large.")
     try:
@@ -403,7 +415,7 @@ def parse_layout(text: str) -> Layout:
 
 def _read_layout(data: dict[str, Any]) -> Layout:
     order, collapsed, half = data.get("order"), data.get("collapsed"), data.get("half")
-    columns = data.get("columns", MAX_COLUMNS)
+    heights = data.get("heights", {})
     if not _is_str_list(order) or not _is_str_list(collapsed):
         raise LayoutError('"order" and "collapsed" must each be a list of section names.')
     if half is not None and not _is_str_list(half):
@@ -412,20 +424,26 @@ def _read_layout(data: dict[str, Any]) -> Layout:
         raise LayoutError("The layout lists too many sections.")
     if half is not None and len(half) > MAX_LAYOUT_ITEMS:
         raise LayoutError("The layout lists too many sections.")
-    if type(columns) is not int or not 1 <= columns <= MAX_COLUMNS:
-        raise LayoutError(f'"columns" must be 1 to {MAX_COLUMNS}.')
-    return normalize_layout(order, collapsed, half, columns)
+    if not isinstance(heights, dict) or len(heights) > MAX_LAYOUT_ITEMS:
+        raise LayoutError('"heights" must be an object of section names and heights.')
+    if not all(_is_key(key) and value in HEIGHTS for key, value in heights.items()):
+        raise LayoutError(f"Each height must be one of {', '.join(HEIGHTS)}.")
+    # A "columns" count saved before widths were chosen per section is ignored.
+    return normalize_layout(order, collapsed, half, heights)
 
 
 def _is_str_list(value: object) -> bool:
-    return isinstance(value, list) and all(
-        isinstance(item, str) and len(item) <= MAX_KEY_CHARS for item in value
-    )
+    return isinstance(value, list) and all(_is_key(item) for item in value)
+
+
+def _is_key(value: object) -> bool:
+    return isinstance(value, str) and len(value) <= MAX_KEY_CHARS
 
 
 __all__ = [
     "DEFAULT_HALF",
-    "MAX_COLUMNS",
+    "HEIGHT_SECTIONS",
+    "HEIGHTS",
     "SECTIONS",
     "Cashflow",
     "FlowLink",

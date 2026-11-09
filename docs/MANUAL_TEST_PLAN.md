@@ -97,8 +97,8 @@ Here’s a feature-by-feature verification plan, mapped to the new documentation
  │       │ transactions.md         │ Exercise search, filters, saved filters, bulk selection, preview/apply, and      │
  │       │                         │ Needs review. Test a stale editor in two tabs.                                   │
  ├───────┼─────────────────────────┼──────────────────────────────────────────────────────────────────────────────────┤
- │ 9     │ Categories and keywords │ Create categories and conflicting keywords. Inspect Unique/Generic precedence    │
- │       │  — categories.md        │ and source-MEMO fallback. Preview categorization, apply, rerun, and undo.        │
+ │ 9     │ Categories and keywords │ Create categories and conflicting keywords. Inspect payee-keyword precedence,    │
+ │       │  — categories.md        │ MEMO fallback, and paid-by rules. Preview categorization, apply, rerun, undo.    │
  │       │                         │ Confirm manual and receipt classifications remain protected.                     │
  ├───────┼─────────────────────────┼──────────────────────────────────────────────────────────────────────────────────┤
  │ 10    │ Sync and connectors —   │ First inspect fake-connector behavior through tests: per-provider, sync --all,   │

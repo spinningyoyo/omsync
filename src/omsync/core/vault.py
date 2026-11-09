@@ -147,6 +147,11 @@ class Vault:
     def __repr__(self) -> str:
         return f"Vault(idle_minutes={self._idle_minutes}, unlocked={self._session is not None})"
 
+    @property
+    def idle_minutes(self) -> int:
+        """Minutes unused before the vault locks itself; 0 means it never does."""
+        return self._idle_minutes
+
     def unlock(self, email: str, password: str) -> None:
         if self._cli.status().get("status") == "unauthenticated":
             self._api_key_login()

@@ -26,7 +26,9 @@ from omsync.ledger.categories_admin import (
     create_category,
     update_category,
 )
+from omsync.ledger.categorize import PAYEE_LIST
 from omsync.ledger.contacts import ContactKind, ContactRole, PersonName, create_contact
+from omsync.ledger.payment_methods import PaymentMethod
 from omsync.ledger.plan_models import BudgetKind, RecurringSeries, SeriesStatus
 from omsync.ledger.sources import Account
 from omsync.plan.budgets import set_line
@@ -79,8 +81,8 @@ CATEGORIES = (
     ("Loans", "owed", "hand-coins"),
 )
 
-# (list, pattern, category). Unique keywords are literal and case-insensitive.
-UNIQUE_KEYWORDS = (
+# (pattern, category). Payee keywords are literal and case-insensitive.
+PAYEE_KEYWORDS = (
     ("NORTHWIND LABS", "Paycheck"),
     ("Interest Earned", "Interest"),
     ("MAPLE COURT APTS", "Rent"),
@@ -116,12 +118,11 @@ UNIQUE_KEYWORDS = (
     ("HOME DEPOT", "Home"),
 )
 
-# (pattern, is_regex, category). Generic keywords are the weaker list the rules below read.
-GENERIC_KEYWORDS = (
-    ("Zelle payment", False, "Transfer"),
-    ("Online Banking transfer", False, "Transfer"),
-    ("CREDIT CRD DES:AUTOPAY", False, "Credit card payment"),
-    (r"PAYMENT\s*-?\s*THANK", True, "Credit card payment"),
+# (pattern, category), regular expressions. Zelle and bank transfers need no keyword: the
+# rules below read how the money moved.
+REGEX_KEYWORDS = (
+    ("CREDIT CRD DES:AUTOPAY", "Credit card payment"),
+    (r"PAYMENT\s*-?\s*THANK", "Credit card payment"),
 )
 
 # Budgets, in cents a month, for the current month and the two before it.
@@ -244,34 +245,28 @@ def _categories(session: Session) -> dict[str, int]:
 
 
 def _keywords(session: Session, categories: dict[str, int]) -> None:
-    for pattern, category in UNIQUE_KEYWORDS:
+    keywords = [(pattern, category, False) for pattern, category in PAYEE_KEYWORDS]
+    keywords += [(pattern, category, True) for pattern, category in REGEX_KEYWORDS]
+    for pattern, category, is_regex in keywords:
         add_keyword(
             session,
-            "unique",
-            pattern,
-            categories[category],
-            is_regex=False,
-            idempotency_key=f"demo:keyword:unique:{pattern}",
-        )
-    for pattern, is_regex, category in GENERIC_KEYWORDS:
-        add_keyword(
-            session,
-            "generic",
+            PAYEE_LIST,
             pattern,
             categories[category],
             is_regex=is_regex,
-            idempotency_key=f"demo:keyword:generic:{pattern}",
+            idempotency_key=f"demo:keyword:payee:{pattern}",
         )
 
 
 def _rules(session: Session, categories: dict[str, int], contacts: dict[str, int]) -> None:
     transfer = categories["Transfer"]
+    by_transfer = (PaymentMethod.transfer,)
     drafts = (
         (
             "demo:rule:rent-share",
             RuleDraft(
                 to_category_id=categories["Rent"],
-                from_category_id=transfer,
+                paid_by=by_transfer,
                 other_side="contact",
                 contact_id=contacts["Sam"],
             ),
@@ -280,8 +275,7 @@ def _rules(session: Session, categories: dict[str, int], contacts: dict[str, int
             "demo:rule:loan",
             RuleDraft(
                 to_category_id=categories["Loans"],
-                from_category_id=transfer,
-                list_key="generic",
+                paid_by=by_transfer,
                 at_least_cents=10_000,
                 other_side="person",
             ),
@@ -290,10 +284,16 @@ def _rules(session: Session, categories: dict[str, int], contacts: dict[str, int
             "demo:rule:small-person",
             RuleDraft(
                 to_category_id=categories["Dining"],
-                from_category_id=transfer,
-                list_key="generic",
+                paid_by=by_transfer,
                 below_cents=4_000,
                 other_side="person",
+            ),
+        ),
+        (
+            "demo:rule:transfer",
+            RuleDraft(
+                to_category_id=transfer,
+                paid_by=(PaymentMethod.transfer, PaymentMethod.check, PaymentMethod.cash),
             ),
         ),
     )

@@ -20,9 +20,15 @@ export default class extends Controller {
     if (!this.contentTarget.contains(event.target)) this.close();
   }
 
-  // Runs on the dialog's close event, however it closed, so focus goes back to the trigger.
+  // Runs on the dialog's close event, however it closed, so focus goes back to the trigger. A
+  // trigger inside a menu is hidden by then, since the menu closes as the item is chosen, so focus
+  // goes to the menu's button instead.
   restoreFocus() {
-    if (this.opener?.isConnected) this.opener.focus();
+    const menuButton = this.opener
+      ?.closest("[data-controller~='menu']")
+      ?.querySelector("[data-menu-target='button']");
+    const target = menuButton ?? this.opener;
+    if (target?.isConnected) target.focus();
     this.opener = null;
   }
 }

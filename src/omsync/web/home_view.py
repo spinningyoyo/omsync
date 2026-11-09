@@ -19,9 +19,10 @@ from omsync.core.money import format_cents
 from omsync.ledger.filters import Condition, FilterSpec
 from omsync.ledger.models import SyncStatus
 from omsync.ledger.preferences import joint_share_on
-from omsync.reports.attention import UNCATEGORIZED, Attention, attention
+from omsync.reports.attention import Attention, attention
 from omsync.reports.dashboard import (
     DEFICIT_KEY,
+    HEIGHT_SECTIONS,
     OTHER_NAME,
     UPCOMING_DAYS,
     Cashflow,
@@ -41,7 +42,7 @@ from omsync.reports.queries import PRESETS, Period, has_transactions, ratio_bp
 from omsync.web.budget_view import BudgetCard, budget_card
 from omsync.web.goals_view import GoalsCard, goals_card
 from omsync.web.reconcile_view import default_range
-from omsync.web.register_state import encode_filter, query_string
+from omsync.web.register_state import encode_filter
 from omsync.web.reports_view import CUSTOM, PRESET_LABELS, Selection, percent_text
 
 SECTION_TITLES: dict[str, str] = {
@@ -60,11 +61,15 @@ SECTION_SCOPES: dict[str, str] = {
     "budget": "This month",
     "goals": "Today",
 }
+# The card controls each section offers beyond width, as Sure's dashboard does: the cash-flow
+# diagram opens larger in a dialog, and a section whose rows are grouped can open or close every
+# group at once. No section has grouped rows yet; one that does is listed here.
+EXPANDABLE_SECTIONS = frozenset({"cash_flow"})
+GROUPED_SECTIONS: frozenset[str] = frozenset()
 SCOPE_HINT = "Relative to today, not the selected period"
 REVIEW_HREF = "/transactions/review"
 SYNC_HREF = "/settings/providers"
 _SYNC_WORDS = {SyncStatus.failed: "failed", SyncStatus.needs_user_action: "needs your action"}
-JOINT_NOTE = "Showing your half of joint accounts"
 # Colours for the categories the Outflows donut draws, in the order of its segments, and the same
 # colours in the Cash flow diagram. Other is grey, whatever its position.
 PALETTE: tuple[str, ...] = (
@@ -100,6 +105,10 @@ class SectionView:
     collapsed: bool
     half: bool
     scope: str = ""  # for the sections that follow today, not the period
+    height: str = "auto"  # compact, auto, or tall
+    has_height: bool = False  # offers the height choice
+    expandable: bool = False  # opens larger in a dialog
+    grouped: bool = False  # has groups of rows that open and close together
 
 
 @dataclass(frozen=True)
@@ -187,10 +196,8 @@ class HomeView:
     period_label: str
     selection: Selection
     presets: list[PeriodLink]
-    joint_note: str  # empty when joint share is off
     has_transactions: bool
     sections: list[SectionView]
-    columns: int
     flows: FlowView
     trend: TrendView
     outflows: OutflowsView
@@ -224,9 +231,7 @@ def build_home(db: Session, selection: Selection, *, now: datetime, layout: Layo
         period_label=_range(period),
         selection=selection,
         presets=_presets(selection),
-        joint_note=JOINT_NOTE if joint else "",
         has_transactions=has_transactions(db),
-        columns=layout.columns,
         sections=[
             SectionView(
                 key,
@@ -234,6 +239,10 @@ def build_home(db: Session, selection: Selection, *, now: datetime, layout: Layo
                 key in layout.collapsed,
                 key in layout.half,
                 SECTION_SCOPES.get(key, ""),
+                height=layout.height(key),
+                has_height=key in HEIGHT_SECTIONS,
+                expandable=key in EXPANDABLE_SECTIONS,
+                grouped=key in GROUPED_SECTIONS,
             )
             for key in layout.order
         ],
@@ -276,7 +285,7 @@ def _attention_view(found: Attention, today: date) -> AttentionView:
             AttentionRow(
                 "Uncategorized transactions",
                 "On any date",
-                "/transactions?" + query_string(None, UNCATEGORIZED, None),
+                "/settings/categories?tab=triage",
                 found.uncategorized,
             )
         )

@@ -120,12 +120,12 @@
 {%- if locked and demo_mode %}
 <p class="rounded-lg border border-divider p-4 text-sm text-secondary">In the demo there is no vault to unlock, so bank sync and vault logins are off. Nothing you type here is needed.</p>
 {%- elif locked %}
-<form class="flex flex-col gap-3 rounded-lg border border-divider p-4" hx-post="{{ unlock_action }}" hx-target="{{ unlock_target }}" hx-swap="outerHTML">
+<form class="flex flex-col gap-3 rounded-lg border border-divider p-4" hx-post="{{ unlock_action }}" hx-target="{{ unlock_target }}" hx-swap="outerHTML" hx-disabled-elt="find button[type='submit']">
   <p class="text-sm text-primary">The vault is locked. Unlock it with your master password to search your logins. The password is not kept.</p>
   {{ unlock_hidden }}
   {{ password_field(data_autofocus=true) }}
   {{ step_error(unlock_message) }}
-  <div class="flex justify-end">{{ button("Unlock vault", variant="secondary", type="submit") }}</div>
+  <div class="flex justify-end">{{ button("Unlock vault", variant="secondary", type="submit", busy_text="Unlocking…") }}</div>
 </form>
 {%- elif message %}
 {{ step_error(message) }}

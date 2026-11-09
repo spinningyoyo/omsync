@@ -71,7 +71,7 @@ def keyword_file(tmp_path: Path, text: str, name: str = "keywords.json") -> Path
 
 def test_categorize_previews_then_applies_and_undo_reverses_it(ready: Path, tmp_path: Path) -> None:
     file = keyword_file(tmp_path, '{"Coffee": ["cafe"], "Groceries": ["grocery"]}')
-    assert run("keywords", "import", file, "--list", "unique", "--apply").exit_code == 0
+    assert run("keywords", "import", file, "--list", "payee", "--apply").exit_code == 0
 
     preview = run("categorize")
 

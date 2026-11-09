@@ -76,7 +76,7 @@ class Category(Base):
 class Keyword(Base):
     """A pattern that assigns a category to a payee or receipt item.
 
-    list_key is "unique", "generic", or a receipt vendor's key such as "amazon".
+    list_key is "payee", for who was paid, or a receipt vendor's key such as "amazon".
     """
 
     __tablename__ = "keyword"
@@ -90,7 +90,6 @@ class Keyword(Base):
     pattern: Mapped[str]
     is_regex: Mapped[bool] = mapped_column(default=True, server_default=true())
     category_id: Mapped[int] = mapped_column(ForeignKey("category.id"), index=True)
-    priority: Mapped[int] = mapped_column(default=0, server_default="0")
     enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
 
 
@@ -105,27 +104,23 @@ class RuleOtherSide(StrEnum):
 
 
 class CategoryRule(Base):
-    """Sets a category on a transaction when all of its conditions hold.
+    """Sets a category on a transaction no payee keyword matched, when all of its conditions hold.
 
-    Rules are tried in position order, lowest first, and the first that holds wins; rules never
-    chain. A condition that is not set does not matter, and at least one must be set. from_category
-    is the category the keywords assigned, and list_key, when set, requires that the winning keyword
-    came from that list ("unique" or "generic"). below_cents is strict and at_least_cents inclusive,
-    both on the absolute amount, so a refund follows its purchase. other_side reads who is on the
-    other side, and contact_id and account_id name a contact and an account of the transaction.
+    A keyword always beats a rule, so what was bought beats how it was paid. Rules are tried in
+    position order, lowest first, and the first that holds wins; rules never chain. A condition
+    that is not set does not matter, and at least one must be set. paid_by holds the payment
+    methods (see omsync.ledger.payment_methods) separated by spaces, and holds when the bank's
+    wording names one of them. below_cents is strict and at_least_cents inclusive, both on the
+    absolute amount, so a refund follows its purchase. other_side reads who is on the other side,
+    and contact_id and account_id name a contact and an account of the transaction.
     """
 
     __tablename__ = "category_rule"
     __table_args__ = (
         CheckConstraint(
-            "from_category_id IS NOT NULL OR below_cents IS NOT NULL"
+            "paid_by IS NOT NULL OR below_cents IS NOT NULL"
             " OR at_least_cents IS NOT NULL OR other_side IS NOT NULL OR account_id IS NOT NULL",
             name="ck_category_rule_has_condition",
-        ),
-        CheckConstraint(
-            "list_key IS NULL OR (from_category_id IS NOT NULL"
-            " AND list_key IN ('unique', 'generic'))",
-            name="ck_category_rule_list",
         ),
         CheckConstraint("below_cents IS NULL OR below_cents > 0", name="ck_category_rule_below"),
         CheckConstraint(
@@ -140,18 +135,13 @@ class CategoryRule(Base):
             " ELSE contact_id IS NULL END",
             name="ck_category_rule_contact",
         ),
-        CheckConstraint(
-            "from_category_id IS NULL OR from_category_id != to_category_id",
-            name="ck_category_rule_categories_differ",
-        ),
         {"sqlite_autoincrement": True},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     position: Mapped[int]
     enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
-    from_category_id: Mapped[int | None] = mapped_column(ForeignKey("category.id"))
-    list_key: Mapped[str | None]
+    paid_by: Mapped[str | None]
     below_cents: Mapped[int | None]
     at_least_cents: Mapped[int | None]
     other_side: Mapped[RuleOtherSide | None] = mapped_column(string_enum(RuleOtherSide))

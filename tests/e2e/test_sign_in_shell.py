@@ -30,6 +30,8 @@ PASSWORD = "correct-horse-battery"
 class FakeVault:
     """Accepts one email and password. Records lock calls. Never runs bw."""
 
+    idle_minutes = 15
+
     def __init__(self) -> None:
         self.unlocked = False
 

@@ -306,7 +306,6 @@ def fetch(
     vault: FakeVault | None = None,
     prompt: FakePrompt | None = None,
     item: str | None = ITEM_ID,
-    close_on_failure: bool = True,
 ) -> list[Path]:
     return connector.fetch(
         accounts,
@@ -315,7 +314,6 @@ def fetch(
         prompt or FakePrompt(),
         dest,
         vault_item_id=item,
-        close_on_failure=close_on_failure,
     )
 
 

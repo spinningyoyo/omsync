@@ -87,7 +87,9 @@ category, amount, memo, and category origin with all/any semantics. Date and amo
 include their endpoints; signed amounts retain their ledger meaning.
 
 A category filter matches a parent category or any split category. Its negation is the
-negation of that whole condition, including uncategorized transactions. Filters and account
+negation of that whole condition, including uncategorized transactions. "Category is empty"
+matches uncategorized transactions: an unsplit transaction with no category, or a split one with
+any line that has none, as a receipt leaves an item that matched no keyword. Filters and account
 scope are represented in the URL so reload and browser history preserve the selection.
 An unreadable filter is rejected with a usable explanation, not silently interpreted as
 another query.

@@ -1,8 +1,10 @@
-"""Triage, categorize, and keyword import: the ways unclassified payees and receipt items become
-keywords and then categories.
+"""Triage and keyword import: the ways unclassified payees and receipt items become keywords and
+then categories.
 
-Adding a keyword and applying categorization are separate steps. Categorize and import both
-preview first, and an apply is refused when the data moved on since its preview.
+A keyword added here, or imported, applies at once: the automatic step follows the write in the
+same request, and undo reverses both (see applied_toast). Triage previews a keyword before it is
+added, as the Keywords tab does. Import previews the file first, and its apply is refused when the
+data moved on since that preview.
 """
 
 import json
@@ -18,7 +20,8 @@ from sqlalchemy.orm import Session
 from omsync.core.batches import BatchError, applied_batch_for_key
 from omsync.core.settings import Settings
 from omsync.ledger import categories_admin as admin
-from omsync.ledger.categorize import InvalidKeyword, apply_categorize, plan_categorize
+from omsync.ledger.bulk import count_matching
+from omsync.ledger.categorize import PAYEE_LIST, list_name
 from omsync.ledger.keyword_import import (
     KeywordFileError,
     apply_keyword_import,
@@ -26,8 +29,10 @@ from omsync.ledger.keyword_import import (
     parse_keyword_mapping,
     plan_keyword_import,
 )
-from omsync.web.categories_replies import block, events, refused, toast, whole_number
+from omsync.reports.attention import UNCATEGORIZED
+from omsync.web.categories_replies import applied_toast, block, events, refused, whole_number
 from omsync.web.deps import get_db
+from omsync.web.register_state import query_string
 from omsync.web.routes.categories_keywords import keyword_form, safe_list
 
 router = APIRouter()
@@ -36,6 +41,7 @@ STALE = "This changed elsewhere. Preview again."
 OUT_OF_DATE = "The import is out of date. Choose the file again."
 MAX_UPLOAD_BYTES = 1024 * 1024
 _SLOT = re.compile(r"[a-z0-9_-]{1,60}")
+UNCATEGORIZED_HREF = "/transactions?" + query_string(None, UNCATEGORIZED, None)
 
 
 # Triage
@@ -56,7 +62,7 @@ def triage_form(
     slot: str = "",
 ) -> HTMLResponse:
     slot = _slot(slot)
-    target_list = "unique" if kind == "payee" else safe_list(list_key)
+    target_list = PAYEE_LIST if kind == "payee" else safe_list(list_key)
     form = keyword_form(target_list, pattern=admin.suggest_pattern(text), is_regex=True)
     return block(
         request,
@@ -77,7 +83,7 @@ def triage_add_keyword(
     kind: Annotated[str, Form()] = "payee",
     text: Annotated[str, Form()] = "",
     slot: Annotated[str, Form()] = "",
-    list_key: Annotated[str, Form()] = "unique",
+    list_key: Annotated[str, Form()] = PAYEE_LIST,
     pattern: Annotated[str, Form()] = "",
     category_id: Annotated[str, Form()] = "",
     is_regex: Annotated[str, Form()] = "",
@@ -120,54 +126,7 @@ def triage_add_keyword(
         trigger=events(changed=True),
         slot=slot,
         list_key=list_key,
-        **toast(batch),
-    )
-
-
-# Categorize preview
-
-
-@router.get("/categories/categorize", response_class=HTMLResponse)
-def categorize_preview(request: Request, db: DbSession) -> HTMLResponse:
-    return block(request, "frag_categorize", **_categorize_context(db))
-
-
-@router.post("/categories/categorize/apply", response_class=HTMLResponse)
-def categorize_apply(
-    request: Request,
-    db: DbSession,
-    revision: Annotated[int | None, Form()] = None,
-    idempotency_key: Annotated[str, Form()] = "",
-) -> HTMLResponse:
-    key = idempotency_key or uuid4().hex
-    try:
-        plan = plan_categorize(db)
-    except InvalidKeyword as exc:
-        return block(request, "frag_categorize", status=422, **_categorize_context(db, str(exc)))
-    if applied_batch_for_key(db, key) is None:
-        if plan.preview is None:
-            return block(
-                request,
-                "frag_categorize",
-                status=422,
-                **_categorize_context(db, "Nothing to categorize."),
-            )
-        if plan.preview.base_revision != revision:
-            return block(request, "frag_categorize", status=409, **_categorize_context(db, STALE))
-    try:
-        batch = apply_categorize(db, plan, idempotency_key=key)
-    except BatchError as exc:
-        return block(
-            request, "frag_categorize", status=refused(exc), **_categorize_context(db, str(exc))
-        )
-    changed = int((batch.summary or {}).get("changed", 0))
-    label = f"Categorized {changed} {'transaction' if changed == 1 else 'transactions'}"
-    return block(
-        request,
-        "frag_categorize_done",
-        trigger=events(changed=True, close=True),
-        message=label,
-        **toast(batch, label=label),
+        **applied_toast(db, batch),
     )
 
 
@@ -179,7 +138,7 @@ def import_preview(
     request: Request,
     db: DbSession,
     file: Annotated[UploadFile, File()],
-    list_key: Annotated[str, Form()] = "unique",
+    list_key: Annotated[str, Form()] = PAYEE_LIST,
 ) -> HTMLResponse:
     try:
         mapping, warnings = _read_upload(file)
@@ -203,7 +162,7 @@ def import_apply(
     request: Request,
     db: DbSession,
     mapping_json: Annotated[str, Form()] = "",
-    list_key: Annotated[str, Form()] = "unique",
+    list_key: Annotated[str, Form()] = PAYEE_LIST,
     revision: Annotated[int | None, Form()] = None,
     idempotency_key: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
@@ -223,13 +182,15 @@ def import_apply(
     except BatchError as exc:
         return block(request, "frag_message", status=refused(exc), message=str(exc))
     count = (batch.summary or {}).get("new_keywords", 0)
-    message = f"Imported {count} {'keyword' if count == 1 else 'keywords'} to {list_key}."
+    message = (
+        f"Imported {count} {'keyword' if count == 1 else 'keywords'} to {list_name(list_key)}."
+    )
     return block(
         request,
         "frag_import_done",
-        trigger=events(changed=True),
+        trigger=events(changed=True, close=True),
         message=message,
-        **toast(batch, label=message),
+        **applied_toast(db, batch, label=message),
     )
 
 
@@ -248,20 +209,13 @@ def triage_context(request: Request, db: Session) -> dict[str, Any]:
         for key in admin.receipt_vendor_keys()
     ]
     return {
+        # The count Home shows, over the filter its link and this one open in Transactions.
+        "uncategorized": count_matching(db, UNCATEGORIZED),
+        "uncategorized_href": UNCATEGORIZED_HREF,
         "payees": admin.uncategorized_payees(db),
         "vendors": vendors,
         "choices": admin.category_choices(db),
     }
-
-
-def _categorize_context(db: Session, error: str = "") -> dict[str, Any]:
-    """The preview as it stands now, with the revision that Apply will send back."""
-    try:
-        plan = plan_categorize(db)
-    except InvalidKeyword as exc:
-        return {"plan": None, "error": str(exc), "revision": None, "key": uuid4().hex}
-    revision = plan.preview.base_revision if plan.preview is not None else None
-    return {"plan": plan, "error": error, "revision": revision, "key": uuid4().hex}
 
 
 def _slot(value: str) -> str:

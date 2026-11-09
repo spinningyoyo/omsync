@@ -114,20 +114,18 @@ class AccountRowView:
 
 @dataclass(frozen=True)
 class AccountChoiceView:
-    """One account on a provider's edit form. A checkbox that is disabled names the provider that
-    already fetches the account."""
+    """One account on a provider's edit form."""
 
     id: int
     label: str
     checked: bool
-    disabled: bool
-    owner: str
 
 
 @dataclass(frozen=True)
 class ProviderCardView:
     key: str
-    connector: str
+    connector: str  # the card's Method line, without the bank name its header already shows
+    bank: str  # the connector's full name, for the edit dialog
     vault: str
     locked: bool  # the vault is locked, so the edit form offers its unlock form first
     sync_busy: bool  # a sync job is running, so this provider's Sync button is disabled
@@ -171,27 +169,25 @@ def provider_card_view(
     fetched = set(provider.account_ids)
     return ProviderCardView(
         key=provider.key,
-        connector=_connector_text(provider),
+        connector=_method_text(group, provider),
+        bank=_bank_text(provider),
         vault=vault_text,
         locked=locked,
         sync_busy=busy,
         sync=_sync_view(provider),
         accounts=[account_row(account) for account in group.accounts if account.id in fetched],
         choices=[
-            _choice_view(group, provider, account)
+            _choice_view(provider, account)
             for account in group.accounts
-            if not account.closed or account.id in fetched
+            if account.id in fetched
+            or (not account.closed and group.provider_of(account.id) is None)
         ],
         edit_key=uuid4().hex,
         delete_key=uuid4().hex,
     )
 
 
-def _choice_view(
-    group: InstitutionGroup, provider: ProviderLine, account: AccountLine
-) -> AccountChoiceView:
-    owner = group.provider_of(account.id)
-    other = owner is not None and owner != provider.key
+def _choice_view(provider: ProviderLine, account: AccountLine) -> AccountChoiceView:
     return AccountChoiceView(
         id=account.id,
         label=(
@@ -199,8 +195,6 @@ def _choice_view(
             f" · {type_text(account.type)}"
         ),
         checked=account.id in provider.account_ids,
-        disabled=other,
-        owner=f"Fetched by provider {owner}" if other else "",
     )
 
 
@@ -209,10 +203,22 @@ def _sync_view(provider: ProviderLine) -> SyncView | None:
     return syncs[0] if syncs else None
 
 
-def _connector_text(provider: ProviderLine) -> str:
+def _bank_text(provider: ProviderLine) -> str:
     return connector_label(provider.connector_key) + (
         "" if provider.connector_enabled else " (turned off)"
     )
+
+
+def _method_text(group: InstitutionGroup, provider: ProviderLine) -> str:
+    """How the provider fetches, for the card's Method line. The card's header already names the
+    institution, so a label's bank name is dropped when it is that name. A name that goes further,
+    such as Chase Business under Chase, is kept: it says which login the provider uses."""
+    label = connector_label(provider.connector_key)
+    bank, separator, method = label.partition(": ")
+    name = group.name.casefold()
+    if separator and (bank.casefold() == name or not bank.casefold().startswith(name)):
+        label = method
+    return label + ("" if provider.connector_enabled else " (turned off)")
 
 
 def account_row(account: AccountLine) -> AccountRowView:

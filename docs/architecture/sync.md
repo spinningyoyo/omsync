@@ -40,10 +40,10 @@ automation: the user places files in the institution folder and uses the same im
   new digits were not added, and any other case, is not linked by guess. The files stay
   pending, the result names the unlinked digits, and Bank sync offers the linking step so the
   person decides.
-- A sync that fails, or skips an account, closes its browser by default. The Bank sync page has
-  a Close Chrome when a sync fails checkbox, saved as a [preference](settings.md). Unticked, a
-  failed sync leaves the browser open on the page it stopped on, so the person can look at it,
-  and the next browser any sync starts closes it. A sync that succeeds always closes its browser.
+- A sync that fails, or skips an account, leaves its browser open on the page it stopped on, so
+  the person can look at it. The next browser any sync starts closes it. A sync that succeeds
+  closes its browser. Signing in still runs in that browser, and a changed sign-in page is the
+  likeliest failure, so there is no setting to close it instead.
 - When the bank gives nothing usable for one account, the connector skips that account and
   fetches the others. The files it got are kept and imported, and the sync is reported as failed
   with the accounts that were skipped. A failure of the whole fetch keeps nothing.
@@ -52,7 +52,9 @@ automation: the user places files in the institution folder and uses the same im
   duplication. Import reads every row the institution actually returns.
 - The terminal sync unlocks the [vault](access.md) through a secret prompt and locks it when
   finished. A sync started from the web uses the vault the page unlocked, which keeps its idle
-  timeout. Multi-factor authentication asks the user for the institution's code, in the terminal
+  timeout. When the vault is locked, the page asks for the master password in place of the sync;
+  once it unlocks, Sync status says "Vault unlocked. Starting sync…" for a few seconds as the sync
+  starts. Multi-factor authentication asks the user for the institution's code, in the terminal
   or on the Bank sync page. A connector declares how many digits its code has when it is not 6, and
   the page sends the code once that many are entered. A bank that asks for an approval in its app
   instead shows its QR on the Bank sync page; the terminal says to scan the one in Chrome. A
@@ -149,11 +151,11 @@ page polls for its state and shows each provider's result when the job ends.
 - A connector can show a notice instead, such as a bank's QR for an approval in its app. It takes
   the question's place and needs no answer, and it goes away when the connector moves on.
 - Cancel sync stops the running job, one provider's or Sync all. A question or QR on the page goes
-  away at once. The provider in progress stops at its next step, closes its browser whatever the
-  Close Chrome checkbox says, and keeps nothing it fetched, and its run is logged as cancelled.
-  Providers that have not started are marked cancelled and write no run. A provider whose download
-  has finished imports it before the job stops, so an import is never cut short, and providers that
-  finished earlier keep what they imported.
+  away at once. The provider in progress stops at its next step, closes its browser, and keeps
+  nothing it fetched, and its run is logged as cancelled. Providers that have not started are
+  marked cancelled and write no run. A provider whose download has finished imports it before the
+  job stops, so an import is never cut short, and providers that finished earlier keep what they
+  imported.
 - Chrome still opens a visible window for each bank, as it does from the terminal. Keep that
   window open until its sync finishes.
 - Job state is held in memory, so a restarted server shows no earlier job. The sync log keeps

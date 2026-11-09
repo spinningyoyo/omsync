@@ -113,7 +113,6 @@ class Connector(Protocol):
         dest: Path,
         *,
         vault_item_id: str | None,
-        close_on_failure: bool = True,
     ) -> list[Path]:
         """Download statement files for these accounts and period, and return their paths.
 
@@ -121,7 +120,7 @@ class Connector(Protocol):
         outside dest, and never import. Return only the files this call fetched: the sync
         imports exactly those. vault_item_id names the vault login for this institution, or is
         None if none is configured. Raise NeedsUserAction when a person must act, and
-        ConnectorError for any other failure. A browser connector closes its browser when it fails,
-        unless close_on_failure is False, which leaves it open so the person can look at the page.
+        ConnectorError for any other failure. A browser connector that fails leaves its browser open
+        on the page it stopped on, so the person can look at it, and closes it otherwise.
         """
         ...

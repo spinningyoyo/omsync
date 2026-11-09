@@ -1,10 +1,11 @@
 """Vault logins for the Settings pages: unlocking behind the sign-in rate limit, searching for a
-login, and naming a provider's login while the vault stays unlocked.
+login, naming a provider's login while the vault stays unlocked, and the vault's status line.
 
 A failure is VaultActionError, whose message is safe to show.
 """
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from omsync.core.sessions import LoginRateLimiter
 from omsync.core.vault import LoginSummary, Vault, VaultError
@@ -13,6 +14,28 @@ from omsync.ingest.institutions import InstitutionGroup, ProviderLine
 SEARCH_MAX = 100
 SEARCH_LIMIT = 20
 TOO_MANY_ATTEMPTS = "Too many failed attempts. Wait a minute, then try again."
+
+
+@dataclass(frozen=True)
+class VaultStatusView:
+    """Whether the vault is unlocked, for the status line on Bank sync and in the user menu."""
+
+    unlocked: bool
+    label: str
+    detail: str  # when it locks, or what unlocks it
+
+
+def vault_status_view(vault: Vault) -> VaultStatusView:
+    """Reading the state locks a vault whose idle timeout has passed, so this is never stale."""
+    if not vault.is_unlocked():
+        return VaultStatusView(False, "Vault locked", "A sync asks for your master password.")
+    minutes = vault.idle_minutes
+    if minutes <= 0:
+        detail = "Stays unlocked until you sign out."
+    else:
+        unit = "minute" if minutes == 1 else "minutes"
+        detail = f"Locks after {minutes} {unit} unused."
+    return VaultStatusView(True, "Vault unlocked", detail)
 
 
 class VaultActionError(Exception):

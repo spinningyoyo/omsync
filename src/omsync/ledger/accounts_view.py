@@ -8,7 +8,7 @@ four digits to the account. This module never imports omsync.web.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -33,7 +33,7 @@ from omsync.ledger.models import (
 )
 from omsync.ledger.sources import current_alias_id
 
-SPARKLINE_POINTS = 30
+TREND_DAYS = 30
 RECENT_SYNCS = 5
 NAME_MAX = 60
 LAST4_LENGTH = 4
@@ -56,9 +56,10 @@ class BalancePoint:
 class AccountSummary:
     """One account as the panel and the page header show it.
 
-    latest is None until a ledger balance has been imported. recent holds the last
-    SPARKLINE_POINTS balance points, oldest first. Credit card balances are negative when you
-    owe, as the statement reports them.
+    latest is None until a ledger balance has been imported. recent holds the balance points of
+    the TREND_DAYS days up to latest, oldest first, led by the balance carried into those days
+    when there is one, so the trend starts from what the account held then. Credit card balances
+    are negative when you owe, as the statement reports them.
     """
 
     id: int
@@ -397,9 +398,18 @@ def _summary(
         joint=bool(account.joint),
         closed=bool(account.closed),
         latest=points[-1] if points else None,
-        recent=tuple(points[-SPARKLINE_POINTS:]),
+        recent=_trend(points),
         status=check_account(session, account.id),
     )
+
+
+def _trend(points: list[BalancePoint]) -> tuple[BalancePoint, ...]:
+    """The points of the TREND_DAYS days up to the latest, with the last one before them."""
+    if not points:
+        return ()
+    start = points[-1].as_of - timedelta(days=TREND_DAYS)
+    first = next(i for i, point in enumerate(points) if point.as_of >= start)
+    return tuple(points[max(first - 1, 0) :])
 
 
 def _balance_points(

@@ -71,16 +71,12 @@ class Selection:
 
 @dataclass(frozen=True)
 class PresetLink:
-    """One segment of the period picker. The link works without htmx, and htmx swaps it in place."""
+    """One choice in the period menu: a plain link to the page for that period."""
 
     key: str
     label: str
     href: str
     active: bool
-
-    @property
-    def attrs(self) -> dict[str, str]:
-        return {"hx-get": self.href, "hx-swap": "none", "hx-push-url": "true"}
 
 
 TREND_COLUMNS: list[dict[str, object]] = [
@@ -130,8 +126,7 @@ class ReportView:
     selection: Selection
     presets: list[PresetLink]
     state_query: str  # the selection as a query string, for links and hidden fields
-    joint_share: bool
-    joint_note: str
+    joint_note: str  # for the print layout, which has no controls
     period_label: str
     prior_label: str
     has_transactions: bool
@@ -188,7 +183,6 @@ def build_report(db: Session, selection: Selection, *, today: date) -> ReportVie
         selection=selection,
         presets=_preset_links(selection),
         state_query=query,
-        joint_share=joint_share,
         joint_note=(
             "Showing your half of joint accounts"
             if joint_share

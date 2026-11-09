@@ -25,8 +25,9 @@ from omsync.ledger.register import open_review_count
 from omsync.plan.recurring import needs_attention
 from omsync.reconcile.engine import run as run_reconciliation
 
-# Transactions with no category of their own and no category on any split. The register opens with
-# this filter, and the count is taken over the same filter.
+# Uncategorized transactions: unsplit with no category, or split with a line that has none. The
+# register opens with this filter, Triage lists the same transactions, and the count is taken over
+# the same filter.
 UNCATEGORIZED = FilterSpec(conditions=(Condition("category", "is_empty"),))
 SYNC_PROBLEMS = (SyncStatus.failed, SyncStatus.needs_user_action)
 

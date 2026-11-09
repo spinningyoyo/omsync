@@ -21,6 +21,7 @@ class FakeVault:
     """Stands in for the Bitwarden vault. It accepts one email and password and records calls."""
 
     unlocked: bool = False
+    idle_minutes: int = 15
     unlock_calls: list[str] = field(default_factory=list)  # emails only, never passwords
     lock_calls: int = 0
 

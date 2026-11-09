@@ -18,6 +18,14 @@ institution logins used by connectors. omsync does not maintain a second master 
   extends it; restarting the server ends it.
 - The vault has its own configurable idle timeout. Locking it does not end the application
   session. An operation that needs credentials asks to unlock it when necessary.
+- The vault's status shows as a green dot and "Vault unlocked", or a gray dot and "Vault
+  locked": beside the Sync status title on the Bank sync page, and in the user menu under the
+  signed-in email, where it also says when the vault locks. Gray, not red, because locked is the
+  normal resting state. The vault locks itself without any request, so the Bank sync line checks
+  again every minute, and the menu line is current when its page loads. Every unlock updates the
+  lines on the page at once.
+- An unlock form disables its button and shows "Unlocking…" while Bitwarden checks the password,
+  which takes a few seconds. A wrong password shows the form again with the error.
 - Sign-out ends the application session and locks the vault.
 - Every master password field, at sign-in and when unlocking the vault, has the same
   show/hide control. The field starts hidden, and a reload hides it again.

@@ -31,6 +31,7 @@ from omsync.plan.budgets import (
 )
 from omsync.plan.goals import goals_summary
 from omsync.web.formats import money_input, month_key, month_title
+from omsync.web.joint_view import JointView, joint_view
 
 BAR_CLASS = {"good": "bg-success", "warning": "bg-warning", "over": "bg-destructive"}
 
@@ -197,7 +198,7 @@ class BudgetPage:
     is_current: bool
     mode: str
     is_flex: bool
-    joint_note: str
+    joint: JointView | None  # the header's joint control, None with no joint account
     copy_from: str
     mode_key: str
     income_key: str
@@ -275,7 +276,7 @@ def budget_page(db: Session, month: date, *, today: date) -> BudgetPage:
         "current_key": month_key(today.replace(day=1)),
         "is_current": month == today.replace(day=1),
         "mode": mode.value,
-        "joint_note": "Showing your half of joint accounts, as in Reports." if joint else "",
+        "joint": joint_view(db),
         "copy_from": copy_from,
         "mode_key": uuid4().hex,
         "income_key": uuid4().hex,

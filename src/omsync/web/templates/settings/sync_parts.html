@@ -1,8 +1,11 @@
 {# The Bank sync status: the Sync all button, the status region with a line per provider, the Cancel
-   button and the unlock form, and the question slot. The region polls itself while a job runs. The
-   slot sits outside it and is replaced only when its question or notice changes, so a poll never
-   wipes an answer being typed. See routes/settings_providers.py and web/sync_runner.py. #}
+   button, the unlock form and the line saying it worked, and the question slot. The region polls
+   itself while a job runs. The slot sits outside it and is replaced only when its question or
+   notice changes, so a poll never wipes an answer being typed. See routes/settings_providers.py and
+   web/sync_runner.py. #}
 {% from "components/button.html" import button %}
+{% from "components/icon.html" import icon %}
+{% from "components/vault_status.html" import vault_status as vault_status_line, VAULT_STATUS_PAGE %}
 {% from "components/password_field.html" import password_field %}
 {% from "settings/parts.html" import step_error %}
 
@@ -13,33 +16,28 @@
 </div>
 {%- endmacro %}
 
-{# The checkbox that decides whether a failed sync closes Chrome. It saves as soon as it changes. #}
-{% macro close_on_failure_control(checked) -%}
-<div class="flex flex-col gap-1">
-  <label class="flex items-center gap-2 text-sm text-primary">
-    <input type="checkbox" name="close" value="1"{% if checked %} checked{% endif %} hx-post="/settings/providers/sync/close-on-failure" hx-trigger="change" hx-swap="none">
-    Close Chrome when a sync fails
-  </label>
-  <p class="text-xs text-secondary">Turn this off to leave Chrome open on the page a sync stopped on, so you can look at it. The next sync closes it.</p>
-</div>
-{%- endmacro %}
-
-{# A provider card's Sync button. #}
+{# A provider card's Sync button: an icon, named on hover. #}
 {% macro sync_button(key, busy) -%}
-{{ button("Sync", variant="secondary", disabled=busy, attrs={"hx-post": "/settings/providers/" ~ key ~ "/sync", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
+{{ button(variant="icon", size="sm", icon="rotate-ccw", aria_label="Sync", disabled=busy, class_="icon-tip", attrs={"data-tip": "Sync", "hx-post": "/settings/providers/" ~ key ~ "/sync", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
 {%- endmacro %}
 
-{# The status region. It polls its own state every two seconds while a job runs, and stops once the
-   job has finished. shown names the question or notice the page already shows, so the poll can
+{# The status region, with the vault's status beside its title. It polls its own state every two
+   seconds while a job runs, and stops once the job has finished. shown names the question or notice the page already shows, so the poll can
    tell whether the slot must be sent again. #}
-{% macro sync_region(status, notice="", unlock_scope=none, unlock_message="") -%}
-<section id="sync-status" aria-live="polite" aria-labelledby="sync-status-title" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs"{% if status.running %} hx-get="/settings/providers/sync/status?shown={{ status.shown_number }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+{% macro sync_region(status, vault, notice="", unlock_scope=none, unlock_message="", unlocked=0) -%}
+<section id="sync-status" aria-live="polite" aria-labelledby="sync-status-title" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs"{% if status.running %} hx-get="/settings/providers/sync/status?shown={{ status.shown_number }}{% if unlocked %}&amp;unlocked={{ unlocked }}{% endif %}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   <div class="flex flex-wrap items-center justify-between gap-2">
-    <h2 id="sync-status-title" class="text-base font-medium text-primary">Sync status</h2>
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <h2 id="sync-status-title" class="text-base font-medium text-primary">Sync status</h2>
+      {{ vault_status_line(vault, VAULT_STATUS_PAGE, poll=true) }}
+    </div>
     {%- if status.running %}
     {{ button("Cancelling…" if status.cancelling else "Cancel sync", variant="outline", size="sm", icon="x", disabled=status.cancelling, attrs={"hx-post": "/settings/providers/sync/cancel", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
     {%- endif %}
   </div>
+  {%- if unlocked %}
+  <p class="flex items-center gap-2 text-sm font-medium text-success">{{ icon("check", 16) }}Vault unlocked. Starting sync…</p>
+  {%- endif %}
   <p class="text-sm text-primary">{{ status.headline }} <span class="text-secondary">Each bank opens a Chrome window while it syncs. Keep that window open until its sync finishes.</span></p>
   {%- if unlock_scope is not none %}
   {{ sync_unlock(unlock_scope, unlock_message) }}
@@ -68,12 +66,12 @@
 {%- if demo_mode %}
 <p class="rounded-lg border border-divider p-4 text-sm text-secondary">In the demo there is no vault to unlock, so bank sync and vault logins are off. Nothing you type here is needed.</p>
 {%- else %}
-<form class="flex flex-col gap-3 rounded-lg border border-divider p-4" hx-post="/settings/providers/sync/unlock" hx-target="#sync-status" hx-swap="outerHTML">
+<form class="flex flex-col gap-3 rounded-lg border border-divider p-4" hx-post="/settings/providers/sync/unlock" hx-target="#sync-status" hx-swap="outerHTML" hx-disabled-elt="find button[type='submit']">
   <p class="text-sm text-primary">The vault is locked. Unlock it with your master password to start the sync. The password is not kept.</p>
   <input type="hidden" name="scope" value="{{ scope }}">
   {{ password_field(data_autofocus=true) }}
   {{ step_error(message) }}
-  <div class="flex justify-end">{{ button("Unlock and sync", variant="secondary", type="submit") }}</div>
+  <div class="flex justify-end">{{ button("Unlock and sync", variant="secondary", type="submit", busy_text="Unlocking…") }}</div>
 </form>
 {%- endif %}
 {%- endmacro %}

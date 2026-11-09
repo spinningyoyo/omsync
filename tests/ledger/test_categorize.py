@@ -73,7 +73,6 @@ def keyword(
     pattern: str,
     category: str,
     *,
-    priority: int = 0,
     is_regex: bool = False,
     enabled: bool = True,
 ) -> int:
@@ -82,7 +81,6 @@ def keyword(
         pattern=pattern,
         is_regex=is_regex,
         category_id=ledger.category(category),
-        priority=priority,
         enabled=enabled,
     )
     ledger.session.add(row)
@@ -143,7 +141,7 @@ def state(session: Session, transaction_id: int) -> tuple[str | None, str]:
 
 
 def test_manual_and_receipt_origins_are_never_changed(ledger: Ledger) -> None:
-    keyword(ledger, "unique", "cafe", "Coffee")
+    keyword(ledger, "payee", "cafe", "Coffee")
     manual = transaction(ledger, "CAFE ROMA", category="Groceries", origin=CategoryOrigin.manual)
     receipt = transaction(ledger, "CAFE ROMA", category="Groceries", origin=CategoryOrigin.receipt)
 
