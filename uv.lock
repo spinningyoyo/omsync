@@ -923,6 +923,7 @@ dependencies = [
     { name = "jinja2-fragments" },
     { name = "keyring" },
     { name = "ofxparse" },
+    { name = "omsync-nursery" },
     { name = "openpyxl" },
     { name = "python-multipart" },
     { name = "selenium" },
@@ -949,6 +950,7 @@ requires-dist = [
     { name = "jinja2-fragments" },
     { name = "keyring" },
     { name = "ofxparse", specifier = ">=0.21" },
+    { name = "omsync-nursery", git = "https://github.com/spinningyoyo/omsync-nursery?branch=release" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "python-multipart" },
     { name = "selenium", specifier = ">=4.20" },
@@ -966,6 +968,11 @@ dev = [
     { name = "pytest-playwright", specifier = ">=0.10.0" },
     { name = "ruff" },
 ]
+
+[[package]]
+name = "omsync-nursery"
+version = "0.1.1"
+source = { git = "https://github.com/spinningyoyo/omsync-nursery?branch=release#0e861ace826da2208df7c8e3638e8b6d60917901" }
 
 [[package]]
 name = "openpyxl"

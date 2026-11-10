@@ -1,5 +1,5 @@
 // The scene choice in the user menu (layouts/shell.html). It is the same choice the sign-in page
-// makes (controllers/forest_controller.js): both save it in localStorage under "omsync-scene", so
+// makes (controllers/nursery_controller.js): both save it in localStorage under "omsync-scene", so
 // the sign-in page shows the scene last picked in the app. In the app the scene only tints the
 // page background, through data-tint on <html> and styles/tint.css. Cards, tables and charts keep
 // their own colours.
@@ -8,8 +8,8 @@
 // on the shell and both sets of scene buttons agree. Storage can be blocked, so every access is in
 // try/catch.
 import { Controller } from "/static/vendor/stimulus.js";
-import { iconSvg } from "../forest/pixel.js";
-import { SCENES } from "../forest_scene.js";
+import { iconSvg } from "/static/vendor/nursery/kit/pixel.js";
+import { SCENES } from "/static/vendor/nursery/nursery.js";
 
 const SCENE_KEY = "omsync-scene";
 

@@ -31,13 +31,13 @@
 {# Sets the accounts panel's width and collapsed state before first paint. The same keys are
    written by accounts_panel_controller.js. Storage can be blocked, so every access is guarded.
    It also sets the scene whose colour tints the page background (styles/tint.css). The scene is
-   the one picked on the sign-in page or in the user menu, and defaults to meadow. #}
+   the one picked on the sign-in page or in the user menu, and defaults to the first scene. #}
 <script>
   (function () {
     var root = document.documentElement;
     var width = 320;
     var collapsed = false;
-    var tint = "meadow";
+    var tint = {{ scenes[0][0] | tojson }};
     try {
       var saved = parseInt(localStorage.getItem("omsync-accounts-width"), 10);
       if (saved >= 240 && saved <= 320) width = saved;
@@ -84,9 +84,9 @@
     </button>
   </div>
   <div class="scene-slide {{ 'scene-slide--side' if placement == 'right-end' else 'scene-slide--below' }} hidden" data-scene-slide-target="panel">
-    <div class="forest-scenes" role="group" aria-label="Scene">
+    <div class="nursery-scenes" role="group" aria-label="Scene">
       {% for scene_id, label in scenes %}
-      <button type="button" class="forest-scene" aria-label="{{ label }}" data-tip="{{ label }}" aria-pressed="false"
+      <button type="button" class="nursery-scene" aria-label="{{ label }}" data-tip="{{ label }}" aria-pressed="false"
               data-scene-target="scene" data-scene-id-param="{{ scene_id }}" data-action="scene#choose"></button>
       {% endfor %}
     </div>
@@ -96,9 +96,9 @@
 <div class="flex flex-col gap-3 px-3 py-2">
   <div class="flex flex-col gap-2">
     <p class="text-xs text-secondary">Theme</p>
-    <div class="forest-scenes self-start" role="group" aria-label="Theme">
+    <div class="nursery-scenes self-start" role="group" aria-label="Theme">
       {% for theme in themes %}
-      <button type="button" class="forest-scene forest-scene--small" aria-label="{{ theme.label }}" data-tip="{{ theme.label }}" aria-pressed="false"
+      <button type="button" class="nursery-scene nursery-scene--small" aria-label="{{ theme.label }}" data-tip="{{ theme.label }}" aria-pressed="false"
               data-theme-target="option" data-theme-choice="{{ theme.id }}" data-action="theme#choose">{{ icon(theme.icon, 20) }}</button>
       {% endfor %}
     </div>

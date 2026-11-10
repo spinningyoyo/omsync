@@ -16,6 +16,7 @@ import socket
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
 import zipfile
@@ -47,6 +48,16 @@ def _isolated_env(home: Path, uv_cache: str) -> dict[str, str]:
         "OMSYNC_DATA_DIR": str(home / "data"),
         "OMSYNC_CONFIG": str(home / "absent.toml"),
     }
+
+
+def _nursery_requirement() -> str:
+    """omsync-nursery at the exact commit uv.lock records. A [tool.uv.sources] entry does not
+    travel in a wheel's metadata, so the install names the package's source directly, as any
+    install of the wheel must."""
+    lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text())
+    package = next(p for p in lock["package"] if p["name"] == "omsync-nursery")
+    url, commit = package["source"]["git"].split("#")
+    return f"omsync-nursery @ git+{url.split('?')[0]}@{commit}"
 
 
 def _free_port() -> int:
@@ -82,7 +93,8 @@ def test_wheel_installs_migrates_and_serves(tmp_path: Path) -> None:
 
     venv = tmp_path / "venv"
     _run([uv, "venv", "--python", sys.executable, str(venv)])
-    _run([uv, "pip", "install", "--python", str(venv / "bin" / "python"), str(wheel)])
+    python = str(venv / "bin" / "python")
+    _run([uv, "pip", "install", "--python", python, str(wheel), _nursery_requirement()])
 
     home = tmp_path / "home"
     home.mkdir()

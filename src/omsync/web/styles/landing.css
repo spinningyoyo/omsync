@@ -1,11 +1,12 @@
 /*
  * The sign-in page's backdrop, its elephant button and its scene picker (layouts/auth.html). A pale
  * page with soft colour washes under a white grid; the washes show the grid, and the grid
- * disappears where the page is white. The scene (static/js/forest_scene.js) is drawn on top of it.
- * The washes' colours belong to the scene named by data-scene, and fade into the next one's when it
- * changes.
+ * disappears where the page is white. The scene (static/vendor/nursery/nursery.js) is drawn on
+ * top of it. The washes' colours belong to the scene named by data-scene (static/vendor/nursery/
+ * scenes.css sets the --landing-* colours per scene), and fade into the next one's when it changes.
+ * The defaults below are the meadow's.
  *
- * --landing-cell must stay equal to the scene's art pixel size times its grid cell: 4px * 16.
+ * The nursery's scenes.css sets --landing-cell.
  * Every layer is anchored to the bottom edge, so a grid line sits on the soil's top edge.
  */
 /* Registered as colours so that a change of scene crossfades instead of jumping. */
@@ -40,7 +41,6 @@
 }
 
 :root {
-  --landing-cell: 64px;
   --landing-base: #ffffff;
   --landing-green: #b7dc98;
   --landing-green-soft: #d3eac0;
@@ -49,6 +49,7 @@
   --landing-bloom: #cfeab4;
   --landing-line: rgb(255 255 255 / 0.95);
   --landing-dot: #ffffff;
+  --nursery-stage: #559c4a;
 }
 
 [data-theme="dark"] {
@@ -60,152 +61,7 @@
   --landing-bloom: rgb(110 178 92 / 0.34);
   --landing-line: rgb(255 255 255 / 0.07);
   --landing-dot: rgb(255 255 255 / 0.2);
-}
-
-/* The meadow's colours are the defaults above. */
-[data-scene="rainforest"] {
-  --landing-green: #8fbf9c;
-  --landing-green-soft: #c0d9c5;
-  --landing-peach: #e2e4bc;
-  --landing-blush: #d3e2d6;
-  --landing-bloom: #9fc8aa;
-}
-
-[data-theme="dark"] [data-scene="rainforest"] {
-  --landing-green: rgb(56 160 120 / 0.42);
-  --landing-green-soft: rgb(70 150 100 / 0.22);
-  --landing-peach: rgb(214 190 90 / 0.15);
-  --landing-blush: rgb(60 150 140 / 0.14);
-  --landing-bloom: rgb(70 180 120 / 0.34);
-}
-
-[data-scene="hawaii"] {
-  --landing-green: #a9dcf2;
-  --landing-green-soft: #f6e6b8;
-  --landing-peach: #fddcc0;
-  --landing-blush: #cdeeee;
-  --landing-bloom: #9fe0d8;
-}
-
-[data-theme="dark"] [data-scene="hawaii"] {
-  --landing-green: rgb(60 140 200 / 0.42);
-  --landing-green-soft: rgb(210 180 110 / 0.16);
-  --landing-peach: rgb(230 130 90 / 0.18);
-  --landing-blush: rgb(60 170 170 / 0.14);
-  --landing-bloom: rgb(60 190 170 / 0.3);
-}
-
-[data-scene="desert"] {
-  --landing-green: #c9e0f2;
-  --landing-green-soft: #f5deb0;
-  --landing-peach: #fbcfa6;
-  --landing-blush: #f8e0ea;
-  --landing-bloom: #f6bfd6;
-}
-
-[data-theme="dark"] [data-scene="desert"] {
-  --landing-green: rgb(70 70 170 / 0.42);
-  --landing-green-soft: rgb(200 150 80 / 0.16);
-  --landing-peach: rgb(220 110 80 / 0.2);
-  --landing-blush: rgb(190 80 150 / 0.16);
-  --landing-bloom: rgb(210 90 150 / 0.3);
-}
-
-[data-scene="smokies"] {
-  --landing-green: #f9cf9c;
-  --landing-green-soft: #f4e1a4;
-  --landing-peach: #f4b9a0;
-  --landing-blush: #d8e4ec;
-  --landing-bloom: #f3b56f;
-}
-
-[data-theme="dark"] [data-scene="smokies"] {
-  --landing-green: rgb(220 140 60 / 0.38);
-  --landing-green-soft: rgb(200 160 60 / 0.18);
-  --landing-peach: rgb(190 80 50 / 0.2);
-  --landing-blush: rgb(80 120 160 / 0.16);
-  --landing-bloom: rgb(230 140 50 / 0.3);
-}
-
-[data-scene="serengeti"] {
-  --landing-green: #f2c879;
-  --landing-green-soft: #f7e3a6;
-  --landing-peach: #f5a77a;
-  --landing-blush: #d7e0ea;
-  --landing-bloom: #e9a14f;
-}
-
-[data-theme="dark"] [data-scene="serengeti"] {
-  --landing-green: rgb(200 150 70 / 0.3);
-  --landing-green-soft: rgb(90 90 170 / 0.2);
-  --landing-peach: rgb(170 90 60 / 0.18);
-  --landing-blush: rgb(60 70 130 / 0.2);
-  --landing-bloom: rgb(210 150 70 / 0.22);
-}
-
-[data-scene="iceland"] {
-  --landing-green: #c9e3ee;
-  --landing-green-soft: #e8f4f1;
-  --landing-peach: #d5e9b2;
-  --landing-blush: #dccbef;
-  --landing-bloom: #f0d98e;
-}
-
-[data-theme="dark"] [data-scene="iceland"] {
-  --landing-green: rgb(80 140 170 / 0.32);
-  --landing-green-soft: rgb(90 150 130 / 0.18);
-  --landing-peach: rgb(120 160 80 / 0.2);
-  --landing-blush: rgb(130 100 180 / 0.2);
-  --landing-bloom: rgb(90 230 170 / 0.28);
-}
-
-[data-scene="yellowstone"] {
-  --landing-green: #bcd9e6;
-  --landing-green-soft: #f2e6b0;
-  --landing-peach: #f5c3a0;
-  --landing-blush: #dfe6dc;
-  --landing-bloom: #f2c66e;
-}
-
-[data-theme="dark"] [data-scene="yellowstone"] {
-  --landing-green: rgb(70 120 180 / 0.4);
-  --landing-green-soft: rgb(200 180 90 / 0.18);
-  --landing-peach: rgb(200 100 60 / 0.2);
-  --landing-blush: rgb(90 130 120 / 0.16);
-  --landing-bloom: rgb(230 150 50 / 0.3);
-}
-
-/* Shepard's pale washes on white paper: heath green, a little sand and sky. */
-[data-scene="hundredacre"] {
-  --landing-green: #dbe6bd;
-  --landing-green-soft: #edf1da;
-  --landing-peach: #f3e7c8;
-  --landing-blush: #e2ecf0;
-  --landing-bloom: #c9dca2;
-}
-
-[data-theme="dark"] [data-scene="hundredacre"] {
-  --landing-green: rgb(110 140 80 / 0.3);
-  --landing-green-soft: rgb(150 160 100 / 0.16);
-  --landing-peach: rgb(170 140 90 / 0.18);
-  --landing-blush: rgb(80 110 130 / 0.16);
-  --landing-bloom: rgb(140 170 90 / 0.3);
-}
-
-[data-scene="wonderland"] {
-  --landing-green: #a6e9b8;
-  --landing-green-soft: #d6f5e1;
-  --landing-peach: #ffc2b8;
-  --landing-blush: #ffd6ea;
-  --landing-bloom: #ffa6cb;
-}
-
-[data-theme="dark"] [data-scene="wonderland"] {
-  --landing-green: rgb(110 200 150 / 0.36);
-  --landing-green-soft: rgb(150 120 220 / 0.2);
-  --landing-peach: rgb(230 110 150 / 0.2);
-  --landing-blush: rgb(120 90 170 / 0.16);
-  --landing-bloom: rgb(255 120 190 / 0.3);
+  --nursery-stage: #8fc272;
 }
 
 .landing-backdrop {
@@ -238,7 +94,7 @@
     --landing-blush 0.9s;
 }
 
-/* Each watering raises its opacity, so the page greens as the forest grows. */
+/* Each watering raises its opacity, so the page greens as the scene grows. */
 .landing-backdrop__bloom {
   background: radial-gradient(90% 55% at 50% 100%, var(--landing-bloom) 0%, transparent 75%);
   opacity: 0;
@@ -263,7 +119,7 @@
   animation: landing-breathe 6s ease-in-out infinite alternate;
 }
 
-.landing-forest,
+.landing-nursery,
 .landing-water {
   position: absolute;
   inset: auto auto 0 0;
@@ -306,7 +162,7 @@
 
 /* The scene picker, with the appearance buttons and reset on a second row, in the top-right corner.
    The scenes are pixel art; the controls are Lucide line icons, which follow the text colour. */
-.forest-controls {
+.nursery-controls {
   position: fixed;
   top: 12px;
   right: 12px;
@@ -317,31 +173,32 @@
   gap: 8px;
 }
 
-.forest-controls__row {
+.nursery-controls__row {
   display: flex;
+  align-items: flex-start;
   gap: 8px;
 }
 
 /* On a phone the controls would cover the elephant and the wordmark, so they sit in a band across
    the top that scrolls away, and the page starts below it. */
 @media (max-width: 40rem) {
-  .forest-controls {
+  .nursery-controls {
     position: absolute;
     left: 12px;
     align-items: center;
   }
 
-  .forest-controls .forest-scenes {
+  .nursery-controls .nursery-scenes {
     justify-content: center;
   }
 
   .landing-content {
-    padding-top: calc(var(--forest-controls-height, 10rem) + 1.5rem);
+    padding-top: calc(var(--nursery-controls-height, 12.5rem) + 1.5rem);
     justify-content: flex-start;
   }
 }
 
-.forest-scenes {
+.nursery-scenes {
   position: relative;
   display: flex;
   flex-wrap: wrap;
@@ -354,7 +211,7 @@
   backdrop-filter: blur(8px);
 }
 
-.forest-scene {
+.nursery-scene {
   position: relative;
   display: grid;
   place-items: center;
@@ -368,14 +225,14 @@
 }
 
 /* The group in use stays above the others, so a label that hangs over the next row is not covered. */
-.forest-scenes:hover,
-.forest-scenes:focus-within {
+.nursery-scenes:hover,
+.nursery-scenes:focus-within {
   z-index: 2;
 }
 
 /* The name of a button, shown at once on hover or keyboard focus. The first and last buttons of a
    group align to an edge so the label stays on screen. */
-.forest-scene::after {
+.nursery-scene::after {
   content: attr(data-tip);
   position: absolute;
   top: calc(100% + 8px);
@@ -393,43 +250,85 @@
   transition: opacity 0.12s;
 }
 
-.forest-scene:hover::after,
-.forest-scene:focus-visible::after {
+.nursery-scene:hover::after,
+.nursery-scene:focus-visible::after {
   opacity: 1;
 }
 
-.forest-scenes > .forest-scene:first-child::after {
+.nursery-scenes > .nursery-scene:first-child::after {
   left: 0;
   translate: none;
 }
 
-.forest-scenes > .forest-scene:last-child::after {
+.nursery-scenes > .nursery-scene:last-child::after {
   left: auto;
   right: 0;
   translate: none;
 }
 
-.forest-scene--small {
+/* Reset and, under it, the scene's stage as a sprout. The sprout only shows; it takes no clicks. */
+.nursery-reset {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.nursery-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 28px;
+  color: var(--nursery-stage);
+}
+
+.nursery-stage[hidden] {
+  display: none;
+}
+
+.nursery-stage::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--utility-text-primary);
+  color: var(--color-container);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.nursery-stage:hover::after {
+  opacity: 1;
+}
+
+.nursery-scene--small {
   width: 36px;
   height: 36px;
   color: color-mix(in srgb, var(--utility-text-primary) 62%, transparent);
 }
 
-.forest-scene--small:hover,
-.forest-scene--small[aria-pressed="true"] {
+.nursery-scene--small:hover,
+.nursery-scene--small[aria-pressed="true"] {
   color: var(--utility-text-primary);
 }
 
-.forest-scene:hover {
+.nursery-scene:hover {
   background: color-mix(in srgb, var(--utility-text-primary) 8%, transparent);
 }
 
-.forest-scene[aria-pressed="true"] {
+.nursery-scene[aria-pressed="true"] {
   background: color-mix(in srgb, var(--utility-text-primary) 12%, transparent);
   box-shadow: inset 0 0 0 2px var(--utility-text-primary);
 }
 
-.forest-scene:focus-visible {
+.nursery-scene:focus-visible {
   outline: 2px solid var(--utility-text-primary);
   outline-offset: 1px;
 }
@@ -455,7 +354,7 @@
   --scene-slide-from: translateY(-6px);
 }
 
-.scene-slide .forest-scenes {
+.scene-slide .nursery-scenes {
   justify-content: flex-start;
   width: 15.5rem;
   padding: 8px;
@@ -463,8 +362,8 @@
 
 /* A hovered or focused choice rises above the row below it, so its name is not covered by those
    icons. Only the user menu needs this; the sign-in page's choices have no row beneath a name. */
-.scene-slide .forest-scene:hover,
-.scene-slide .forest-scene:focus-visible {
+.scene-slide .nursery-scene:hover,
+.scene-slide .nursery-scene:focus-visible {
   z-index: 1;
 }
 
@@ -481,9 +380,16 @@
   }
 }
 
-/* The elephant is a button that waters the forest. It steps rather than glides, like the pixels
-   it is made of: a hop on hover, and a double hop with a happy squint while it waters. */
-.forest-elephant {
+/* The elephant is a button that waters the scene. It steps rather than glides, like the pixels
+   it is made of: a hop on hover, and a double hop with a happy squint while it waters. Held down,
+   it fills with water (controllers/nursery_controller.js, elephant_water.js): it shakes on each
+   fill step, harder from the fifth, and bobs with its eyes shut at the brim. The water takes the
+   colours below. A press never scrolls the page or opens a menu on a phone. */
+.nursery-elephant {
+  --elephant-water: #7cc4e8;
+  --elephant-water-deep: #4f9fd0;
+  --elephant-foam: #ffffff;
+  --elephant-bubble: #e6f6ff;
   display: block;
   padding: 0;
   border: 0;
@@ -492,33 +398,103 @@
   color: inherit;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
-.forest-elephant:focus-visible {
+[data-theme="dark"] .nursery-elephant {
+  --elephant-water: #4a8cc0;
+  --elephant-water-deep: #2f6a9c;
+  --elephant-foam: #cfe6f5;
+  --elephant-bubble: #a9d2ee;
+}
+
+.nursery-elephant .mascot-water__water {
+  fill: var(--elephant-water);
+}
+
+.nursery-elephant .mascot-water__deep {
+  fill: var(--elephant-water-deep);
+}
+
+.nursery-elephant .mascot-water__foam {
+  fill: var(--elephant-foam);
+}
+
+.nursery-elephant .mascot-water__bubble {
+  fill: var(--elephant-bubble);
+}
+
+.nursery-elephant:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 6px;
 }
 
-.forest-elephant:hover .brand-mascot {
+.nursery-elephant:hover .brand-mascot {
   transform: translateY(-4px);
 }
 
-.forest-elephant:active .brand-mascot {
+.nursery-elephant:active .brand-mascot {
   transform: translateY(4px);
 }
 
-.forest-elephant.is-watering .brand-mascot {
+.nursery-elephant.is-watering .brand-mascot {
   animation: landing-hop 1s step-end;
 }
 
-.forest-elephant.is-watering .mascot-eye {
+.nursery-elephant.is-watering .mascot-eye,
+.nursery-elephant.is-squinting .mascot-eye {
   animation: none;
   opacity: 0;
 }
 
-.forest-elephant.is-watering .mascot-eye-closed {
+.nursery-elephant.is-watering .mascot-eye-closed,
+.nursery-elephant.is-squinting .mascot-eye-closed {
   animation: none;
   opacity: 1;
+}
+
+/* The shake moves the button and the bob the sprite, both by the translate property, so they
+   add to the hop and the hover lift, which use transform. */
+.nursery-elephant.is-shaking,
+.nursery-elephant.is-shaking-hard {
+  --shake: 4px;
+  animation: landing-shake 0.32s step-end;
+}
+
+.nursery-elephant.is-shaking-hard {
+  --shake: 8px;
+}
+
+.nursery-elephant.is-brim .brand-mascot {
+  animation: landing-bob 0.36s step-end infinite;
+}
+
+@keyframes landing-shake {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  12%,
+  62% {
+    translate: calc(var(--shake) * -1) 0;
+  }
+  37%,
+  87% {
+    translate: var(--shake) 0;
+  }
+}
+
+@keyframes landing-bob {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -4px;
+  }
 }
 
 @keyframes landing-hop {
@@ -542,7 +518,10 @@
   .landing-backdrop__wash,
   .landing-backdrop__dots,
   .landing-rise,
-  .forest-elephant.is-watering .brand-mascot {
+  .nursery-elephant.is-watering .brand-mascot,
+  .nursery-elephant.is-brim .brand-mascot,
+  .nursery-elephant.is-shaking,
+  .nursery-elephant.is-shaking-hard {
     animation: none;
   }
 
@@ -550,16 +529,18 @@
     transition: none;
   }
 
-  .forest-elephant:hover .brand-mascot,
-  .forest-elephant:active .brand-mascot {
+  .nursery-elephant:hover .brand-mascot,
+  .nursery-elephant:active .brand-mascot {
     transform: none;
   }
 
-  .forest-elephant.is-watering .mascot-eye-closed {
+  .nursery-elephant.is-watering .mascot-eye-closed,
+  .nursery-elephant.is-squinting .mascot-eye-closed {
     opacity: 0;
   }
 
-  .forest-elephant.is-watering .mascot-eye {
+  .nursery-elephant.is-watering .mascot-eye,
+  .nursery-elephant.is-squinting .mascot-eye {
     opacity: 1;
   }
 }

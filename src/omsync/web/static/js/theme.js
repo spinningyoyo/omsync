@@ -1,5 +1,5 @@
 // The theme choice, shared by the user menu (controllers/theme_controller.js) and the sign-in page
-// (controllers/forest_controller.js): light, dark, or auto, which follows the computer's clock and
+// (controllers/nursery_controller.js): light, dark, or auto, which follows the computer's clock and
 // is dark from NIGHT_FROM to NIGHT_UNTIL. It is saved in localStorage under "omsync-theme".
 // layouts/app.html applies the same rule before first paint and puts the choice on
 // <html data-theme-choice>.

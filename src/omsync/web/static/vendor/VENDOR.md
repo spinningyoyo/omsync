@@ -15,3 +15,5 @@ Notes:
 - The banner comment at the top of `stimulus.js` still reads "Stimulus 3.2.1". The npm
   package `@hotwired/stimulus` at version 3.2.2 ships that file unchanged, and its
   `package.json` says 3.2.2, so 3.2.2 is the pinned version.
+- The sign-in scenes are not vendored here: they are the `omsync-nursery` package, pinned in
+  `pyproject.toml` and served at `/static/vendor/nursery/` from the installed package.

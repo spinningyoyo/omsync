@@ -22,6 +22,7 @@ dependencies = [
     "ofxparse>=0.21",
     "selenium>=4.20",
     "openpyxl>=3.1.5",
+    "omsync-nursery>=0.1.1,<0.2",
 ]
 
 [project.scripts]
@@ -89,3 +90,6 @@ markers = [
     "e2e: drives the running app in Chromium through Playwright; run `playwright install chromium` first",
     "slow: builds the wheel and installs it into a fresh venv; skip with `uv run pytest -m \"not slow\"`",
 ]
+
+[tool.uv.sources]
+omsync-nursery = { git = "https://github.com/spinningyoyo/omsync-nursery", branch = "release" }

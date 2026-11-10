@@ -1,31 +1,13 @@
 /*
  * The page tint: the scene picked on the sign-in page or in the user menu (layouts/shell.html sets
- * data-tint on <html> before first paint). Only the page background, --color-surface, takes the
- * scene's colour. Cards (--color-container), tables and charts keep their own colours, so they stay
+ * data-tint on <html> before first paint). Each scene's colour, --scene-tint and --scene-tint-dark,
+ * comes from the nursery (static/vendor/nursery/scenes.css); this file decides how it is mixed. Only
+ * the page background, --color-surface, takes the scene's colour. Cards (--color-container), tables and charts keep their own colours, so they stay
  * neutral on a tinted page. The rules are unlayered so they win over the theme's base layer, and
  * the dark rules are more specific, so they win over the light ones in dark mode.
  *
  * The mixes are set by contrast: secondary text on the page (gray-600 in light, sure/tokens.css)
  * stays at 5.8:1 or more on every light tint, and well above 7:1 on every dark one.
  */
-[data-tint="meadow"] { --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, #b7dc98); }
-[data-tint="rainforest"] { --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, #9fd6b4); }
-[data-tint="hawaii"] { --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, #a9dcf2); }
-[data-tint="desert"] { --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, #fbcfa6); }
-[data-tint="smokies"] { --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, #f9cf9c); }
-[data-tint="serengeti"] { --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, #f7d28f); }
-[data-tint="iceland"] { --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, #bfe0ec); }
-[data-tint="yellowstone"] { --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, #cfe3ec); }
-[data-tint="hundredacre"] { --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, #d3e2b0); }
-[data-tint="wonderland"] { --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, #f3d6f0); }
-
-[data-theme="dark"][data-tint="meadow"] { --color-surface: color-mix(in oklab, var(--color-black) 92%, rgb(96 160 84)); }
-[data-theme="dark"][data-tint="rainforest"] { --color-surface: color-mix(in oklab, var(--color-black) 92%, rgb(56 160 120)); }
-[data-theme="dark"][data-tint="hawaii"] { --color-surface: color-mix(in oklab, var(--color-black) 92%, rgb(60 140 200)); }
-[data-theme="dark"][data-tint="desert"] { --color-surface: color-mix(in oklab, var(--color-black) 92%, rgb(220 110 80)); }
-[data-theme="dark"][data-tint="smokies"] { --color-surface: color-mix(in oklab, var(--color-black) 92%, rgb(220 140 60)); }
-[data-theme="dark"][data-tint="serengeti"] { --color-surface: color-mix(in oklab, var(--color-black) 92%, rgb(120 100 180)); }
-[data-theme="dark"][data-tint="iceland"] { --color-surface: color-mix(in oklab, var(--color-black) 92%, rgb(70 130 170)); }
-[data-theme="dark"][data-tint="yellowstone"] { --color-surface: color-mix(in oklab, var(--color-black) 92%, rgb(60 110 170)); }
-[data-theme="dark"][data-tint="hundredacre"] { --color-surface: color-mix(in oklab, var(--color-black) 92%, rgb(110 140 80)); }
-[data-theme="dark"][data-tint="wonderland"] { --color-surface: color-mix(in oklab, var(--color-black) 92%, rgb(120 90 170)); }
+[data-tint] { --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, var(--scene-tint, var(--color-gray-50))); }
+[data-theme="dark"][data-tint] { --color-surface: color-mix(in oklab, var(--color-black) 92%, var(--scene-tint-dark, var(--color-black))); }

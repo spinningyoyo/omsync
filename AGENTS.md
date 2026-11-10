@@ -32,5 +32,10 @@ bash scripts/build-css.sh             # after changing template classes
   `OMSYNC_DATA_DIR`. Never query or write `~/omsync-data` directly.
 - When code contradicts its architecture page, raise it with the user; don't treat the code as
   the design.
+- The sign-in scenes are the `omsync-nursery` package, from the sibling `../omsync-nursery`
+  repository. omsync follows its `release` branch; `uv.lock` records the commit. Make art changes
+  there (it has its own AGENTS.md and the nursery-scene skill) and release them with
+  `uv run nursery release` from that checkout. Take a release into omsync with
+  `sh scripts/upgrade-nursery.sh`. omsync requires a nursery version range (`>=0.1.1,<0.2`); a release outside it is a contract change, which needs host code and a wider range in the same commit. Never edit the nursery source or the lock entry by hand.
 - Changes to institution website automation need live validation at that institution. Say so
   when you can't run it.

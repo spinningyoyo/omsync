@@ -1,19 +1,8 @@
 {# The scene and theme choices, in one list for the sign-in page (layouts/auth.html) and the user
-   menu (layouts/shell.html), so both show them in the same order. The scene ids match
-   static/js/forest_scene.js and the theme ids match static/js/theme.js. Import the names you need:
-   {% from "layouts/appearance.html" import scenes, themes %}. #}
-{% set scenes = [
-  ("meadow", "Yosemite Meadows"),
-  ("rainforest", "Thailand Khao Sok Rainforest"),
-  ("hawaii", "Waikiki Beach"),
-  ("desert", "Joshua Tree Desert"),
-  ("smokies", "Great Smoky Mountains"),
-  ("serengeti", "Serengeti Savanna"),
-  ("iceland", "Icelandic Lava Field"),
-  ("yellowstone", "Yellowstone"),
-  ("hundredacre", "Hundred Acre Wood"),
-  ("wonderland", "Wonderland"),
-] %}
+   menu (layouts/shell.html), so both show them in the same order. scenes is (id, label) pairs from
+   the nursery's scenes.json (omsync/web/scenes.py); the theme ids match static/js/theme.js. Import
+   the names you need: {% from "layouts/appearance.html" import scenes, themes %}. #}
+{% set scenes = nursery_scenes %}
 {# label is each button's name and hover label, on the sign-in page and in the menu alike. #}
 {% set themes = [
   {"id": "auto", "label": "Auto: night from 5pm to 7am", "icon": "sun-moon"},

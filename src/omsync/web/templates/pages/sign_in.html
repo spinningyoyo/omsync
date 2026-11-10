@@ -8,9 +8,11 @@
 
 {% block auth %}
 <header class="flex flex-col items-center gap-4 text-primary">
-  {# The elephant waters the scene on the page behind it (controllers/forest_controller.js). #}
-  <button type="button" class="forest-elephant" aria-label="Water the scene"
-          data-forest-target="elephant" data-action="forest#water">
+  {# The elephant waters the scene on the page behind it: a click waters once, and a hold fills it
+     for a bigger splash (controllers/nursery_controller.js). #}
+  <button type="button" class="nursery-elephant" aria-label="Water the scene"
+          data-nursery-target="elephant"
+          data-action="click->nursery#click pointerdown->nursery#press pointerup->nursery#letGo pointercancel->nursery#letGo keydown->nursery#keyDown keyup->nursery#keyUp blur->nursery#lose contextmenu->nursery#hush">
     {{ mascot(128) }}
   </button>
   <span class="landing-rise" style="--landing-delay: 0.1s">{{ wordmark("lg") }}</span>
@@ -49,6 +51,6 @@
 
 <div class="landing-rise flex flex-col gap-1 text-center text-xs text-secondary" style="--landing-delay: 0.3s">
   <p><span lang="th">ออมสิน</span> is Thai for “saving wealth.” omsync keeps your finances in sync, so you can watch them grow.</p>
-  <p>Tip: click the elephant. The horizon awaits.</p>
+  <p data-nursery-target="tip" data-before="Tip: click the elephant. The horizon awaits." data-after="Tip: hold on to your trunks. The longer you hold, the bigger the splash. Every second counts.">Tip: click the elephant. The horizon awaits.</p>
 </div>
 {% endblock %}

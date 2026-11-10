@@ -11,6 +11,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2_fragments.fastapi import Jinja2Blocks
+from nursery.assets import JS as NURSERY_JS
+from nursery.assets import SCENES_CSS as NURSERY_SCENES_CSS
 
 from omsync import __version__
 from omsync.core.db import database_url, make_engine, make_session_factory
@@ -66,6 +68,7 @@ from omsync.web.routes.settings import router as settings_router
 from omsync.web.routes.settings_providers import router as settings_providers_router
 from omsync.web.routes.settings_rental import router as settings_rental_router
 from omsync.web.routes.settings_wizard import router as settings_wizard_router
+from omsync.web.scenes import nursery_scenes
 from omsync.web.settings_tokens import MappingTokens
 from omsync.web.sync_runner import SyncRunner
 from omsync.web.vault_logins import LoginNames
@@ -131,6 +134,7 @@ def create_app(
     templates.env.globals["institution_logo_url"] = institution_logo_url
     templates.env.globals["account_digits"] = account_digits
     templates.env.globals["mascot_svg"] = mascot_svg
+    templates.env.globals["nursery_scenes"] = nursery_scenes()
     templates.env.globals["filter_field_choices"] = field_choices()
     templates.env.globals["filter_labels"] = FIELD_LABELS
     templates.env.globals["filter_op_choices"] = op_choices
@@ -154,6 +158,16 @@ def create_app(
     # Pages, styles and scripts are text, so compressing them makes the first visit on a slow link
     # several times quicker. Starlette leaves event streams uncompressed.
     app.add_middleware(GZipMiddleware, minimum_size=1024)
+    # The sign-in scenes come from the installed omsync-nursery package; mounted first, so this
+    # path does not fall through to the app's own static files. The scenes' colours (css/) sit
+    # beside the engine's folder in the package, so they get their own mount, ahead of the
+    # engine's.
+    app.mount(
+        "/static/vendor/nursery/css",
+        StaticFiles(directory=NURSERY_SCENES_CSS.parent),
+        name="nursery-css",
+    )
+    app.mount("/static/vendor/nursery", StaticFiles(directory=NURSERY_JS), name="nursery")
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(sign_in.router)
     app.include_router(shell.router)
