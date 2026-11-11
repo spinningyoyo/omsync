@@ -93,10 +93,10 @@ class Keyword(Base):
     enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
 
 
-class RuleOtherSide(StrEnum):
-    """Who is on the other side of a payment that a rule reads. person is a payment with a person
-    (see omsync.ledger.other_side.PersonSides); contact is the contact stored on the rule; and
-    owner_account is a payment whose other side is you, one of your own accounts."""
+class RuleCounterparty(StrEnum):
+    """The counterparty of a payment, as a rule reads it. person is a payment with a person (see
+    omsync.ledger.counterparty.PersonCounterparties); contact is the contact stored on the rule;
+    and owner_account is a payment whose counterparty is you, one of your own accounts."""
 
     person = "person"
     contact = "contact"
@@ -111,7 +111,7 @@ class CategoryRule(Base):
     that is not set does not matter, and at least one must be set. paid_by holds the payment
     methods (see omsync.ledger.payment_methods) separated by spaces, and holds when the bank's
     wording names one of them. below_cents is strict and at_least_cents inclusive, both on the
-    absolute amount, so a refund follows its purchase. other_side reads who is on the other side,
+    absolute amount, so a refund follows its purchase. counterparty reads who the counterparty is,
     and contact_id and account_id name a contact and an account of the transaction.
     """
 
@@ -119,7 +119,7 @@ class CategoryRule(Base):
     __table_args__ = (
         CheckConstraint(
             "paid_by IS NOT NULL OR below_cents IS NOT NULL"
-            " OR at_least_cents IS NOT NULL OR other_side IS NOT NULL OR account_id IS NOT NULL",
+            " OR at_least_cents IS NOT NULL OR counterparty IS NOT NULL OR account_id IS NOT NULL",
             name="ck_category_rule_has_condition",
         ),
         CheckConstraint("below_cents IS NULL OR below_cents > 0", name="ck_category_rule_below"),
@@ -131,7 +131,7 @@ class CategoryRule(Base):
             name="ck_category_rule_range",
         ),
         CheckConstraint(
-            "CASE WHEN other_side = 'contact' THEN contact_id IS NOT NULL"
+            "CASE WHEN counterparty = 'contact' THEN contact_id IS NOT NULL"
             " ELSE contact_id IS NULL END",
             name="ck_category_rule_contact",
         ),
@@ -144,7 +144,7 @@ class CategoryRule(Base):
     paid_by: Mapped[str | None]
     below_cents: Mapped[int | None]
     at_least_cents: Mapped[int | None]
-    other_side: Mapped[RuleOtherSide | None] = mapped_column(string_enum(RuleOtherSide))
+    counterparty: Mapped[RuleCounterparty | None] = mapped_column(string_enum(RuleCounterparty))
     contact_id: Mapped[int | None] = mapped_column(ForeignKey("contact.id"))
     account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"))
     to_category_id: Mapped[int] = mapped_column(ForeignKey("category.id"))

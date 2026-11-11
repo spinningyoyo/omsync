@@ -38,51 +38,17 @@ _AFTER_CONFIRMATION_RE = re.compile(
 )
 _NAME_END_RE = re.compile(r"\s+for\b|;", re.IGNORECASE)
 
-# Words every P2P description shares, which say how the money moved and not what it was for.
-GENERIC_WORDS = frozenset(
-    {
-        "zelle",
-        "paypal",
-        "venmo",
-        "cash",
-        "cashapp",
-        "apple",
-        "pay",
-        "payment",
-        "pymt",
-        "transfer",
-        "xfer",
-        "instant",
-        "recurring",
-        "scheduled",
-        "online",
-        "mobile",
-        "from",
-        "to",
-        "for",
-        "the",
-        "and",
-        "with",
-        "conf",
-        "confirmation",
-        "cashout",
-        "des",
-        "web",
-        "ach",
-    }
-)
-
 ROUND_TRIP_WINDOW_DAYS = 30
 
 
-def rule_round_trip(pool: Pool, emit: Emitter) -> None:
+def rule_p2p_round_trip(pool: Pool, emit: Emitter) -> None:
     """Round trip: a Zelle payment to a person and the same amount from them, in either order.
 
     The first two name tokens must agree, where a one-letter second token matches a second token
     that starts with it. The amounts are equal and the dates at most 30 days apart. Every pair is
     automatic: payments to one person of one amount are interchangeable, so of several, the
     nearest pairs are linked first, by date gap and then IDs. Your own names, accounts you name,
-    payments whose other side is stored as the owner or the co-owner, and anything an earlier rule
+    payments whose counterparty is stored as the owner or the co-owner, and anything an earlier rule
     proposed are left out. The memo after "for" never decides a match.
     """
     proposed = {t for d in emit.drafts for t in (d.out_txn_id, d.in_txn_id)}
@@ -111,7 +77,7 @@ def rule_round_trip(pool: Pool, emit: Emitter) -> None:
         claim(
             pool,
             emit,
-            rule="rt",
+            rule="p2p_round_trip",
             kind=LinkKind.p2p,
             first=out,
             second=inn,
@@ -159,7 +125,7 @@ def _person(txn: TxnView, emit: Emitter) -> tuple[str, str] | None:
     """Return the first two name tokens of a Zelle payment to or from someone, lowercased.
 
     None when the description is not such a payment, names fewer than two tokens, or is your own
-    money (your name, a tracked account, or a payment whose stored other side is the owner or the
+    money (your name, a tracked account, or a payment whose stored counterparty is the owner or the
     co-owner of the joint accounts).
     """
     direction = "to" if txn.amount_cents < 0 else "from"

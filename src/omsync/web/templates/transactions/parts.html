@@ -88,7 +88,7 @@
 </thead>
 {%- endmacro %}
 
-{# One transaction: its row, with its actions menu (which links to Other side and Mark as recurring) and split button, its
+{# One transaction: its row, with its actions menu (which links to Counterparty and Mark as recurring) and split button, its
    split lines, and the split editor when it is open. The tbody id is what out-of-band swaps and the
    controller look up. #}
 {% macro txn_group(row, show_account, categories, focus_field=none, oob=false, editor=none, key="", clear_key="", version="") -%}
@@ -105,7 +105,7 @@
   <td class="amount {{ 'outflow' if row.amount_cents < 0 else 'inflow' }}">{{ row.amount_cents|money }}</td>
   <td class="actions">
     {%- call menu("txn-menu-" ~ row.id, "Actions for " ~ row.payee) %}
-    {{ menu_item("Other side", icon_name="users", href="/transactions/" ~ row.id ~ "/detail") }}
+    {{ menu_item("Counterparty", icon_name="users", href="/transactions/" ~ row.id ~ "/detail") }}
     {{ menu_item("Mark as recurring", icon_name="repeat", href="/recurring?view=all&add_from=" ~ row.id) }}
     {%- endcall %}
     <button type="button" class="split-btn" data-action="click->register#openSplitFromButton" data-txn-id="{{ row.id }}" aria-label="Split {{ row.payee }}" title="Split"><span class="split-glyph" aria-hidden="true"></span></button></td>
@@ -137,7 +137,7 @@
     <form data-register-form="split" class="split-form">
       <input type="hidden" name="idempotency_key" value="{{ key }}">
       <input type="hidden" name="version" value="{{ version }}">
-      <p class="split-hint">Split {{ row.amount_cents|money }}. Lines may be positive or negative, but must add up to this amount.</p>
+      <p class="split-hint">Splits must add up to {{ row.amount_cents|money }}.</p>
       <div class="split-lines" data-split-lines>
         {%- for line in editor.lines %}
         {{ split_line(line, categories, loop.index0 == editor.focus_index) }}
@@ -264,7 +264,7 @@
 {%- else %}
 <section class="flex max-w-xl flex-col gap-2 rounded-xl bg-container p-8 shadow-border-xs">
   <div class="mb-2 text-primary">{{ mascot(96) }}</div>
-  <p class="text-sm text-secondary">No transactions yet. Run <code>omsync import --apply</code>.</p>
+  <p class="text-sm text-secondary">No transactions yet. Import statements in Settings.</p>
 </section>
 {%- endif %}
 {%- endmacro %}

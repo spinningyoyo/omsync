@@ -169,7 +169,7 @@
   <dialog id="delete-filter-dialog" class="m-auto bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="delete-filter-title" data-action="close->filter#restoreFocus">
     <div class="flex w-80 max-w-full flex-col gap-3 rounded-xl bg-container p-4 shadow-border-xs">
       <h2 id="delete-filter-title" class="font-medium text-primary">Delete “{{ state.saved.name }}”?</h2>
-      <p class="text-sm text-secondary">Undo is offered right after, while nothing else has changed.</p>
+      <p class="text-sm text-secondary">You can undo this.</p>
       <div class="flex items-center justify-end gap-2">
         {{ button("Cancel", variant="ghost", size="sm", attrs={"data-action": "filter#closeDialog"}) }}
         {{ button("Delete", variant="destructive", size="sm", attrs={"hx-post": "/transactions/saved-filters/" ~ state.saved.id ~ "/delete", "hx-include": "#register-state", "hx-vals": '{"idempotency_key": "' ~ state.form_key ~ '"}', "hx-target": "#toast-region", "hx-swap": "innerHTML"}) }}

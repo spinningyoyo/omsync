@@ -157,7 +157,7 @@ def test_review_and_manual_proposals_are_never_applied_automatically(
     assert "Linked 1 link automatically" in result.output
     client = make_client()
     sign_in(client)
-    assert [link.evidence["rule"] for link in links(client)] == ["1b"]
+    assert [link.evidence["rule"] for link in links(client)] == ["zelle_same_confirmation"]
     with database(client) as db:
         queues = sorted(d.queue.value for d in run(db, start=START, end=END).drafts)
     assert set(queues) == {"manual", "review"}
@@ -175,7 +175,7 @@ def test_review_and_manual_proposals_are_never_applied_automatically(
     assert (row.reason.value, row.rule, row.kind.value) == ("rejected", review.rule_key, "refund")
     assert row.evidence
     page = client.get("/reconcile", params=RANGE)
-    assert "Merchant: Cross-Account Return" in page.text[page.text.index("Rules (") :]
+    assert "Return at the same store on another account" in page.text[page.text.index("Rules (") :]
     undo = re.search(r"/batches/(\d+)/undo", rejected.text)
     assert undo
     assert client.post(f"/batches/{undo.group(1)}/undo").status_code == 200

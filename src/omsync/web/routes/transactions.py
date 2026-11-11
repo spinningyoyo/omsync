@@ -47,7 +47,7 @@ from omsync.web.routes.accounts import (
     numbers_undo_reply,
 )
 from omsync.web.routes.contacts import contacts_undo_reply
-from omsync.web.routes.other_side import transaction_undo_reply
+from omsync.web.routes.counterparty import transaction_undo_reply
 from omsync.web.routes.plan import plan_undo_reply
 from omsync.web.routes.reconcile import undo_reply as reconcile_undo_reply
 from omsync.web.routes.recurring import undo_reply as recurring_undo_reply
@@ -608,7 +608,7 @@ def _focus_for(batch: Batch) -> str:
     field_name = (batch.summary or {}).get("field")
     if field_name in EDITABLE_FIELDS:
         return str(field_name)
-    return "category"  # split changes land on the category, as in the prototype
+    return "category"  # split changes land on the category
 
 
 # Split editor

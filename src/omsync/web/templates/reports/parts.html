@@ -171,7 +171,7 @@
   {%- else %}
   <p class="text-sm text-secondary">No spending in this period.</p>
   {%- endif %}
-  <p class="text-sm text-secondary">Uncategorized <span class="tabular-nums text-primary">{{ view.uncategorized|sensitive }}</span>. These lines are not in income or expenses until you categorize them.</p>
+  <p class="text-sm text-secondary">Uncategorized <span class="tabular-nums text-primary">{{ view.uncategorized|sensitive }}</span>. Not counted until categorized.</p>
 </section>
 {%- endmacro %}
 
@@ -191,7 +191,7 @@
   {{ breakdown_card(view) }}
   {{ budget_card(view) }}
   {%- else %}
-  {{ empty_state("No transactions yet", "Run `omsync import --apply` to bring in statements. Reports appear once there are transactions.") }}
+  {{ empty_state("No transactions yet", "Import statements in Settings.") }}
   {%- endif %}
 </div>
 {%- endmacro %}

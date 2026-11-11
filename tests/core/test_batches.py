@@ -12,7 +12,6 @@ from omsync.core.batches import (
     Change,
     UndoConflict,
     apply,
-    current_revision,
     make_preview,
     snapshot,
     undo,
@@ -93,6 +92,12 @@ def add_transaction(session: Session, ledger: dict[str, int], payee: str = "Cafe
     return row_id
 
 
+def revision(session: Session) -> int:
+    """The data revision, read from its row. A missing row counts as 0."""
+    value = session.scalar(text("SELECT value FROM data_revision WHERE id = 1"))
+    return 0 if value is None else value
+
+
 def row_count(session: Session, model) -> int:
     return session.scalar(select(func.count()).select_from(model))
 
@@ -131,7 +136,7 @@ def test_a_change_that_breaks_a_constraint_rolls_back_the_whole_batch(session, l
     assert snapshot(session, "category", ledger["category"]) == category_before
     assert row_count(session, Batch) == 0
     assert row_count(session, BatchChange) == 0
-    assert current_revision(session) == 0
+    assert revision(session) == 0
 
 
 def test_undo_restores_the_exact_prior_state_for_insert_update_and_delete(session, ledger):
@@ -154,7 +159,7 @@ def test_undo_restores_the_exact_prior_state_for_insert_update_and_delete(sessio
 
     assert undone.state is BatchState.undone
     assert undone.undone_at is not None
-    assert current_revision(session) == 2
+    assert revision(session) == 2
     assert snapshot(session, "transaction", inserted_id) is None
     assert table_rows(session, "transaction") == transactions_before
     assert table_rows(session, "category") == categories_before

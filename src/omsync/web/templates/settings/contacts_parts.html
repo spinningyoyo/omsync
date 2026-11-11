@@ -27,7 +27,7 @@
 <div class="flex flex-col gap-3">
   <div>
     <h3 class="text-sm font-medium text-primary">{{ "Your names" if c.is_owner else "Names" }}</h3>
-    <p class="text-sm text-secondary">A name in parts. Banks print it in several forms, such as given and family name in either order, with or without the middle name or its initial, or with the given name as an initial, and each is recognized. Up to 10 names, 80 characters per part.</p>
+    <p class="text-sm text-secondary">As banks print it. Common variations are recognized.</p>
   </div>
   {%- if c.names %}
   <ul class="flex flex-col divide-y divide-subdued">
@@ -70,8 +70,8 @@
   <div>
     <h3 class="text-sm font-medium text-primary">{{ "Your accounts outside omsync" if c.is_owner else "Accounts" }}</h3>
     <p class="text-sm text-secondary">
-      {%- if c.is_owner %}An account you do not sync, such as a brokerage. A description that names its last four digits, or a pattern tied to it, records it as the other side.
-      {%- else %}An account of this contact. A description that names its last four digits, or a pattern tied to it, records it as the other side.{% endif %} Up to 20 accounts.</p>
+      {%- if c.is_owner %}Accounts you don't sync, like a brokerage. Found by last four digits or a pattern.
+      {%- else %}This contact's accounts. Found by last four digits or a pattern.{% endif %}</p>
   </div>
   {%- if c.accounts %}
   <ul class="flex flex-col divide-y divide-subdued">
@@ -122,7 +122,7 @@
 <div class="flex flex-col gap-3">
   <div>
     <h3 class="text-sm font-medium text-primary">Patterns</h3>
-    <p class="text-sm text-secondary">A case-insensitive regular expression for wordings no name covers, for payments you sent (out) or received (in). Up to 10 per side.</p>
+    <p class="text-sm text-secondary">For bank wording the name doesn't catch (regex, any case).</p>
   </div>
   {%- if c.loose_patterns %}
   <ul class="flex flex-col divide-y divide-subdued">
@@ -183,7 +183,7 @@
 <section id="you" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="you-title">
   <div>
     <h2 id="you-title" class="font-medium text-primary">Add your name so omsync recognizes transfers between your accounts</h2>
-    <p class="text-sm text-secondary">Your name as banks print it. Your accounts outside omsync can be added on your page after it.</p>
+    <p class="text-sm text-secondary">Your name as banks print it.</p>
   </div>
   <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/you/names">
     <input type="hidden" name="idempotency_key" value="{{ add_owner_name_key }}">
@@ -208,7 +208,7 @@
 <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="contacts-title">
   <div>
     <h2 id="contacts-title" class="font-medium text-primary">Contacts <span class="text-sm text-secondary">({{ rows|length }})</span></h2>
-    <p class="text-sm text-secondary">What is owed between you and each contact, from the loans and transfers recorded with them. The largest balances come first.</p>
+    <p class="text-sm text-secondary">What you and each contact owe, largest first.</p>
   </div>
   <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts">
     <input type="hidden" name="idempotency_key" value="{{ create_key }}">
@@ -237,7 +237,7 @@
     </label>
     {{ button("Add contact", variant="primary", type="submit") }}
   </form>
-  <p class="text-sm text-secondary">Leave the name parts empty to read the name as written: the first word is the given name and the last the family name.</p>
+  <p class="text-sm text-secondary">Leave blank to use the name as written.</p>
   {%- if rows %}
   <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Contacts">
     <table class="w-full border-separate border-spacing-0 text-sm text-primary">
@@ -269,7 +269,7 @@
     </table>
   </div>
   {%- else %}
-  <p class="text-sm text-secondary">No contacts yet. Add one, or set the other side of a transaction to a new contact.</p>
+  <p class="text-sm text-secondary">No contacts yet.</p>
   {%- endif %}
 </section>
 {%- endmacro %}
@@ -285,13 +285,13 @@
 
 {%- if d.is_owner %}
 <section class="rounded-xl bg-container p-5 shadow-border-xs">
-  <p class="text-sm text-secondary">No balance is kept with you: money between your own accounts stays yours.</p>
+  <p class="text-sm text-secondary">No balance with yourself.</p>
 </section>
 {%- elif d.balance %}
 {{ balance_section(d.balance) }}
 {%- else %}
 <section class="rounded-xl bg-container p-5 shadow-border-xs">
-  <p class="text-sm text-secondary">{{ d.editor.name }} is the co-owner of your joint accounts. No balance is kept between the owners.</p>
+  <p class="text-sm text-secondary">Co-owner of your joint accounts. No balance is kept.</p>
 </section>
 {%- endif %}
 
@@ -326,7 +326,7 @@
     </label>
     {{ button("Set role", variant="outline", type="submit") }}
   </form>
-  <p class="text-sm text-secondary">The co-owner's deposits into a joint account are a co-owner's contribution, and no balance is kept between the owners.</p>
+  <p class="text-sm text-secondary">Co-owner of your joint accounts. No balance is kept.</p>
   {%- endif %}
 </section>
 
@@ -352,9 +352,9 @@
     </label>
     {{ button("Merge", variant="outline", type="submit") }}
   </form>
-  <p class="text-sm text-secondary">The names, patterns, accounts, and transactions of {{ d.editor.name }} move to the contact you choose, and {{ d.editor.name }} is deleted.</p>
+  <p class="text-sm text-secondary">Everything moves to the contact you choose; {{ d.editor.name }} is deleted.</p>
   {%- endif %}
-  <form hx-post="/settings/contacts/{{ d.editor.id }}/delete" hx-confirm="Delete {{ d.editor.name }}? The other side recorded for its transactions is cleared.">
+  <form hx-post="/settings/contacts/{{ d.editor.id }}/delete" hx-confirm="Delete {{ d.editor.name }}? The counterparty recorded for its transactions is cleared.">
     <input type="hidden" name="idempotency_key" value="{{ d.delete_key }}">
     {{ button("Delete " ~ d.editor.name, variant="destructive", size="sm", type="submit") }}
   </form>
@@ -404,9 +404,9 @@
 
   {%- if b.lines %}
   <details>
-    <summary class="cursor-pointer text-sm font-medium text-primary">Every line ({{ b.lines|length }})</summary>
-    <p class="mt-2 text-sm text-secondary">Loans and transfers with this contact, oldest first. Money out and money in clear each other oldest first; the cleared amount is how much of a line was cleared that way.</p>
-    <div class="table-scroll mt-2 shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Lines">
+    <summary class="cursor-pointer text-sm font-medium text-primary">All transactions ({{ b.lines|length }})</summary>
+    <p class="mt-2 text-sm text-secondary">Loans and transfers, oldest first. Payments clear the oldest first.</p>
+    <div class="table-scroll mt-2 shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Transactions">
       <table class="w-full border-separate border-spacing-0 text-sm text-primary">
         <thead>
           <tr>
@@ -430,7 +430,7 @@
     </div>
   </details>
   {%- else %}
-  <p class="text-sm text-secondary">No loans or transfers are recorded with this contact yet. Set the other side of a transaction to this contact, and categorize it as a loan or a transfer, to record one.</p>
+  <p class="text-sm text-secondary">No loans or transfers yet.</p>
   {%- endif %}
 </section>
 {%- endmacro %}

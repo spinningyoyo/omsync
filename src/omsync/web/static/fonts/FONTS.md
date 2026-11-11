@@ -16,4 +16,4 @@ Notes:
 - Each file's `unicode-range` is copied from Google's CSS for the same build. Geist has no
   range, so it applies to every character it covers.
 - To upgrade a font, download the new file, replace it, update this table, and check that
-  the sample on `/dev/components` still renders.
+  text in both fonts still renders on a page of the app.

@@ -217,11 +217,11 @@
   </div>
   {%- if not body.series %}
   {%- if body.status == "dismissed" %}
-  {{ empty_state("Nothing dismissed.", "A possible bill you mark Not recurring waits here, and you can restore it.") }}
+  {{ empty_state("Nothing dismissed.", "Not recurring. Restore any time.") }}
   {%- elif body.status == "ended" %}
-  {{ empty_state("Nothing ended.", "A bill you end waits here with the day it stopped, and you can resume it.") }}
+  {{ empty_state("Nothing ended.", "Ended bills. Resume any time.") }}
   {%- else %}
-  {{ empty_state("No bills yet.", "Review a possible bill from the Overview, or add one with Add bill.") }}
+  {{ empty_state("No bills yet.", "Review one from the Overview, or add a bill.") }}
   {%- endif %}
   {%- elif body.status == "dismissed" %}
   {{ dismissed_table(body.series) }}
@@ -459,7 +459,7 @@
       <label class="flex items-center gap-2"><input type="radio" name="amount_mode" value="fixed"{% if f.mode == "fixed" %} checked{% endif %}> Fixed</label>
       <label class="flex items-center gap-2"><input type="radio" name="amount_mode" value="varies"{% if f.mode == "varies" %} checked{% endif %}> Varies</label>
     </div>
-    <p class="text-xs text-secondary">Fixed allows a small margin around the amount. Varies allows the spread the charges have shown.</p>
+    <p class="text-xs text-secondary">Fixed: same amount each time. Varies: amount changes.</p>
   </fieldset>
   <details class="flex flex-col gap-3 text-sm"{% if f.tolerance %} open{% endif %}>
     <summary class="w-fit cursor-pointer text-secondary hover:text-primary focus-ring rounded-sm">Advanced</summary>

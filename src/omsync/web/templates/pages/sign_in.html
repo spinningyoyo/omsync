@@ -29,7 +29,7 @@
     {%- endif %}
   </div>
   {% if demo_mode %}
-  {{ alert("Everything here is made up: Kunchorn Omsin's year of money. Nothing leaves this Mac. Anyone using this server sees the same demo, and it starts over when the server stops.", title="Demo mode", variant="info") }}
+  {{ alert("Made-up data. Resets when the server stops.", title="Demo mode", variant="info") }}
   <form method="post" action="/sign-in/demo" class="flex flex-col gap-4">
     <input type="hidden" name="next" value="{{ next }}">
     {{ button("Explore the demo", variant="primary", size="lg", full_width=true, type="submit") }}

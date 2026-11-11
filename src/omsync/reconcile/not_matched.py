@@ -1,12 +1,12 @@
-"""Transactions that should have a counterpart and do not, and the ones whose other side is known.
+"""Transactions that should have a counterpart and do not, and the ones whose counterparty is known.
 
 A transaction is expected to have a counterpart when its description reads as a transfer or a
 card payment, names another tracked account, or is a Zelle payment from someone that you filed as
 money that does not count. It is Not matched when no link covers all of it, no proposal of the run
-involves it, and its other side is unknown. Reconciled stays what links cover; nothing here changes
-it. A known other side takes a transaction out of Not matched without a link, and it is shown as
-Explained with the other side as the reason: a contact stored on the transaction (see
-omsync.ledger.other_side), or a payment that names a person you have no contact for.
+involves it, and its counterparty is unknown. Reconciled stays what links cover; nothing here
+changes it. A known counterparty takes a transaction out of Not matched without a link, and it is
+shown as Explained with the counterparty as the reason: a contact stored on the transaction (see
+omsync.ledger.counterparty), or a payment that names a person you have no contact for.
 
 assess reads the ledger and writes nothing.
 """
@@ -60,7 +60,7 @@ def assess(
 
     candidates are the transactions open when the run began, with the amount no link explains, and
     the partner contributions that joint settlements recorded. A candidate that a proposal involves
-    is neither. One that is expected to have a counterpart is Explained when its other side is
+    is neither. One that is expected to have a counterpart is Explained when its counterparty is
     known and Not matched when it is not. Rows come back in date order.
     """
     contacts = {contact.id: contact for contact in load_contacts(session)}
@@ -78,7 +78,7 @@ def assess(
                 Explained(
                     txn=txn,
                     by=ExplainedBy.contact,
-                    reason=_other_side_reason(txn, stored),
+                    reason=_counterparty_reason(txn, stored),
                     contact_id=stored.id,
                 )
             )
@@ -86,7 +86,7 @@ def assess(
         written = _named_person(txn, emit, list(contacts.values()))
         if written is not None:
             explained.append(
-                Explained(txn=txn, by=ExplainedBy.named, reason=f"Other side: {written}")
+                Explained(txn=txn, by=ExplainedBy.named, reason=f"Counterparty: {written}")
             )
             continue
         not_matched.append(NotMatched(txn=txn))
@@ -97,12 +97,12 @@ def assess(
     )
 
 
-def _other_side_reason(txn: TxnView, contact: ContactView) -> str:
+def _counterparty_reason(txn: TxnView, contact: ContactView) -> str:
     if contact.role is ContactRole.owner and txn.contact_account_id is not None:
         for account in contact.accounts:
             if account.id == txn.contact_account_id:
                 return f"Your account {account.label}"
-    return f"Other side: {contact.name}"
+    return f"Counterparty: {contact.name}"
 
 
 def _named_person(txn: TxnView, emit: Emitter, contacts: Sequence[ContactView]) -> str | None:
@@ -110,7 +110,7 @@ def _named_person(txn: TxnView, emit: Emitter, contacts: Sequence[ContactView]) 
 
     Only a payment from someone else qualifies: money that reads as your own (your names, a
     nickname of one of your accounts, a tracked account) is the case where a missing link is an
-    error, and a payment naming the owner or any contact is left to the stored other side.
+    error, and a payment naming the owner or any contact is left to the stored counterparty.
     """
     if txn.amount_cents < 0 or is_own_inflow(txn, emit):
         return None

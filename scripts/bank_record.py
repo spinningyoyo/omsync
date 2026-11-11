@@ -216,7 +216,7 @@ class Recorder:
 
 
 def main() -> None:
-    if len(sys.argv) not in (2, 3):
+    if len(sys.argv) not in (2, 3) or not sys.argv[1].startswith(("http://", "https://")):
         sys.exit(__doc__)
     os.umask(0o077)
     folder = checked_folder(sys.argv[2] if len(sys.argv) == 3 else None)

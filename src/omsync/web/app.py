@@ -1,6 +1,5 @@
 """FastAPI application factory."""
 
-import random
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -35,7 +34,6 @@ from omsync.web.errors import install_error_pages
 from omsync.web.filter_forms import FIELD_LABELS, field_choices, op_choices
 from omsync.web.icons import category_icon_name, icon_svg
 from omsync.web.institution_logos import institution_logo_url
-from omsync.web.prototype.register_store import RegisterStore, generate_transactions
 from omsync.web.register_replies import FRAGMENTS, RegisterError
 from omsync.web.register_state import PAGE_SIZES
 from omsync.web.routes import (
@@ -46,13 +44,11 @@ from omsync.web.routes import (
     categories_triage,
     contacts,
     contacts_detail,
-    dev,
+    counterparty,
     guides,
     home,
-    other_side,
     plan,
     plan_goals,
-    prototype_register,
     reconcile,
     recurring,
     register_bulk,
@@ -150,9 +146,6 @@ def create_app(
     templates.env.globals["demo_mode"] = demo is not None
     app.state.templates = templates
 
-    # Prototype data only: fake transactions, held in memory and never written to disk.
-    app.state.register_store = RegisterStore(generate_transactions(random.Random(42)))
-
     install_guard(app)
     install_error_pages(app)
     # Pages, styles and scripts are text, so compressing them makes the first visit on a slow link
@@ -188,15 +181,13 @@ def create_app(
     app.include_router(plan_goals.router)
     app.include_router(contacts.router)
     app.include_router(contacts_detail.router)
-    app.include_router(other_side.router)
+    app.include_router(counterparty.router)
     app.include_router(settings_router)
     app.include_router(settings_providers_router)
     app.include_router(settings_wizard_router)
     app.include_router(settings_rental_router)
     app.include_router(guides.router)
-    app.include_router(prototype_register.router)
     app.include_router(demo_router)
-    app.include_router(dev.router)
 
     @app.exception_handler(RegisterError)
     def register_error(request: Request, exc: RegisterError) -> HTMLResponse:

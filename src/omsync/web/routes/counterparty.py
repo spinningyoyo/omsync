@@ -1,8 +1,8 @@
-"""A transaction's detail page, and setting the other side of it or of one of its splits.
+"""A transaction's detail page, and setting the counterparty of it or of one of its splits.
 
-The detail page shows who is on the other side of the money, and whether omsync recognized it or
-you set it. Setting it is one batch (omsync.ledger.other_side), followed in the same request by the
-automatic step. A split with no other side of its own belongs to its transaction's contact.
+The detail page shows who the counterparty is, and whether omsync recognized it or
+you set it. Setting it is one batch (omsync.ledger.counterparty), followed in the same request by
+the automatic step. A split with no counterparty of its own belongs to its transaction's contact.
 """
 
 from typing import Annotated, Any
@@ -14,11 +14,11 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from omsync.core.batches import BatchError
-from omsync.ledger.other_side import set_other_side, set_split_other_side
+from omsync.ledger.counterparty import set_counterparty, set_split_counterparty
 from omsync.web.automatic import run_automatic, with_automatic
 from omsync.web.contacts_view import parse_choice
+from omsync.web.counterparty_view import TransactionDetail, load_detail
 from omsync.web.deps import get_db
-from omsync.web.other_side_view import TransactionDetail, load_detail
 from omsync.web.routes.shell import shell_context
 
 router = APIRouter()
@@ -43,7 +43,7 @@ def _back_href(request: Request) -> str:
     return urlunsplit(("", "", referer.path, referer.query, ""))
 
 
-@router.post("/transactions/{txn_id}/other-side", response_class=HTMLResponse)
+@router.post("/transactions/{txn_id}/counterparty", response_class=HTMLResponse)
 def set_route(
     request: Request,
     db: DbSession,
@@ -51,11 +51,11 @@ def set_route(
     target: Annotated[str, Form()] = "",
     idempotency_key: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """Set the other side to the contact (and account) in target, or clear it when empty."""
+    """Set the counterparty to the contact (and account) in target, or clear it when empty."""
     _detail_or_404(db, txn_id)
     try:
         contact_id, account_id = parse_choice(target) if target.strip() else (None, None)
-        batch = set_other_side(
+        batch = set_counterparty(
             db,
             transaction_ids=[txn_id],
             contact_id=contact_id,
@@ -67,7 +67,7 @@ def set_route(
     return _saved(request, db, txn_id, batch.id, _label(batch))
 
 
-@router.post("/transactions/{txn_id}/splits/{split_id}/other-side", response_class=HTMLResponse)
+@router.post("/transactions/{txn_id}/splits/{split_id}/counterparty", response_class=HTMLResponse)
 def set_split_route(
     request: Request,
     db: DbSession,
@@ -82,7 +82,7 @@ def set_split_route(
         raise HTTPException(status_code=404, detail="No such split")
     try:
         contact_id, account_id = parse_choice(target) if target.strip() else (None, None)
-        batch = set_split_other_side(
+        batch = set_split_counterparty(
             db,
             split_id,
             contact_id=contact_id,

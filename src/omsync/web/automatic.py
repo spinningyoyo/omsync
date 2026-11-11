@@ -1,7 +1,7 @@
-"""The automatic step after a write that can change who is on the other side.
+"""The automatic step after a write that can change who the counterparty is.
 
-A change to contacts, names, patterns, accounts, nicknames, or a transaction's other side is
-followed in the same request by the step that runs after an import: it identifies the other side
+A change to contacts, names, patterns, accounts, nicknames, or a transaction's counterparty is
+followed in the same request by the step that runs after an import: it identifies the counterparty
 again, categorizes, and records the links that need no review, each in a batch of its own (see
 omsync.reconcile.auto). The toast says what the change did and what the step did after it.
 """
@@ -25,7 +25,7 @@ def with_automatic(message: str, result: AutoReconcile) -> str:
         return f"{message}. The automatic step could not run: {result.problem}"
     parts = []
     if result.identified:
-        parts.append(f"identified the other side of {_count(result.identified, 'transaction')}")
+        parts.append(f"identified the counterparty of {_count(result.identified, 'transaction')}")
     if result.linked:
         parts.append(f"linked {_count(result.linked, 'pair')}")
     if result.categorized:

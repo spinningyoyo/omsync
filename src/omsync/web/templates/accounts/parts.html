@@ -56,14 +56,14 @@
     <span class="form-field__label">Last four digits</span>
     <input name="last4" value="{{ s.last4 or '' }}" minlength="4" maxlength="4" autocomplete="off" class="form-field__input">
   </label>
-  <p class="text-xs text-secondary">A label only. After a reissue, add the new card's digits under Numbers, then change the label here when you choose.</p>
+  <p class="text-xs text-secondary">Display name only.</p>
   <label class="flex items-center gap-2 text-sm text-primary">
     <input type="checkbox" name="joint" value="1"{% if s.joint %} checked{% endif %}> Joint account
   </label>
   <label class="flex items-center gap-2 text-sm text-primary">
     <input type="checkbox" name="closed" value="1"{% if s.closed %} checked{% endif %}> Closed
   </label>
-  <p class="text-xs text-secondary">A closed account moves to the Closed group at the end of the accounts panel. To reopen it, open it there, press Edit, and untick Closed.</p>
+  <p class="text-xs text-secondary">Closed accounts move to the bottom of the list.</p>
   <div id="account-edit-status" aria-live="polite"></div>
   <div class="flex items-center justify-end gap-2">
     {{ button("Cancel", variant="outline", attrs={"data-action": "dialog#close"}) }}
@@ -98,7 +98,7 @@
   {%- elif status.ok %}
   <p class="text-sm text-secondary">Nothing to check yet. Two statements are needed to compare balances.</p>
   {%- else %}
-  <p class="text-sm text-secondary">A statement balance does not match the transactions between it and the one before. Something is probably missing or duplicated.</p>
+  <p class="text-sm text-secondary">Balances don't add up: a transaction may be missing or duplicated.</p>
   <ul class="flex flex-col gap-3">
     {%- for issue in issues %}
     <li class="flex flex-col gap-2 rounded-lg border border-divider p-3">
@@ -125,7 +125,7 @@
 <section id="account-numbers" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="numbers-title" hx-target="#account-numbers" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
   <div>
     <h2 id="numbers-title" class="text-sm font-medium text-primary">Numbers</h2>
-    <p class="text-sm text-secondary">The numbers the bank has used for this account. Sync looks for the current one: the newest the statements show, or a new card's digits until its first statement arrives.</p>
+    <p class="text-sm text-secondary">Numbers the bank has used for this account. Sync uses the newest.</p>
   </div>
   {%- if error %}
   <p class="text-sm text-destructive" role="alert">{{ error }}</p>
@@ -140,7 +140,7 @@
     {%- endfor %}
   </ul>
   {%- else %}
-  <p class="text-sm text-secondary">No numbers yet. Sync finds the account by its last four digits.</p>
+  <p class="text-sm text-secondary">No numbers yet.</p>
   {%- endif %}
   <form class="flex flex-wrap items-end gap-3" hx-post="/accounts/{{ account_id }}/numbers">
     <input type="hidden" name="idempotency_key" value="{{ add_key }}">
@@ -160,7 +160,7 @@
 <section id="account-nicknames" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="nicknames-title" hx-target="#account-nicknames" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
   <div>
     <h2 id="nicknames-title" class="text-sm font-medium text-primary">Nicknames</h2>
-    <p class="text-sm text-secondary">The name a payment app shows for this account. A transfer that carries a nickname is recognized as moving between your own accounts. Up to 10.</p>
+    <p class="text-sm text-secondary">How payment apps name this account, so transfers to it are recognized.</p>
   </div>
   {%- if error %}
   <p class="text-sm text-destructive" role="alert">{{ error }}</p>
@@ -195,7 +195,7 @@
 {% macro sync_card(connector, syncs) -%}
 <section class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="sync-title">
   <h2 id="sync-title" class="text-sm font-medium text-primary">Sync</h2>
-  <p class="text-sm text-secondary">Connector: <span class="text-primary">{{ connector }}</span></p>
+  <p class="text-sm text-secondary">Provider: <span class="text-primary">{{ connector }}</span></p>
   {%- if syncs %}
   <ul class="flex flex-col">
     {%- for sync in syncs %}

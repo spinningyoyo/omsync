@@ -1,7 +1,7 @@
 """Automatic reconciliation after an import: apply the proposals that need no review.
 
-reconcile_after_import identifies the other side of every transaction (see
-omsync.ledger.other_side), categorizes with the keywords, runs the engine over the whole history,
+reconcile_after_import identifies the counterparty of every transaction (see
+omsync.ledger.counterparty), categorizes with the keywords, runs the engine over the whole history,
 and records every proposal in
 the automatic queue as one batch through decisions.approve_drafts, so stale checks, idempotency,
 and undo are the ones every approval has. The whole history is read because a transfer's two sides
@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from omsync.core.batch_models import Batch, BatchState
 from omsync.core.batches import BatchError, Preview, undo_all
 from omsync.ledger.categorize import InvalidKeyword, apply_categorize, plan_categorize
-from omsync.ledger.other_side import apply_other_side, plan_other_side
+from omsync.ledger.counterparty import apply_counterparty, plan_counterparty
 from omsync.ledger.transactions import Transaction
 from omsync.reconcile.decisions import approve_drafts
 from omsync.reconcile.engine import run
@@ -34,7 +34,7 @@ TRIGGER_KEY = "triggered_by"
 
 @dataclass(frozen=True)
 class AutoReconcile:
-    """What the automatic step did: the transactions whose other side was identified or changed
+    """What the automatic step did: the transactions whose counterparty was identified or changed
     first, the ones the keywords categorized next, and the links it recorded with the batch that
     holds them.
 
@@ -56,7 +56,7 @@ def reconcile_after_import(session: Session, *, triggered_by: int | None = None)
     writes then names it in its summary, so undoing that change can undo them first (see
     undo_with_automatic).
 
-    The other side of each transaction is identified first, because the round-trip rules skip
+    The counterparty of each transaction is identified first, because the round-trip rules skip
     payments to the owner and a rule with the person condition reads it. Recognition reads no
     category, so it does not need categorize to go first. Keywords categorize next, because the
     merchant-return rules skip transfers, loans, and investments by category, so rows still unset
@@ -72,12 +72,12 @@ def reconcile_after_import(session: Session, *, triggered_by: int | None = None)
         ).one()
         if first is None or last is None:
             return AutoReconcile()
-        identifying = plan_other_side(session)
+        identifying = plan_counterparty(session)
         if identifying.preview is not None:
-            apply_other_side(
+            apply_counterparty(
                 session,
                 replace(identifying, preview=_tagged(identifying.preview, triggered_by)),
-                idempotency_key=f"other-side-before-reconcile:{uuid4()}",
+                idempotency_key=f"counterparty-before-reconcile:{uuid4()}",
             )
             identified = identifying.changed
         categorizing = plan_categorize(session)

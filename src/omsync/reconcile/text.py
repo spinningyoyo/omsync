@@ -25,8 +25,9 @@ _POS_PREFIXES = re.compile(
 _MULTI_WS = re.compile(r"\s{2,}")
 
 
-def normalize_payee(text: str) -> str:
-    """Normalize a payee string for recurring-detection matching.
+def comparable_payee(text: str) -> str:
+    """Reduce a payee string to a loose form for comparing merchants. Used by recurring-detection
+    grouping and by merchant-brand matching. The result is for comparison only, not for storage.
 
     - Lowercase
     - Strip common business suffixes: INC, LLC, LTD, CORP, CO, LP
@@ -53,7 +54,7 @@ def extract_merchant_brand(payee: str) -> str | None:
     - HOMEDEPOT.COM vs THE HOME DEPOT #1074
     - PAYPAL *REI vs REI.COM
     """
-    lower = normalize_payee(payee or "")
+    lower = comparable_payee(payee or "")
     if not lower:
         return None
 

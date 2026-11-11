@@ -6,7 +6,6 @@ import socket
 import subprocess
 import time
 import urllib.parse
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -16,7 +15,6 @@ from selenium.common.exceptions import (
 )
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -280,19 +278,6 @@ class BrowserSession:
         element.click()
         self.wait_for_ajax_load()
         return element
-
-    def get_element_items(
-        self,
-        webelement: Any,
-        by_value: tuple[str, str] = (By.TAG_NAME, "option"),
-        func_reveal_items: Callable[[Any], object] | None = None,
-    ) -> tuple[Any, list[Any]]:
-        """Return a container element and its child items, such as the options of a select."""
-        element = self.wait().until(EC.element_to_be_clickable(webelement))
-        if func_reveal_items:
-            func_reveal_items(element)
-        items = element.find_elements(*by_value)
-        return element, items
 
     def page_has(self, css: str) -> bool:
         """Whether the page has an element now. A script, because a find waits the implicit wait

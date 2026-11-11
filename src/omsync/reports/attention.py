@@ -62,23 +62,12 @@ class Attention:
     accounts: tuple[AccountIssue, ...]
     providers: tuple[ProviderIssue, ...]
 
-    @property
-    def is_clear(self) -> bool:
-        return not (
-            self.open_reviews
-            or self.open_reconciliation
-            or self.uncategorized
-            or self.recurring_attention
-            or self.accounts
-            or self.providers
-        )
-
 
 def attention(session: Session, *, today: date, proposal_range: tuple[date, date]) -> Attention:
     """The counts as of `today`. Reconciliation items are not stored, so they are what a run over
     `proposal_range` finds waiting for a decision: review and manual proposals plus the transactions
     that are not matched, as the Reconcile page shows for that range. Automatic proposals are
-    applied after each import, and transactions whose other side is known need nothing. Recurring
+    applied after each import, and transactions whose counterparty is known need nothing. Recurring
     items are the Needs attention list on the Recurring Overview: this calendar month's missed
     occurrences and open questions."""
     return Attention(

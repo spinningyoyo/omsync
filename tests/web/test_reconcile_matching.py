@@ -133,7 +133,7 @@ def test_shared_ids_keep_resolving_after_part_of_them_is_approved(
 
     assert response.status_code == 200
     assert summarize(drafts_of(app), ids) == {
-        ("1c", "auto_approve", f"out{n}", f"in{n}") for n in (3, 4)
+        ("transfer_same_transaction_id", "auto_approve", f"out{n}", f"in{n}") for n in (3, 4)
     }
 
 

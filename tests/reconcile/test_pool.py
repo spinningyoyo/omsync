@@ -3,7 +3,10 @@
 from datetime import date
 
 from omsync.reconcile.rules.base import Emitter
-from omsync.reconcile.rules.transfers import rule_1a, rule_3
+from omsync.reconcile.rules.transfers import (
+    rule_transfer_same_amount,
+    rule_transfer_same_confirmation,
+)
 
 ON = date(2026, 3, 2)
 CONF = "ab12cd34ef"
@@ -16,8 +19,8 @@ def test_a_transaction_claimed_by_an_earlier_rule_is_not_reused_by_a_later_one(a
     pool = pool_for()
 
     emit = Emitter()
-    rule_1a(pool, emit)
-    rule_3(pool, emit)
+    rule_transfer_same_confirmation(pool, emit)
+    rule_transfer_same_amount(pool, emit)
 
-    assert [draft.rule_key for draft in emit.drafts] == ["1a"]
+    assert [draft.rule_key for draft in emit.drafts] == ["transfer_same_confirmation"]
     assert [txn.id for txn in pool] == [generic]

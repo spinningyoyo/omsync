@@ -56,7 +56,7 @@ from omsync.ledger.models import (
     Contact,
     ContactRole,
     Keyword,
-    RuleOtherSide,
+    RuleCounterparty,
     SavedFilter,
     Transaction,
 )
@@ -142,7 +142,7 @@ class RuleRow:
     paid_by: tuple[str, ...]  # PaymentMethod values, in the order PaymentMethod lists them
     below_cents: int | None
     at_least_cents: int | None
-    other_side: str | None  # the RuleOtherSide value
+    counterparty: str | None  # the RuleCounterparty value
     contact_id: int | None
     contact_name: str | None
     account_id: int | None
@@ -157,14 +157,14 @@ class RuleRow:
 class RuleDraft:
     """A rule as it would be stored: its conditions and the category it sets. Nothing is stored
     until add_rule or update_rule, and preview_rule checks a draft the same way and writes nothing.
-    other_side is a RuleOtherSide, or its value, and paid_by holds PaymentMethods or their
+    counterparty is a RuleCounterparty, or its value, and paid_by holds PaymentMethods or their
     values."""
 
     to_category_id: int
     paid_by: Iterable[PaymentMethod | str] = ()
     below_cents: int | None = None
     at_least_cents: int | None = None
-    other_side: RuleOtherSide | str | None = None
+    counterparty: RuleCounterparty | str | None = None
     contact_id: int | None = None
     account_id: int | None = None
 
@@ -308,7 +308,7 @@ _CONDITIONS = (
     "paid_by",
     "below_cents",
     "at_least_cents",
-    "other_side",
+    "counterparty",
     "contact_id",
     "account_id",
 )
@@ -352,7 +352,7 @@ def transaction_rule(session: Session, transaction_id: int) -> RuleRow | None:
 
 
 def contact_choices(session: Session) -> list[tuple[int, str]]:
-    """(id, name) for the contacts a rule may name as the other side: everyone but you, by name."""
+    """(id, name) for the contacts a rule may name as the counterparty: everyone but you."""
     rows = session.execute(
         select(Contact.id, Contact.name).where(Contact.role != ContactRole.owner)
     ).all()
@@ -385,7 +385,7 @@ def _row(rule: CategoryRule, names: _Names) -> RuleRow:
         paid_by=tuple(m.value for m in PaymentMethod if m in parse_paid_by(fields["paid_by"])),
         below_cents=fields["below_cents"],
         at_least_cents=fields["at_least_cents"],
-        other_side=fields["other_side"],
+        counterparty=fields["counterparty"],
         contact_id=fields["contact_id"],
         contact_name=names.contacts.get(fields["contact_id"]),
         account_id=fields["account_id"],
@@ -398,13 +398,13 @@ def _row(rule: CategoryRule, names: _Names) -> RuleRow:
 
 
 def _fields_of(rule: CategoryRule) -> dict[str, Any]:
-    """A stored rule's values, named as a draft names them, with the other side as its value."""
-    other = None if rule.other_side is None else RuleOtherSide(rule.other_side).value
+    """A stored rule's values, named as a draft names them, with the counterparty as its value."""
+    other = None if rule.counterparty is None else RuleCounterparty(rule.counterparty).value
     return {
         "paid_by": rule.paid_by,
         "below_cents": rule.below_cents,
         "at_least_cents": rule.at_least_cents,
-        "other_side": other,
+        "counterparty": other,
         "contact_id": rule.contact_id,
         "account_id": rule.account_id,
         "to_category_id": rule.to_category_id,
@@ -417,7 +417,7 @@ def _sentence(
     paid_by: str | None,
     below_cents: int | None,
     at_least_cents: int | None,
-    other_side: str | None,
+    counterparty: str | None,
     contact_id: int | None,
     account_id: int | None,
     to_category_id: int,
@@ -428,11 +428,11 @@ def _sentence(
     amount = _amount_text(below_cents, at_least_cents)
     if amount is not None:
         parts.append(amount)
-    if other_side == RuleOtherSide.person:
+    if counterparty == RuleCounterparty.person:
         parts.append("with a person")
-    elif other_side == RuleOtherSide.contact:
+    elif counterparty == RuleCounterparty.contact:
         parts.append(f"with {names.contacts[contact_id]}")
-    elif other_side == RuleOtherSide.owner_account:
+    elif counterparty == RuleCounterparty.owner_account:
         parts.append("with one of my accounts")
     if account_id is not None:
         parts.append(f"in {names.accounts[account_id]}")
@@ -1099,14 +1099,14 @@ def preview_keyword(
 
 
 def _active(rule_id: int, position: int, fields: Mapping[str, Any]) -> ActiveRule:
-    other = fields["other_side"]
+    other = fields["counterparty"]
     return ActiveRule(
         id=rule_id,
         position=position,
         paid_by=parse_paid_by(fields["paid_by"]),
         below_cents=fields["below_cents"],
         at_least_cents=fields["at_least_cents"],
-        other_side=None if other is None else RuleOtherSide(other),
+        counterparty=None if other is None else RuleCounterparty(other),
         contact_id=fields["contact_id"],
         account_id=fields["account_id"],
         to_category_id=fields["to_category_id"],
@@ -1175,7 +1175,7 @@ def _check_rule(session: Session, draft: RuleDraft) -> dict[str, Any]:
         "paid_by": store_paid_by(methods),
         "below_cents": draft.below_cents,
         "at_least_cents": draft.at_least_cents,
-        "other_side": None if draft.other_side is None else _other_side(draft.other_side),
+        "counterparty": None if draft.counterparty is None else _counterparty(draft.counterparty),
         "contact_id": draft.contact_id,
         "account_id": draft.account_id,
         "to_category_id": draft.to_category_id,
@@ -1188,7 +1188,7 @@ def _check_rule(session: Session, draft: RuleDraft) -> dict[str, Any]:
     if draft.below_cents is not None and draft.at_least_cents is not None:
         if draft.below_cents <= draft.at_least_cents:
             raise ValueError("The limit must be more than the minimum.")
-    if values["other_side"] == RuleOtherSide.contact:
+    if values["counterparty"] == RuleCounterparty.contact:
         if draft.contact_id is None or session.get(Contact, draft.contact_id) is None:
             raise ValueError("Pick the contact.")
     elif draft.contact_id is not None:
@@ -1207,11 +1207,11 @@ def _methods(values: Iterable[PaymentMethod | str]) -> frozenset[PaymentMethod]:
         raise ValueError("Pick how it was paid from the list.") from None
 
 
-def _other_side(value: RuleOtherSide | str) -> str:
+def _counterparty(value: RuleCounterparty | str) -> str:
     try:
-        return RuleOtherSide(value).value
+        return RuleCounterparty(value).value
     except ValueError:
-        raise ValueError("Pick who is on the other side from the list.") from None
+        raise ValueError("Pick the counterparty from the list.") from None
 
 
 def _check_money(cents: int, message: str) -> None:

@@ -1,76 +1,72 @@
-# Changes
+# Changes, undo, and backups
 
-## Purpose and design philosophy
+## Purpose
 
-A financial change must be explicit, atomic, repeatable, and reversible without destroying
-later work. The unit of change is a **batch**: all database changes made by one operation.
-The unit of review is a **preview**: what that operation would change against current data.
+Each change to your money is one batch that you can undo. A backup keeps the database and the
+statement and receipt files together, so a restore brings back the evidence too.
 
-Undo is a guarded reversal, not a rewind of the whole application.
+## Context
 
-## Behavior
-
-- Computing a preview writes nothing: no ledger rows, batch rows, revision rows, or files.
-- A preview identifies both the data it was computed against and the exact proposed
-  operation. Equal counts are not proof that two previews describe the same changes.
-- Apply refuses a stale preview and writes nothing. The user must see a fresh preview
-  rather than unknowingly approve a different operation.
-- Apply commits all changes in a batch together. A failure rolls the batch back.
-- An idempotency key identifies an application attempt. Repeating an applied key returns
-  its original batch instead of applying twice. An undone key cannot be reused to apply
-  a different operation.
-- A batch records before and after values. Undo restores those values only while the
-  affected data still matches the applied state and no later batch depends on it.
-- Undo refusal identifies the conflict and changes nothing. Changes outside batches also
-  count as conflicts; a matching batch number is not sufficient proof that undo is safe.
+```mermaid
+flowchart LR
+    Edits[Edits, imports, categorize, links] --> Batch[(Batches)]
+    Batch --> Undo[Undo]
+    Data[(Database, statements, receipts)] --> Archive[Backup archive]
+    Archive --> Restore[Restore]
+```
 
 ## Flow
 
+### Apply and undo
+
 ```mermaid
 flowchart TD
-    Intent[Choose an operation] --> Preview[Compute a read-only preview]
-    Preview --> Review[Review the proposed changes]
-    Review --> Check{Still the same operation and data?}
+    Choose[Choose an operation] --> Preview[Preview: writes nothing]
+    Preview --> Check{Data and operation unchanged?}
     Check -->|No| Preview
-    Check -->|Yes| Apply[Commit one atomic batch]
-    Apply --> UndoRequest[Request undo]
-    UndoRequest --> Safe{Applied state intact and no dependencies?}
-    Safe -->|Yes| Undo[Restore before values]
-    Safe -->|No| Refuse[Explain conflict without writing]
+    Check -->|Yes| Apply[Apply as one batch]
+    Apply --> UndoRequest[Undo]
+    UndoRequest --> Safe{Nothing changed it since, and nothing depends on it?}
+    Safe -->|Yes| Restore[Put back the old values]
+    Safe -->|No| Refuse[Refuse and say why]
 ```
 
-An inline edit can preview and apply in one submission, but it still validates the version
-shown when the editor opened. Bulk edits, imports, categorization, and receipts expose
-explicit previews. Approving a reconciliation proposal revalidates the proposal against
-current evidence. The automatic step after an import or sync applies the proposals that need no
-review as one such approval, computed from the data just imported and refused as stale if it changes
-first; it is a separate batch that undo reverses without touching the import. Undoing an import
-whose transactions that batch linked is refused until the automatic batch is undone.
+An automatic batch that follows your change undoes with it, newest first. If one undo fails, none
+applies.
 
-When the automatic step follows a change you made in the app, each of its batches names that change
-in its summary. Undoing the change then undoes those batches first, newest first, and the change
-last, in one transaction: each is checked as any undo is, and if any is refused, none is undone.
+### Restore
 
-## Boundaries
+```mermaid
+flowchart TD
+    Archive[Choose an archive] --> Verify[Check the manifest and checksums]
+    Verify --> Confirm{You confirm?}
+    Confirm -->|No| Describe[Say what it would replace]
+    Confirm -->|Yes| Save[Back up the current data first]
+    Save --> Replace[Replace database, statements, and receipts together]
+    Replace --> Upgrade[Upgrade the database schema]
+```
 
-Ledger changes and domain configuration use batches. Ordinary presentation preferences
-such as theme, dashboard layout, and joint-share selection save directly. Operational sync
-logs also save directly: they describe an external attempt, not an undoable financial
-choice. Individual feature specs identify settings that are preferences rather than batches.
+## Design decisions
 
-File downloads, external sign-ins, and vault operations are outside undo. Undoing an import
-removes its database effects, not its retained statement file. A multi-file import is a
-sequence of atomic batches, one per file, not a single transaction over every file.
+- **Undo is a guarded reversal, not a rewind.** It refuses when a later change depends on the
+  batch. Refusal is better than lost work.
+- **A stale preview never applies.** You approve what you saw, or you see it again.
+- **A retry never applies twice.** A repeated request returns the first batch.
+- **Preferences are not batches.** Theme, layout, and joint share save directly.
+- **A backup includes the evidence.** A database alone cannot explain itself without its
+  statement files.
+- **Credentials stay out of backups.** Vault, keychain, and browser sessions are not archived.
+- **Archives are not encrypted.** Keep them on protected storage. Restore only your own archives.
+- **A restore replaces everything.** It does not merge. It backs up the current data first.
+- **A restore keeps the machine config.** An old archive cannot move the data directory.
+- **The server and a restore never run together.** One lock covers sync, backup, and restore.
 
-## Design rationale
+## Terms
 
-Idempotency protects against retries and double submissions. Stale checks protect against
-reviewing one state and applying another. Neither replaces the other.
+- **Batch:** all changes from one operation.
+- **Preview:** what an operation would change, computed without a write.
+- **Archive:** a `.tar.gz` file with the database, statements, receipts, and a checksum manifest.
+- **Database copy:** an automatic copy before each schema upgrade. omsync keeps the newest ten.
+- **Snapshot:** a migrated copy in a new data directory, for tests. It is not a backup.
 
-Before-and-after checks protect user work even when a write bypassed the normal batch
-mechanism. Dependency checks protect relationships a later operation established. Refusing
-an unsafe undo is preferable to silently erasing an edit or leaving a dangling relationship.
-
-Financial data is durable; presentation preferences are convenience. Treating every theme
-change as a financial batch would create noise without improving the user's ability to
-recover their work.
+See [back up and restore](../how-to/back-up-and-restore.md) for the steps.

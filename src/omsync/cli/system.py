@@ -145,7 +145,7 @@ def _run_automatic_step(settings: Settings) -> None:
         log.warning("The automatic step could not run at startup: %s", result.problem)
     elif result.categorized or result.identified or result.linked:
         typer.echo(
-            f"Automatic step: categorized {result.categorized}, identified the other side of "
+            f"Automatic step: categorized {result.categorized}, identified the counterparty of "
             f"{result.identified}, linked {result.linked}."
         )
 

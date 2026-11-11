@@ -9,7 +9,7 @@ from omsync.ledger.categories import (
     CategoryRule,
     CategoryType,
     Keyword,
-    RuleOtherSide,
+    RuleCounterparty,
     SavedFilter,
 )
 from omsync.ledger.contacts import (
@@ -96,7 +96,7 @@ __all__ = [
     "RejectedProposal",
     "RejectionReason",
     "ReviewStatus",
-    "RuleOtherSide",
+    "RuleCounterparty",
     "SavedFilter",
     "SeriesStatus",
     "Split",

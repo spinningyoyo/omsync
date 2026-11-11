@@ -52,7 +52,7 @@ vault_idle_minutes = 15
 ```
 
 `OMSYNC_CONFIG` selects a different config file. `OMSYNC_*` settings override its values.
-`omsync doctor` reports missing setup. See [settings](docs/architecture/settings.md) for
+`omsync doctor` reports missing setup. See [interface and settings](docs/architecture/interface.md) for
 configuration ownership and [access](docs/architecture/access.md) for credential handling.
 
 ## Documentation
@@ -98,6 +98,6 @@ sh scripts/dev-nursery.sh serve
 
 ## License
 
-AGPL-3.0. omsync includes code adapted from Sure (AGPL-3.0) and Actual Budget (MIT).
+AGPL-3.0. omsync includes code adapted from Sure (AGPL-3.0).
 Required source notices remain with adapted files; vendored asset notices remain beside
 the assets. See [LICENSE](LICENSE).

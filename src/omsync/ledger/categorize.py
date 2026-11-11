@@ -19,6 +19,7 @@ from omsync.core.batches import (
     apply,
     make_preview,
 )
+from omsync.ledger.counterparty import PersonCounterparties
 from omsync.ledger.models import (
     Category,
     CategoryOrigin,
@@ -26,10 +27,9 @@ from omsync.ledger.models import (
     Contact,
     ContactRole,
     Keyword,
-    RuleOtherSide,
+    RuleCounterparty,
     Transaction,
 )
-from omsync.ledger.other_side import PersonSides
 from omsync.ledger.payment_methods import PaymentMethod, parse_paid_by, payment_method
 from omsync.ledger.statements import SourceText, source_texts
 from omsync.ledger.transactions import may_replace
@@ -94,7 +94,7 @@ class ActiveRule:
     paid_by: frozenset[PaymentMethod]
     below_cents: int | None
     at_least_cents: int | None
-    other_side: RuleOtherSide | None
+    counterparty: RuleCounterparty | None
     contact_id: int | None
     account_id: int | None
     to_category_id: int
@@ -146,7 +146,7 @@ def load_keywords(session: Session) -> KeywordSet:
             CategoryRule.paid_by,
             CategoryRule.below_cents,
             CategoryRule.at_least_cents,
-            CategoryRule.other_side,
+            CategoryRule.counterparty,
             CategoryRule.contact_id,
             CategoryRule.account_id,
             CategoryRule.to_category_id,
@@ -168,7 +168,7 @@ def _active(row: Any) -> ActiveRule:
         paid_by=parse_paid_by(row.paid_by),
         below_cents=row.below_cents,
         at_least_cents=row.at_least_cents,
-        other_side=None if row.other_side is None else RuleOtherSide(row.other_side),
+        counterparty=None if row.counterparty is None else RuleCounterparty(row.counterparty),
         contact_id=row.contact_id,
         account_id=row.account_id,
         to_category_id=row.to_category_id,
@@ -235,7 +235,7 @@ def pick_rule(
     bought beats how it was paid. method is how the bank's wording says the money moved, or None
     when it does not say. amount_cents is None when no amount is known, and then a rule with an
     amount condition does not hold.
-    contact_id is the other side stored on the transaction, owner_id the contact that is you, and
+    contact_id is the counterparty stored on the transaction, owner_id the contact that is you, and
     with_person whether the payment is with a person. The caller applies the one rule it returns;
     rules never chain.
     """
@@ -276,11 +276,11 @@ def _holds(
             return False
         if rule.at_least_cents is not None and not abs(amount_cents) >= rule.at_least_cents:
             return False
-    if rule.other_side is RuleOtherSide.person and not with_person:
+    if rule.counterparty is RuleCounterparty.person and not with_person:
         return False
-    if rule.other_side is RuleOtherSide.contact and contact_id != rule.contact_id:
+    if rule.counterparty is RuleCounterparty.contact and contact_id != rule.contact_id:
         return False
-    if rule.other_side is RuleOtherSide.owner_account and (
+    if rule.counterparty is RuleCounterparty.owner_account and (
         owner_id is None or contact_id != owner_id
     ):
         return False
@@ -307,7 +307,7 @@ def explain(
 ) -> Explanation:
     """Explain a payee's classification from the payee alone. Without an amount, rules with an
     amount condition do not hold. A payee alone does not name a contact or an account, so rules that
-    name one, or that name you as the other side, do not hold either. A rule limited to a person
+    name one, or that name you as the counterparty, do not hold either. A rule limited to a person
     holds only when with_person says the payment is with a person."""
     keywords = load_keywords(session)
     matches = [_as_match(keyword) for keyword in _hits(keywords, (PAYEE_LIST,), payee_text)]
@@ -395,16 +395,16 @@ def plan_categorize(
     category is never changed. rules, in position order, replaces the stored rules, which is how a
     draft is previewed; None reads the stored rules. keywords, likewise, replaces the stored
     keywords and rules (see with_keyword); rules, when also given, replaces its rules. A rule that
-    reads the other side or the account reads it as stored on each transaction, so recognize the
-    other side first.
+    reads the counterparty or the account reads it as stored on each transaction, so recognize the
+    counterparty first.
     """
     keywords = keywords if keywords is not None else load_keywords(session)
     if rules is not None:
         keywords = KeywordSet(keywords.lists, tuple(rules))
     # Who a payment is with is read only when a person rule could use it.
     people = (
-        PersonSides(session)
-        if any(rule.other_side is RuleOtherSide.person for rule in keywords.rules)
+        PersonCounterparties(session)
+        if any(rule.counterparty is RuleCounterparty.person for rule in keywords.rules)
         else None
     )
     owner_id = session.scalar(select(Contact.id).where(Contact.role == ContactRole.owner))
@@ -499,7 +499,7 @@ def plan_categorize(
 def rule_for_transaction(session: Session, transaction_id: int) -> ActiveRule | None:
     """The enabled rule that holds for one transaction now, read as categorize reads it, or None.
 
-    The other side is read as it is stored, as categorize on demand reads it. Writes nothing.
+    The counterparty is read as it is stored, as categorize on demand reads it. Writes nothing.
     """
     row = session.execute(
         select(
@@ -514,8 +514,8 @@ def rule_for_transaction(session: Session, transaction_id: int) -> ActiveRule | 
         return None
     keywords = load_keywords(session)
     people = (
-        PersonSides(session)
-        if any(rule.other_side is RuleOtherSide.person for rule in keywords.rules)
+        PersonCounterparties(session)
+        if any(rule.counterparty is RuleCounterparty.person for rule in keywords.rules)
         else None
     )
     owner_id = session.scalar(select(Contact.id).where(Contact.role == ContactRole.owner))
@@ -525,7 +525,7 @@ def rule_for_transaction(session: Session, transaction_id: int) -> ActiveRule | 
 
 def _classify(
     keywords: KeywordSet,
-    people: PersonSides | None,
+    people: PersonCounterparties | None,
     owner_id: int | None,
     row: Any,
     source: SourceText | None,

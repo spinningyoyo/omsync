@@ -39,8 +39,8 @@ class TxnView:
     comes from the statement row, never from Transaction.memo, which you and omsync edit.
     payee_raw is the transaction's raw payee, which the payee and the receipt checks read.
 
-    contact_id, contact_account_id, and contact_role are the other side stored on the transaction
-    (see omsync.ledger.other_side), and the contact's role.
+    contact_id, contact_account_id, and contact_role are the counterparty stored on the transaction
+    (see omsync.ledger.counterparty), and the contact's role.
     """
 
     id: int
@@ -62,7 +62,7 @@ class TxnView:
 
     @property
     def with_household(self) -> bool:
-        """True when the stored other side is the owner or the co-owner of the joint accounts."""
+        """True when the stored counterparty is the owner or the co-owner of the joint accounts."""
         return self.contact_role in (ContactRole.owner, ContactRole.co_owner)
 
 
@@ -113,8 +113,8 @@ class Draft:
 class ExplainedBy(StrEnum):
     """Why a transaction that is expected to have a counterpart needs no decision from you.
 
-    contact: its other side is a stored contact, recognized or chosen.
-    named: it is a payment naming a person you have no contact for; the name is the other side.
+    contact: its counterparty is a stored contact, recognized or chosen.
+    named: it is a payment naming a person you have no contact for; the name is the counterparty.
     Neither is a link, so neither reconciles the transaction.
     """
 
@@ -125,7 +125,7 @@ class ExplainedBy(StrEnum):
 @dataclass(frozen=True)
 class NotMatched:
     """A transaction expected to have a counterpart that no link or proposal accounts for, and
-    whose other side is unknown. txn carries the amount no link explains yet."""
+    whose counterparty is unknown. txn carries the amount no link explains yet."""
 
     txn: TxnView
 

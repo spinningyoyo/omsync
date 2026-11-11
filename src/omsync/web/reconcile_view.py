@@ -22,7 +22,7 @@ from omsync.reconcile.history import MANUAL_RULE, UNKNOWN_RULE, rule_tally
 from omsync.reconcile.model import Draft, Explained, NotMatched, Queue, signature
 from omsync.reconcile.rules.base import DESCRIPTIONS
 from omsync.web.amounts import money_html
-from omsync.web.contacts_view import ChoiceGroup, other_side_choices
+from omsync.web.contacts_view import ChoiceGroup, counterparty_choices
 
 DEFAULT_LAST_DAYS = 90
 CANDIDATE_LIMIT = 25
@@ -63,7 +63,7 @@ _SECTION_TITLES: dict[str, str] = {
     "returns": "Merchant returns",
     "p2p": "P2P payments",
 }
-_P2P_SUBTITLES: dict[str, str] = {"rt": "Round trip"}
+_P2P_SUBTITLES: dict[str, str] = {"p2p_round_trip": "Round trip"}
 
 
 @dataclass(frozen=True)
@@ -148,7 +148,7 @@ class NotMatchedRow:
 
 @dataclass(frozen=True)
 class ExplainedRow:
-    """A transaction that needs nothing from you, with its other side as the reason."""
+    """A transaction that needs nothing from you, with its counterparty as the reason."""
 
     txn_id: int
     on: str
@@ -209,7 +209,7 @@ class Results:
     vendors: tuple[VendorView, ...]
     not_matched: tuple[NotMatchedRow, ...]
     explained: tuple[ExplainedRow, ...]
-    side_choices: tuple[ChoiceGroup, ...]
+    counterparty_choices: tuple[ChoiceGroup, ...]
     linked: tuple[LinkRow, ...]
     tally: tuple[TallyRow, ...]
 
@@ -527,9 +527,9 @@ def link_candidates(
     start: date,
     end: date,
 ) -> list[Candidate]:
-    """Transactions that could be the other side of a manual link.
+    """Transactions that could be the counterpart in a manual link.
 
-    With no query, the candidates are the open transactions in the range on the other side of
+    With no query, the candidates are the open transactions in the range of the opposite sign to
     the source: money in when the source is money out, and the reverse, closest in amount first.
     A search looks at every date and sign, newest first: a date (2026-08-01) finds that day, an
     amount finds that absolute amount, and anything else finds payees that contain the text. Only
@@ -548,10 +548,12 @@ def link_candidates(
     text = query.strip()
     closest_first = ()
     if not text:
-        other_side = (
+        opposite_sign = (
             Transaction.amount_cents > 0 if source_amount < 0 else Transaction.amount_cents < 0
         )
-        stmt = stmt.where(other_side, Transaction.posted_on >= start, Transaction.posted_on <= end)
+        stmt = stmt.where(
+            opposite_sign, Transaction.posted_on >= start, Transaction.posted_on <= end
+        )
         closest_first = (func.abs(func.abs(Transaction.amount_cents) - abs(source_amount)),)
     elif _is_iso_date(text):
         stmt = stmt.where(Transaction.posted_on == parse_day(text))
@@ -637,7 +639,7 @@ def results_for(
         vendors=vendors,
         not_matched=tuple(not_matched_rows(session, result.not_matched)),
         explained=tuple(explained_rows(session, result.explained)),
-        side_choices=other_side_choices(session),
+        counterparty_choices=counterparty_choices(session),
         linked=tuple(linked_rows(session, start=start, end=end)),
         tally=tuple(tally_rows(session)),
     )

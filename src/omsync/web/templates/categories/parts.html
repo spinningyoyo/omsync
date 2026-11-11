@@ -167,7 +167,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
       <h2 id="category-list-title" class="font-medium text-primary">Categories</h2>
       {{ button("New category", variant="primary", size="sm", icon="plus", attrs={"id": "new-category-open", "data-action": "categories#openDialog", "data-dialog-id": "new-category-dialog"}) }}
     </div>
-    <p class="text-xs text-secondary">Type sets how a category is budgeted. Income feeds income in reports. Excluded and Owed leave a category out of them, as for transfers and loans; a contact's balance counts Owed.</p>
+    <p class="text-xs text-secondary">Type decides how it counts: spending, income, or left out of reports.</p>
   </div>
   <form class="flex flex-wrap items-center justify-between gap-3" hx-get="/categories/list" hx-target="#category-list" hx-swap="outerHTML" hx-trigger="change" aria-label="Filter categories">
     {%- if view.sort != "name" or view.descending %}
@@ -192,7 +192,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
     <p class="text-sm text-secondary">No categories have this type.</p>
     {{ button("Show all types", variant="outline", size="sm", attrs={"hx-get": "/categories/list?" ~ view.cleared().query, "hx-target": "#category-list", "hx-swap": "outerHTML"}) }}
     {%- else %}
-    <p class="text-sm text-secondary">No categories yet. Add one with New category, or import keywords from the Keywords tab.</p>
+    <p class="text-sm text-secondary">No categories yet.</p>
     {%- endif %}
   </div>
   {%- else %}
@@ -283,7 +283,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
    digest of the preview shown, so a change made since then is refused and the dialog asks again. #}
 {% macro move_dialog(category, uses, choices, target, preview, error, key) -%}
 {{ dialog_header("move-category-title", "Delete " ~ category.name) }}
-<p class="text-sm text-secondary">{{ category.name }} is in use. Its uses move to another category, and then it is deleted. One undo from the toast restores all of it.</p>
+<p class="text-sm text-secondary">{{ category.name }} is in use. Pick a category for its transactions.</p>
 <ul class="flex flex-col gap-1 text-sm text-primary" aria-label="Uses of {{ category.name }}">
   {%- for use in uses %}
   <li class="tabular-nums">{{ use.text }}</li>
@@ -388,7 +388,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   {%- if form.error %}
   <p class="text-sm text-destructive" role="alert">{{ form.error }}</p>
   {%- elif not choices %}
-  <p class="text-sm text-secondary">Add a category first, then come back to add a keyword for it.</p>
+  <p class="text-sm text-secondary">Add a category first.</p>
   {%- endif %}
   {{ form_actions(
     {"data-action": "categories#resetForm"},
@@ -530,14 +530,14 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
     <label class="flex items-center gap-1.5"><span class="text-secondary">at least $</span><input name="at_least" value="{{ form.at_least }}" inputmode="decimal" autocomplete="off" placeholder="any" aria-label="Amount at least, in dollars" class="{{ inline_control }} w-24 text-right tabular-nums"></label>
   </div>
   <span class="text-secondary" aria-hidden="true">with</span>
-  <select name="other_side" aria-label="Other side" class="{{ inline_control }} w-full">
-    <option value=""{% if not form.other_side %} selected{% endif %}>Anyone</option>
-    <option value="person"{% if form.other_side == "person" %} selected{% endif %}>A person</option>
-    <option value="owner_account"{% if form.other_side == "owner_account" %} selected{% endif %}>One of my accounts</option>
+  <select name="counterparty" aria-label="Counterparty" class="{{ inline_control }} w-full">
+    <option value=""{% if not form.counterparty %} selected{% endif %}>Anyone</option>
+    <option value="person"{% if form.counterparty == "person" %} selected{% endif %}>A person</option>
+    <option value="owner_account"{% if form.counterparty == "owner_account" %} selected{% endif %}>One of my accounts</option>
     {%- if contacts %}
     <optgroup label="A contact">
       {%- for cid, name in contacts %}
-      <option value="contact:{{ cid }}"{% if form.other_side == "contact:" ~ cid %} selected{% endif %}>{{ name }}</option>
+      <option value="contact:{{ cid }}"{% if form.counterparty == "contact:" ~ cid %} selected{% endif %}>{{ name }}</option>
       {%- endfor %}
     </optgroup>
     {%- endif %}
@@ -569,7 +569,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   {%- if form.error %}
   <p class="text-sm text-destructive" role="alert">{{ form.error }}</p>
   {%- elif not choices %}
-  <p class="text-sm text-secondary">Add a category first, then come back to add a rule for it.</p>
+  <p class="text-sm text-secondary">Add a category first.</p>
   {%- endif %}
   {{ form_actions(
     {"data-action": "categories#resetForm"},
@@ -628,7 +628,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 {% macro rule_panel(rows, choices, contacts, accounts, form) -%}
 <div id="rule-panel" class="flex flex-col gap-4"
   hx-get="/categories/rules" hx-trigger="categories-changed from:body" hx-target="#rule-panel" hx-swap="outerHTML">
-  <p class="text-sm text-secondary">Rules categorize what no keyword matched, top to bottom: the first rule whose conditions all hold sets the category. A rule reads how it was paid, the amount, who is on the other side, and the account. Preview shows what would change before you save. Saving runs the automatic step, and Undo reverses both.</p>
+  <p class="text-sm text-secondary">Rules catch what keywords miss. The first match wins.</p>
   {{ rule_add_form(form, choices, contacts, accounts) }}
   {{ rule_table(rows) }}
 </div>
@@ -645,7 +645,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   {%- elif not payee %}
   <p class="text-sm text-secondary">Type a payee to see which keyword would win.</p>
   {%- elif not matches and not rule %}
-  <p class="text-sm text-secondary">No keyword matches this payee{% if method %}, and no rule covers paid by {{ method }}{% endif %}, so it stays in triage.</p>
+  <p class="text-sm text-secondary">No keyword or rule matches this payee.</p>
   {%- elif not matches %}
   <p class="text-sm text-primary">No keyword matches.{% if method %} Paid by {{ method }}.{% endif %} Set by rule: {{ rule.sentence }}</p>
   {%- else %}
@@ -699,7 +699,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   </div>
   <section aria-labelledby="triage-payees" class="flex flex-col gap-2">
     <h3 id="triage-payees" class="font-medium text-primary">Uncategorized payees</h3>
-    <p class="text-sm text-secondary">Payees of transactions with no category, most frequent first. Preview a keyword to see what it would change; adding it applies it.</p>
+    <p class="text-sm text-secondary">Uncategorized payees, most frequent first. Add a keyword to fix them.</p>
     {%- if payees %}
     <ul class="flex flex-col" aria-label="Uncategorized payees">
       {%- for payee, count, total in payees %}
@@ -721,9 +721,9 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   </section>
   <section aria-labelledby="triage-receipts" class="flex flex-col gap-3">
     <h3 id="triage-receipts" class="font-medium text-primary">Unknown receipt items</h3>
-    <p class="text-sm text-secondary">Receipt items no keyword matches. Add a keyword, then apply the vendor's receipts again from Reconcile, which fills in the transactions they split.</p>
+    <p class="text-sm text-secondary">Receipt items with no keyword. After adding one, re-apply receipts on Reconcile.</p>
     {%- if not vendors %}
-    <p class="text-sm text-secondary">No receipt vendors are set up yet, so there are no receipt items to triage.</p>
+    <p class="text-sm text-secondary">No receipt vendors set up.</p>
     {%- endif %}
     {%- for vendor in vendors %}
     {%- set vendor_index = loop.index %}
@@ -786,7 +786,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
       <option value="{{ key }}"{% if key == "payee" %} selected{% endif %}>{{ label }}</option>
       {%- endfor %}
     </select>{% endcall %}
-  <p class="text-sm text-secondary">A JSON object maps each category name to a list of patterns. Missing categories go to Ungrouped.</p>
+  <p class="text-sm text-secondary">JSON: category name → list of patterns.</p>
   {{ button("Preview import", variant="outline", size="sm", icon="eye", type="submit", full_width=true) }}
 </form>
 <div id="import-result" class="mt-4" aria-live="polite"></div>

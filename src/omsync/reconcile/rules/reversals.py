@@ -19,7 +19,7 @@ _REVERSAL_RE = re.compile(r"^\s*REVERSAL\b", re.IGNORECASE)
 _REFERENCE_RE = re.compile(r"(?<!\d)\d{6,}(?!\d)")
 
 
-def rule_reversals(pool: Pool, emit: Emitter) -> None:
+def rule_reversal_same_account(pool: Pool, emit: Emitter) -> None:
     """Bank reversal: a REVERSAL line and the transaction it undoes, in the same account.
 
     The two share a reference of six or more digits, have exactly opposite amounts, and post
@@ -45,7 +45,7 @@ def rule_reversals(pool: Pool, emit: Emitter) -> None:
         claim(
             pool,
             emit,
-            rule="rv",
+            rule="reversal_same_account",
             kind=LinkKind.refund,
             first=reversal,
             second=original,
@@ -58,7 +58,7 @@ def rule_reversals(pool: Pool, emit: Emitter) -> None:
         )
 
 
-def rule_untracked_round_trip(pool: Pool, emit: Emitter) -> None:
+def rule_return_via_untracked_account(pool: Pool, emit: Emitter) -> None:
     """Round trip through an untracked account: money sent to it and back, on one account.
 
     Both descriptions read as transfers and name the same last four digits, which belong to no
@@ -66,8 +66,8 @@ def rule_untracked_round_trip(pool: Pool, emit: Emitter) -> None:
     or a card number on a purchase, is not a reference. The amounts are exactly opposite and the
     dates at most 30 days apart, in either order. Every pair is automatic: the payments share an
     account, an amount, and the other account, so of several, the nearest pairs are linked first,
-    by date gap and then IDs. Payments whose stored other side is the owner or the co-owner are left
-    out, as in the P2P round trip.
+    by date gap and then IDs. Payments whose stored counterparty is the owner or the co-owner are
+    left out, as in the P2P round trip.
     """
     tracked = {digits for account in emit.accounts for digits in account.digits}
     by_reference: dict[tuple[int, int, str], list[TxnView]] = defaultdict(list)
@@ -98,7 +98,7 @@ def rule_untracked_round_trip(pool: Pool, emit: Emitter) -> None:
             claim(
                 pool,
                 emit,
-                rule="ru",
+                rule="return_via_untracked_account",
                 kind=LinkKind.refund,
                 first=out,
                 second=inn,

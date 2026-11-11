@@ -56,11 +56,6 @@ def _tags() -> dict[str, tuple[str, ...]]:
     return {name: tuple(tags) for name, tags in raw.items()}
 
 
-def icon_names() -> list[str]:
-    """Every vendored icon name, sorted."""
-    return list(_all_names())
-
-
 def has_icon(name: str) -> bool:
     return bool(ICON_NAME.fullmatch(name)) and (ICONS_DIR / f"{name}.svg").is_file()
 

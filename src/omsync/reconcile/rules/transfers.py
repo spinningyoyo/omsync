@@ -8,7 +8,13 @@ from omsync.ledger.links import LinkKind
 from omsync.ledger.sources import AccountType
 from omsync.reconcile.model import Queue, TxnView
 from omsync.reconcile.pool import Pool
-from omsync.reconcile.rules.base import Emitter, claim, days_gap, pair_unambiguously
+from omsync.reconcile.rules.base import (
+    Emitter,
+    account_mentions,
+    claim,
+    days_gap,
+    pair_unambiguously,
+)
 from omsync.reconcile.rules.merchant_returns import is_pipeline_merchant
 
 # An autopay posts on the card on a Friday or Saturday and at the bank on Monday.
@@ -112,8 +118,8 @@ def extract_zelle_conf(text: str) -> str | None:
     return None
 
 
-def rule_1a(pool: Pool, emit: Emitter) -> None:
-    """Transfer Conf# hash match: same key, opposite signs, at most one day apart.
+def rule_transfer_same_confirmation(pool: Pool, emit: Emitter) -> None:
+    """Transfer with the same confirmation number: same key, opposite signs, at most one day apart.
 
     When a key is shared by more than two transactions, only same-day, same-amount pairs of
     exactly two are paired. Any other group is left alone.
@@ -132,7 +138,7 @@ def rule_1a(pool: Pool, emit: Emitter) -> None:
                 claim(
                     pool,
                     emit,
-                    rule="1a",
+                    rule="transfer_same_confirmation",
                     kind=LinkKind.transfer,
                     first=first,
                     second=second,
@@ -148,7 +154,7 @@ def rule_1a(pool: Pool, emit: Emitter) -> None:
                     claim(
                         pool,
                         emit,
-                        rule="1a",
+                        rule="transfer_same_confirmation",
                         kind=LinkKind.transfer,
                         first=group[0],
                         second=group[1],
@@ -158,7 +164,7 @@ def rule_1a(pool: Pool, emit: Emitter) -> None:
                     )
 
 
-def rule_1b(pool: Pool, emit: Emitter) -> None:
+def rule_zelle_same_confirmation(pool: Pool, emit: Emitter) -> None:
     """Zelle same confirmation number: same day, opposite signs, any pair of accounts.
 
     Three or more transactions with one token are skipped as ambiguous.
@@ -177,7 +183,7 @@ def rule_1b(pool: Pool, emit: Emitter) -> None:
             claim(
                 pool,
                 emit,
-                rule="1b",
+                rule="zelle_same_confirmation",
                 kind=LinkKind.transfer,
                 first=first,
                 second=second,
@@ -186,7 +192,7 @@ def rule_1b(pool: Pool, emit: Emitter) -> None:
             )
 
 
-def rule_1c(pool: Pool, emit: Emitter) -> None:
+def rule_transfer_same_transaction_id(pool: Pool, emit: Emitter) -> None:
     """Shared transaction ID: one long number (or Zelle token) in exactly two transactions.
 
     The two must be on different accounts, equal and opposite, at most three days apart. An ID in
@@ -213,7 +219,7 @@ def rule_1c(pool: Pool, emit: Emitter) -> None:
             claim(
                 pool,
                 emit,
-                rule="1c",
+                rule="transfer_same_transaction_id",
                 kind=LinkKind.transfer,
                 first=first,
                 second=second,
@@ -241,13 +247,13 @@ def _shared_id_fits(first: TxnView, second: TxnView) -> bool:
     )
 
 
-def rule_2(pool: Pool, emit: Emitter) -> None:
+def rule_card_bill_payment(pool: Pool, emit: Emitter) -> None:
     """CC bill payment: a debit from a non-card account and a credit on a card, within 5 days."""
     debits, credits = _sides(pool, CC_DEBIT_RE, CC_CREDIT_RE)
     pair_unambiguously(
         pool,
         emit,
-        rule="2",
+        rule="card_bill_payment",
         kind=LinkKind.transfer,
         debits=debits,
         credits=credits,
@@ -255,13 +261,13 @@ def rule_2(pool: Pool, emit: Emitter) -> None:
     )
 
 
-def rule_2b(pool: Pool, emit: Emitter) -> None:
+def rule_card_credit_refund(pool: Pool, emit: Emitter) -> None:
     """CC credit balance refund: a debit from a card, and a credit on a non-card account."""
     debits, credits = _sides(pool, CB_DEBIT_RE, emit.patterns.cb_credit)
     pair_unambiguously(
         pool,
         emit,
-        rule="2b",
+        rule="card_credit_refund",
         kind=LinkKind.transfer,
         debits=debits,
         credits=credits,
@@ -269,8 +275,8 @@ def rule_2b(pool: Pool, emit: Emitter) -> None:
     )
 
 
-def rule_1d(pool: Pool, emit: Emitter) -> None:
-    """Account reference: a description names another tracked account that holds the other side.
+def rule_transfer_names_account(pool: Pool, emit: Emitter) -> None:
+    """Account reference: a description names another tracked account that holds the counterparty.
 
     The named account must hold an equal, opposite amount within four days. Both directions must
     be unique, so two fitting partners leave a manual proposal. A side that names a different
@@ -302,7 +308,7 @@ def rule_1d(pool: Pool, emit: Emitter) -> None:
     pair_unambiguously(
         pool,
         emit,
-        rule="1d",
+        rule="transfer_names_account",
         kind=LinkKind.transfer,
         debits=[txn for txn in relevant if txn.amount_cents < 0],
         credits=[txn for txn in relevant if txn.amount_cents > 0],
@@ -311,40 +317,42 @@ def rule_1d(pool: Pool, emit: Emitter) -> None:
     )
 
 
-def rule_3(pool: Pool, emit: Emitter) -> None:
+def rule_transfer_same_amount(pool: Pool, emit: Emitter) -> None:
     """Generic transfer without a confirmation number: same day, same amount, another account.
 
     A credit that names a card payment pairs with the one debit that fits it, and only when that
-    debit fits no other credit. The debit must itself look like a transfer or payment, so an
-    ordinary purchase never pairs with a card-payment credit. Anything more ambiguous is left alone.
+    debit fits no other credit. The debit must move money between your own accounts (see
+    is_transfer_like), so neither a purchase nor a Zelle payment to someone else pairs with a
+    card-payment credit. A credit that names an account by its digits pairs only with a debit on
+    that account: one naming an account omsync does not track, such as your partner's, pairs with
+    nothing here. Anything more ambiguous is left alone.
     """
     credits = [
         t for t in pool if t.amount_cents > 0 and emit.patterns.generic.search(t.description)
     ]
-    debits = [t for t in pool if t.amount_cents < 0 and _is_transfer_or_payment(t, emit)]
+    debits = [t for t in pool if t.amount_cents < 0 and is_transfer_like(t, emit)]
+
+    def fits(debit: TxnView, credit: TxnView) -> bool:
+        return (
+            _generic_fits(debit, credit)
+            and _paid_from_named_account(debit, credit, emit)
+            and emit.allowed(debit, credit)
+        )
 
     for credit in credits:
         if credit.id not in pool:
             continue
-        candidates = [
-            d
-            for d in debits
-            if d.id in pool and _generic_fits(d, credit) and emit.allowed(d, credit)
-        ]
+        candidates = [d for d in debits if d.id in pool and fits(d, credit)]
         if len(candidates) != 1:
             continue
         debit = candidates[0]
-        partners = [
-            c
-            for c in credits
-            if c.id in pool and _generic_fits(debit, c) and emit.allowed(debit, c)
-        ]
+        partners = [c for c in credits if c.id in pool and fits(debit, c)]
         if len(partners) != 1:
             continue
         claim(
             pool,
             emit,
-            rule="3",
+            rule="transfer_same_amount",
             kind=LinkKind.transfer,
             first=debit,
             second=credit,
@@ -393,11 +401,12 @@ def _credit_balance_fits(debit: TxnView, credit: TxnView) -> bool:
     )
 
 
-def _is_transfer_or_payment(txn: TxnView, emit: Emitter) -> bool:
-    """True when the payee reads as a transfer or payment, in any of rule 3's families."""
-    return any(
-        pattern.search(txn.description)
-        for pattern in (emit.patterns.generic, CC_DEBIT_RE, CB_DEBIT_RE, ZELLE_RE)
+def _paid_from_named_account(debit: TxnView, credit: TxnView, emit: Emitter) -> bool:
+    """True unless the credit names an account by its digits and the debit is not on it."""
+    if not account_mentions(credit.description):
+        return True
+    return debit.account_id in emit.accounts_by_digits(
+        credit.description, exclude=credit.account_id
     )
 
 

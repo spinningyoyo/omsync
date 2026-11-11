@@ -30,28 +30,27 @@ from omsync.reconcile.own_names import own_name_literals
 from omsync.reconcile.patterns import build_patterns
 from omsync.reconcile.pool import Pool, load_pool
 from omsync.reconcile.rules.base import CONFIDENCE_BY_QUEUE, DESCRIPTIONS, Emitter
-from omsync.reconcile.rules.joint import BILL_WINDOW_DAYS, rule_joint_settlement
+from omsync.reconcile.rules.joint import BILL_WINDOW_DAYS, rule_joint_card_bill
 from omsync.reconcile.rules.merchant_returns import (
     MERCHANT_RETURN_WINDOW_DAYS,
-    rule_7a,
-    rule_7b,
-    rule_7c,
-    rule_7d,
+    rule_paypal_return_same_account,
+    rule_return_other_account_same_store,
+    rule_return_same_account,
 )
-from omsync.reconcile.rules.p2p import ROUND_TRIP_WINDOW_DAYS, rule_round_trip
+from omsync.reconcile.rules.p2p import ROUND_TRIP_WINDOW_DAYS, rule_p2p_round_trip
 from omsync.reconcile.rules.reversals import (
     UNTRACKED_ROUND_TRIP_WINDOW_DAYS,
-    rule_reversals,
-    rule_untracked_round_trip,
+    rule_return_via_untracked_account,
+    rule_reversal_same_account,
 )
 from omsync.reconcile.rules.transfers import (
-    rule_1a,
-    rule_1b,
-    rule_1c,
-    rule_1d,
-    rule_2,
-    rule_2b,
-    rule_3,
+    rule_card_bill_payment,
+    rule_card_credit_refund,
+    rule_transfer_names_account,
+    rule_transfer_same_amount,
+    rule_transfer_same_confirmation,
+    rule_transfer_same_transaction_id,
+    rule_zelle_same_confirmation,
 )
 
 
@@ -63,21 +62,50 @@ class Rule:
 
 
 RULES: tuple[Rule, ...] = (
-    Rule("rv", rule_reversals, DESCRIPTIONS["rv"]),
-    Rule("2a", rule_joint_settlement, DESCRIPTIONS["2a"]),
-    Rule("1a", rule_1a, DESCRIPTIONS["1a"]),
-    Rule("1b", rule_1b, DESCRIPTIONS["1b"]),
-    Rule("1c", rule_1c, DESCRIPTIONS["1c"]),
-    Rule("2", rule_2, DESCRIPTIONS["2"]),
-    Rule("2b", rule_2b, DESCRIPTIONS["2b"]),
-    Rule("1d", rule_1d, DESCRIPTIONS["1d"]),
-    Rule("3", rule_3, DESCRIPTIONS["3"]),
-    Rule("rt", rule_round_trip, DESCRIPTIONS["rt"]),
-    Rule("ru", rule_untracked_round_trip, DESCRIPTIONS["ru"]),
-    Rule("7a", rule_7a, DESCRIPTIONS["7a"]),
-    Rule("7c", rule_7c, DESCRIPTIONS["7c"]),
-    Rule("7b", rule_7b, DESCRIPTIONS["7b"]),
-    Rule("7d", rule_7d, DESCRIPTIONS["7d"]),
+    Rule(
+        "reversal_same_account", rule_reversal_same_account, DESCRIPTIONS["reversal_same_account"]
+    ),
+    Rule("joint_card_bill", rule_joint_card_bill, DESCRIPTIONS["joint_card_bill"]),
+    Rule(
+        "transfer_same_confirmation",
+        rule_transfer_same_confirmation,
+        DESCRIPTIONS["transfer_same_confirmation"],
+    ),
+    Rule(
+        "zelle_same_confirmation",
+        rule_zelle_same_confirmation,
+        DESCRIPTIONS["zelle_same_confirmation"],
+    ),
+    Rule(
+        "transfer_same_transaction_id",
+        rule_transfer_same_transaction_id,
+        DESCRIPTIONS["transfer_same_transaction_id"],
+    ),
+    Rule("card_bill_payment", rule_card_bill_payment, DESCRIPTIONS["card_bill_payment"]),
+    Rule("card_credit_refund", rule_card_credit_refund, DESCRIPTIONS["card_credit_refund"]),
+    Rule(
+        "transfer_names_account",
+        rule_transfer_names_account,
+        DESCRIPTIONS["transfer_names_account"],
+    ),
+    Rule("transfer_same_amount", rule_transfer_same_amount, DESCRIPTIONS["transfer_same_amount"]),
+    Rule("p2p_round_trip", rule_p2p_round_trip, DESCRIPTIONS["p2p_round_trip"]),
+    Rule(
+        "return_via_untracked_account",
+        rule_return_via_untracked_account,
+        DESCRIPTIONS["return_via_untracked_account"],
+    ),
+    Rule("return_same_account", rule_return_same_account, DESCRIPTIONS["return_same_account"]),
+    Rule(
+        "paypal_return_same_account",
+        rule_paypal_return_same_account,
+        DESCRIPTIONS["paypal_return_same_account"],
+    ),
+    Rule(
+        "return_other_account_same_store",
+        rule_return_other_account_same_store,
+        DESCRIPTIONS["return_other_account_same_store"],
+    ),
 )
 
 # The farthest any rule looks from a transaction for its partner or a competing candidate. A run
@@ -134,7 +162,7 @@ def run(
     its drafts say so. Payee patterns use the owner's names and your accounts' nicknames.
     Descriptions that name an account are read against every tracked account, not only those with
     transactions in the range. A transaction no proposal involves, and that the transfer, card
-    payment, and P2P wording says should have a counterpart, is Not matched unless its other side
+    payment, and P2P wording says should have a counterpart, is Not matched unless its counterparty
     is known (see not_matched.py).
 
     The rules read CONTEXT_DAYS beyond each end of the range, and the result keeps the proposals

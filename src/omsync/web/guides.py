@@ -68,7 +68,7 @@ GUIDES: tuple[Guide, ...] = (
     ),
     Guide(
         "contacts",
-        "People and the other side",
+        "People and the counterparty",
         "Who is on the other end of a payment, how omsync recognizes them, and what is owed.",
         "users-round",
         4,

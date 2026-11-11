@@ -31,7 +31,7 @@ from omsync.ledger.keyword_import import (
     plan_keyword_import,
     read_keyword_file,
 )
-from omsync.ledger.models import Account, Category, Contact, RuleOtherSide
+from omsync.ledger.models import Account, Category, Contact, RuleCounterparty
 from omsync.ledger.payment_methods import PaymentMethod
 
 _PREVIEW_ONLY = "Preview only: nothing was written. Run again with --apply to {verb}."
@@ -94,7 +94,7 @@ def keywords_test(
     """Show every payee keyword that matches, in precedence order. The first one wins.
 
     With --amount, also show the rule that decides the category, if one holds. Its conditions
-    about the other side or the account cannot be told from a payee, so those rules do not hold.
+    about the counterparty or the account cannot be told from a payee, so those rules do not hold.
     """
     amount_cents = None
     if amount is not None:
@@ -156,16 +156,16 @@ def rules_add(
             "--at-least", help="Only when the amount, spent or refunded, is this or more."
         ),
     ] = None,
-    other_side: Annotated[
-        RuleOtherSide | None,
+    counterparty: Annotated[
+        RuleCounterparty | None,
         typer.Option(
-            "--other-side",
-            help="person, contact (with --contact), or owner_account: who is on the other side.",
+            "--counterparty",
+            help="person, contact (with --contact), or owner_account: who the counterparty is.",
         ),
     ] = None,
     contact_name: Annotated[
         str | None,
-        typer.Option("--contact", help="With --other-side contact: the contact's name."),
+        typer.Option("--contact", help="With --counterparty contact: the contact's name."),
     ] = None,
     account_name: Annotated[
         str | None,
@@ -174,7 +174,7 @@ def rules_add(
 ) -> None:
     """Add a rule at the end of the order. Rules categorize what no keyword matched. Run `omsync
     categorize` to apply it. Amounts are in dollars. Give at least one condition: --paid-by,
-    --below, --at-least, --other-side, or --account.
+    --below, --at-least, --counterparty, or --account.
     """
     with ready_session() as (_settings, session):
         try:
@@ -184,7 +184,7 @@ def rules_add(
                 paid_by=paid_by,
                 below=below,
                 at_least=at_least,
-                other_side=other_side,
+                counterparty=counterparty,
                 contact_name=contact_name,
                 account_name=account_name,
             )
@@ -215,16 +215,16 @@ def rules_edit(
             "--at-least", help="Only when the amount, spent or refunded, is this or more."
         ),
     ] = None,
-    other_side: Annotated[
-        RuleOtherSide | None,
+    counterparty: Annotated[
+        RuleCounterparty | None,
         typer.Option(
-            "--other-side",
-            help="person, contact (with --contact), or owner_account: who is on the other side.",
+            "--counterparty",
+            help="person, contact (with --contact), or owner_account: who the counterparty is.",
         ),
     ] = None,
     contact_name: Annotated[
         str | None,
-        typer.Option("--contact", help="With --other-side contact: the contact's name."),
+        typer.Option("--contact", help="With --counterparty contact: the contact's name."),
     ] = None,
     account_name: Annotated[
         str | None,
@@ -241,7 +241,7 @@ def rules_edit(
                 paid_by=paid_by,
                 below=below,
                 at_least=at_least,
-                other_side=other_side,
+                counterparty=counterparty,
                 contact_name=contact_name,
                 account_name=account_name,
             )
@@ -387,7 +387,7 @@ def _draft(
     paid_by: list[PaymentMethod] | None,
     below: str | None,
     at_least: str | None,
-    other_side: RuleOtherSide | None,
+    counterparty: RuleCounterparty | None,
     contact_name: str | None,
     account_name: str | None,
 ) -> admin.RuleDraft:
@@ -397,7 +397,7 @@ def _draft(
         paid_by=paid_by or (),
         below_cents=None if below is None else admin.parse_dollars(below),
         at_least_cents=None if at_least is None else admin.parse_dollars(at_least),
-        other_side=other_side,
+        counterparty=counterparty,
         contact_id=None if contact_name is None else _named_id(session, Contact, contact_name),
         account_id=None if account_name is None else _named_id(session, Account, account_name),
     )

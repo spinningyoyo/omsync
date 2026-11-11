@@ -37,7 +37,7 @@
 {# The first dialog step for a value: the category or the memo to set. #}
 {% macro bulk_value_form(action, categories) -%}
 <h2 id="bulk-dialog-title" class="font-medium text-primary">{{ "Set category" if action == "set_category" else "Set memo" }}</h2>
-<p class="text-sm text-secondary">{{ "Split transactions keep the categories on their splits, so they are skipped." if action == "set_category" else "Leave it blank to clear the memo." }}</p>
+<p class="text-sm text-secondary">{{ "Split transactions are skipped." if action == "set_category" else "Leave it blank to clear the memo." }}</p>
 <label class="form-field"><span class="form-field__label">{{ "Category" if action == "set_category" else "Memo" }}</span>
   {%- if action == "set_category" %}
   <select name="value" autocomplete="off" class="form-field__input" data-autofocus>

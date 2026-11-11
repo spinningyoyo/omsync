@@ -13,7 +13,7 @@
   <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="rental-properties-title">
     <div>
       <h2 id="rental-properties-title" class="font-medium text-primary">Rental properties</h2>
-      <p class="text-sm text-secondary">Each account you rent out, with the name its sheet has in the rental report. Its transactions stay as they are.</p>
+      <p class="text-sm text-secondary">Accounts you rent out, and their name in the rental report.</p>
     </div>
     {%- if view.properties %}
     <ul class="flex flex-col divide-y divide-subdued">
@@ -56,14 +56,14 @@
       {{ button("Add property", variant="primary", type="submit") }}
     </form>
     {%- else %}
-    <p class="border-t border-subdued pt-4 text-sm text-secondary">There are no open accounts left to add. Accounts are made on Institutions.</p>
+    <p class="border-t border-subdued pt-4 text-sm text-secondary">No accounts left to add.</p>
     {%- endif %}
   </section>
 
   <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="rental-categories-title">
     <div>
       <h2 id="rental-categories-title" class="font-medium text-primary">Rental categories</h2>
-      <p class="text-sm text-secondary">Lines in these categories count as rental expenses in the rental report. Any other category goes to Other. Names match exactly.</p>
+      <p class="text-sm text-secondary">These count as rental expenses. Anything else goes to Other.</p>
     </div>
     <ul class="flex flex-wrap gap-2" aria-label="Rental categories">
       {%- for chip in view.categories %}
@@ -90,7 +90,7 @@
       {{ button("Add category", variant="outline", type="submit") }}
     </form>
     {%- else %}
-    <p class="text-sm text-secondary">Every category is already a rental category, or there are none yet.</p>
+    <p class="text-sm text-secondary">No categories left to add.</p>
     {%- endif %}
   </section>
 </div>

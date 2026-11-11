@@ -267,7 +267,7 @@ def _rules(session: Session, categories: dict[str, int], contacts: dict[str, int
             RuleDraft(
                 to_category_id=categories["Rent"],
                 paid_by=by_transfer,
-                other_side="contact",
+                counterparty="contact",
                 contact_id=contacts["Sam"],
             ),
         ),
@@ -277,7 +277,7 @@ def _rules(session: Session, categories: dict[str, int], contacts: dict[str, int
                 to_category_id=categories["Loans"],
                 paid_by=by_transfer,
                 at_least_cents=10_000,
-                other_side="person",
+                counterparty="person",
             ),
         ),
         (
@@ -286,7 +286,7 @@ def _rules(session: Session, categories: dict[str, int], contacts: dict[str, int
                 to_category_id=categories["Dining"],
                 paid_by=by_transfer,
                 below_cents=4_000,
-                other_side="person",
+                counterparty="person",
             ),
         ),
         (

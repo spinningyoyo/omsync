@@ -284,7 +284,7 @@ def _link_summaries(
     session: Session, period: Period, transaction_ids: set[int]
 ) -> dict[int, list[str]]:
     """For each transaction in the period, its links as "kind ↔ #other", or just "kind" when
-    the other side is not in the ledger, such as a receipt match."""
+    the counterparty is not in the ledger, such as a receipt match."""
     in_period = select(Transaction.id).where(
         Transaction.posted_on >= period.start, Transaction.posted_on <= period.end
     )

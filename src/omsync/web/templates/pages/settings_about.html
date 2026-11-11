@@ -3,23 +3,23 @@
 {% from "settings/parts.html" import doctor_list with context %}
 
 {% block settings_page %}
-{{ page_header(page_title, "The version, the license, the data directory, and the checks that omsync doctor runs.") }}
+{{ page_header(page_title, "Version, license, data folder, and health checks.") }}
 <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="about-title">
   <h2 id="about-title" class="sr-only">About omsync</h2>
   <dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
     <dt class="text-secondary">Version</dt>
     <dd class="text-primary">{{ version }}</dd>
     <dt class="text-secondary">License</dt>
-    <dd class="text-primary">Free and open source, under the AGPL-3.0. It includes code adapted from Sure (AGPL-3.0) and Actual Budget (MIT).</dd>
+    <dd class="text-primary">Free and open source, under the AGPL-3.0. It includes code adapted from Sure (AGPL-3.0).</dd>
     <dt class="text-secondary">Data directory</dt>
     <dd class="break-all text-primary">{{ data_dir }}{% if demo_mode %} <span class="text-secondary">(a temporary folder, deleted when the server stops)</span>{% endif %}</dd>
   </dl>
-  <p class="text-sm text-secondary">omsync runs on this Mac and sends nothing to its authors. Your data is the data directory. The guide "Undo, backups, and privacy" says how to remove everything.</p>
+  <p class="text-sm text-secondary">Runs on this Mac and sends nothing. Your data is the data folder.</p>
 </section>
 <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="doctor-title">
   <h2 id="doctor-title" class="text-sm font-medium text-primary">Checks</h2>
   {%- if demo_mode %}
-  <p class="text-sm text-secondary">The demo uses no Bitwarden account, keychain entry, or data of yours, so there is nothing to check. For your own ledger, these checks also run in a terminal with <code>omsync doctor</code>.</p>
+  <p class="text-sm text-secondary">Demo: nothing to check.</p>
   {%- else %}
   {{ doctor_list(checks) }}
   <p class="text-xs text-secondary">The same checks run in a terminal with <code>omsync doctor</code>. They are read on this Mac and sent nowhere.</p>

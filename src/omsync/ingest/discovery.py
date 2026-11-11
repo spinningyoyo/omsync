@@ -125,13 +125,6 @@ def scan_statement_files(
     return StatementScan(accounts=tuple(accounts), unreadable=tuple(sorted(unreadable)))
 
 
-def discover_statement_accounts(
-    session: Session, settings: Settings, institution_key: str
-) -> list[DiscoveredAccount]:
-    """The statement accounts in the institution's pending files. See scan_statement_files."""
-    return list(scan_statement_files(session, settings, institution_key).accounts)
-
-
 def suggested_account(session: Session, account: DiscoveredAccount) -> Account | None:
     """The open account at this institution that ends in the statement account's four digits, when
     exactly one does. An account ends in its displayed last four, and in the digits of an alias that

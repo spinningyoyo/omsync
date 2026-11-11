@@ -87,8 +87,3 @@ def _compile(alternatives: tuple[str, ...]) -> re.Pattern[str]:
 
 
 DEFAULT_PATTERNS = build_patterns(())
-
-# Module-level names for code that does not run per user, such as tests of the base patterns.
-TRANSFER_WITH_CONF_RE = DEFAULT_PATTERNS.transfer_with_conf
-CB_CREDIT_RE = DEFAULT_PATTERNS.cb_credit
-GENERIC_TRANSFER_RE = DEFAULT_PATTERNS.generic

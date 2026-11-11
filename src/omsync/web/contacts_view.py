@@ -1,4 +1,4 @@
-"""View data for the Contacts page and the other-side pickers: rows and labels the templates draw.
+"""View data for the Contacts page and the counterparty pickers: rows and labels the templates draw.
 
 The pages are read-only views of contacts-package data. Every write is a domain function called by
 the routes, and every figure comes from omsync.reports.contacts, never from arithmetic here.
@@ -32,7 +32,6 @@ DIRECTION_LABELS = {
 }
 ROLE_LABELS = {ContactRole.owner: "You", ContactRole.co_owner: "Co-owner", ContactRole.other: ""}
 KIND_LABELS = {ContactKind.person: "Person", ContactKind.business: "Business"}
-SIDE_LABELS = {"out": "You paid", "in": "You received"}
 ORIGIN_LABELS = {"none": "Not identified", "recognized": "Recognized", "manual": "You set this"}
 NEW_CONTACT = "new"
 
@@ -141,7 +140,7 @@ class ContactDetail:
 
 @dataclass(frozen=True)
 class Choice:
-    """One option of an other-side picker. value is "contact" or "contact:account"."""
+    """One option of a counterparty picker. value is "contact" or "contact:account"."""
 
     value: str
     label: str
@@ -216,8 +215,10 @@ def region_context(db: Session, contact_id: int | None) -> dict[str, object]:
 # Pickers
 
 
-def other_side_choices(db: Session, *, with_owner_accounts: bool = True) -> tuple[ChoiceGroup, ...]:
-    """Everything an other side can be set to: each contact and each of its accounts, and the
+def counterparty_choices(
+    db: Session, *, with_owner_accounts: bool = True
+) -> tuple[ChoiceGroup, ...]:
+    """Everything a counterparty can be set to: each contact and each of its accounts, and the
     owner's accounts, which are the user's accounts outside the ledger."""
     contacts = load_contacts(db)
     groups: list[ChoiceGroup] = []
@@ -252,7 +253,7 @@ def parse_choice(value: str) -> tuple[int, int | None]:
     """The contact and optional account a picker value names. Raises ValueError otherwise."""
     match = re.fullmatch(r"(\d+)(?::(\d+))?", value.strip())
     if match is None:
-        raise ValueError("Choose who is on the other side.")
+        raise ValueError("Choose the counterparty.")
     contact_id, account_id = match.groups()
     return int(contact_id), int(account_id) if account_id else None
 

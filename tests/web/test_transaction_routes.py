@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session
 from support import sign_in
 
 from omsync.core.batch_models import Batch
-from omsync.core.batches import current_revision
 from omsync.ledger import register
 from omsync.ledger.models import (
     Account,
@@ -152,7 +151,7 @@ def test_a_save_that_races_another_change_is_a_409_and_writes_nothing(
 
     def race_after_preview(session, kind, changes, summary=None):  # type: ignore[no-untyped-def]
         preview = real_make_preview(session, kind, changes, summary)
-        current_revision(session)
+        session.execute(text("INSERT OR IGNORE INTO data_revision (id, value) VALUES (1, 0)"))
         session.execute(text("UPDATE data_revision SET value = value + 1"))
         return preview
 

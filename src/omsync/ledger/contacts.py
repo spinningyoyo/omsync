@@ -1,12 +1,12 @@
-"""Contacts: the people and businesses on the other side of your transactions, and you.
+"""Contacts: the people and businesses your transactions are with, and you.
 
 A contact has a kind, a role, and a display name. A person's names are stored as given, middle, and
 family names, and recognized in the forms banks print (see name_forms). Patterns recognize wordings
 that no name covers, one list for payments you sent ("out") and one for payments you received
 ("in"); a pattern may be tied to one of the contact's accounts. A contact account is an account
 outside the ledger, named in descriptions by its last four digits. You are the owner contact; a
-joint account's other owner is the co-owner. Deleting a contact or an account clears the other side
-that transactions and splits stored for it (see omsync.ledger.other_side).
+joint account's other owner is the co-owner. Deleting a contact or an account clears the
+counterparty that transactions and splits stored for it (see omsync.ledger.counterparty).
 
 An account nickname is the name a payment app shows for a tracked account. It belongs to the
 account, not to a contact, and is not an alias, which maps a statement's account ID at import.
@@ -581,7 +581,7 @@ def set_contact_role(
 
 
 def delete_contact(session: Session, contact_id: int, *, idempotency_key: str) -> Batch:
-    """Remove a contact with its names, patterns, and accounts, and clear the other side that
+    """Remove a contact with its names, patterns, and accounts, and clear the counterparty that
     transactions and splits stored for it. Raises LookupError if it does not exist."""
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
@@ -592,7 +592,7 @@ def delete_contact(session: Session, contact_id: int, *, idempotency_key: str) -
     account_ids = list(
         session.scalars(select(ContactAccount.id).where(ContactAccount.contact_id == contact_id))
     )
-    changes = _clear_other_side(session, contact_id=contact_id, account_ids=account_ids)
+    changes = _clear_counterparty(session, contact_id=contact_id, account_ids=account_ids)
     for table, model in (
         ("contact_name", ContactName),
         ("contact_pattern", ContactPattern),
@@ -608,7 +608,7 @@ def delete_contact(session: Session, contact_id: int, *, idempotency_key: str) -
 
 def merge_contacts(session: Session, *, keep_id: int, merge_id: int, idempotency_key: str) -> Batch:
     """Fold one contact into another: the merged contact's names, patterns, and accounts, and the
-    other side of every transaction and split that named it, move to the kept contact, and the
+    counterparty of every transaction and split that named it, move to the kept contact, and the
     merged contact is deleted, all in one batch.
 
     A name or pattern the kept contact already has is not repeated. The kept contact keeps its
@@ -859,7 +859,7 @@ def remove_contact_account(
         return replay
     before = _snapshot_or_raise(session, "contact_account", contact_account_id)
     contact = _snapshot_or_raise(session, "contact", before["contact_id"])
-    changes = _clear_other_side(session, account_ids=[contact_account_id])
+    changes = _clear_counterparty(session, account_ids=[contact_account_id])
     for pattern_id in session.scalars(
         select(ContactPattern.id)
         .where(ContactPattern.contact_account_id == contact_account_id)
@@ -933,10 +933,10 @@ def remove_account_nickname(session: Session, nickname_id: int, *, idempotency_k
 # Helpers
 
 
-def _clear_other_side(
+def _clear_counterparty(
     session: Session, *, contact_id: int | None = None, account_ids: Sequence[int] = ()
 ) -> list[Change]:
-    """Changes that clear the other side of every transaction and split stored for a contact (all
+    """Changes that clear the counterparty of every transaction and split stored for a contact (all
     of it, with its origin) or for contact accounts (the account only). Rows are in ID order."""
     changes: list[Change] = []
     for table, model in (("transaction", Transaction), ("split", Split)):

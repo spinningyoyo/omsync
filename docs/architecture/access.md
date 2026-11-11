@@ -1,92 +1,53 @@
 # Access and vault
 
-## Purpose and design philosophy
+## Purpose
 
-omsync has two different permissions: permission to use the application and permission to
-read credentials from the vault. Reading reports should not require keeping institution
-credentials unlocked all day.
+Two permissions are separate: permission to use omsync, and permission to read bank logins from
+the vault. You can read reports without an unlocked vault.
 
-The **vault** is the user's Bitwarden account. It verifies sign-in and supplies the
-institution logins used by connectors. omsync does not maintain a second master password.
-
-## Behavior
-
-- Sign-in asks for the vault email and the master password, whose field is labeled
-  "Password" under a "with your Bitwarden account" subtitle. Bitwarden verifies them; a successful
-  sign-in creates an application session.
-- The application session lives in memory and expires after twelve idle hours. Activity
-  extends it; restarting the server ends it.
-- The vault has its own configurable idle timeout. Locking it does not end the application
-  session. An operation that needs credentials asks to unlock it when necessary.
-- The vault's status shows as a green dot and "Vault unlocked", or a gray dot and "Vault
-  locked": beside the Sync status title on the Bank sync page, and in the user menu under the
-  signed-in email, where it also says when the vault locks. Gray, not red, because locked is the
-  normal resting state. The vault locks itself without any request, so the Bank sync line checks
-  again every minute, and the menu line is current when its page loads. Every unlock updates the
-  lines on the page at once.
-- An unlock form disables its button and shows "Unlocking…" while Bitwarden checks the password,
-  which takes a few seconds. A wrong password shows the form again with the error.
-- Sign-out ends the application session and locks the vault.
-- Every master password field, at sign-in and when unlocking the vault, has the same
-  show/hide control. The field starts hidden, and a reload hides it again.
-- Master passwords are never stored, logged, echoed in errors, or included in command-line
-  arguments. Vault session keys stay in memory. Secrets passed to the Bitwarden CLI are
-  scoped to that child process's environment, never the application's process environment.
-- The Bitwarden API client ID and secret live in the macOS keychain. Machine settings and
-  the database do not contain them.
-- Failed sign-ins have a shared rate limit. Wrong email and wrong password produce the
-  same public error; the email can remain in the form, but the password cannot.
-
-## Demo mode
-
-`omsync serve` runs the demo when no ledger exists at the configured database path, or when it is
-run with `--demo`. Demo mode is for trying omsync with made-up data, and it never touches the
-configured data directory.
-
-- The demo is built into a temporary directory, which is deleted when the server stops. The
-  directory carries a marker file, and reset and the copy at startup refuse any directory without it.
-- The vault is replaced by a stand-in that is always locked and refuses to unlock. Bank sync is off,
-  and no Bitwarden CLI or keychain entry is read.
-- Sign-in shows "Explore the demo" in place of the Bitwarden form. It starts an application session
-  for the made-up person, the same kind a sign-in starts, and reads no password. A posted password
-  form gets the demo page back and never reaches the vault.
-- Reset demo, in the user menu, rebuilds the made-up data from the pristine copy. The session is
-  kept.
-- Nothing in demo mode creates, opens, migrates, or locks anything under the configured data
-  directory, and the serve lock is not taken.
-
-## Access boundaries
+## Context
 
 ```mermaid
 flowchart LR
     SignIn[Email and master password] --> Bitwarden
-    Bitwarden --> AppSession[In-memory application session]
-    Bitwarden --> VaultSession[Separately timed vault session]
-    AppSession --> LedgerPages[Ledger and planning pages]
-    VaultSession --> CredentialRead[Read institution credentials]
-    CredentialRead --> Connector
+    Bitwarden --> App[Application session]
+    Bitwarden --> Vault[Vault session]
+    App --> Pages[Ledger and planning pages]
+    Vault --> Logins[Bank logins] --> Connectors
+    Keychain[macOS keychain] --> Bitwarden
 ```
 
-Product pages require an application session. Sign-in, health, static assets, and synthetic
-component/prototype pages are public. Synthetic pages never load the user's ledger.
+## Flow
 
-Sessions use an opaque HttpOnly, SameSite=Strict cookie. Local HTTP is intentional;
-a secure-cookie requirement must not make loopback sign-in unusable. State-changing
-requests with a foreign Origin are rejected. Requests without an Origin remain usable by
-local clients. Sign-in return paths must be local paths, never redirects to another site.
-Authenticated pages use no-store caching so history navigation cannot reopen a cached
-financial page after sign-out.
+```mermaid
+stateDiagram-v2
+    [*] --> SignedOut
+    SignedOut --> SignedIn: Bitwarden accepts the password
+    SignedIn --> SignedOut: sign out, 12 idle hours, or server restart
+    state SignedIn {
+        [*] --> Locked
+        Locked --> Unlocked: master password for a sync
+        Unlocked --> Locked: vault idle timeout
+    }
+```
 
-## Design rationale
+Sign-out also locks the vault.
 
-Loopback binding does not prevent a malicious website from attempting browser requests to
-the application. Authentication, origin checks, and cookie restrictions therefore remain
-necessary even for a single user.
+## Design decisions
 
-Separate session lifetimes reduce credential exposure without interrupting ordinary
-ledger work. Child-process secret scoping prevents an unrelated subprocess from inheriting
-an unlocked vault session. Safe errors describe what the user can do without reproducing
-credential values or uncontrolled CLI output.
+- **Bitwarden is the only password.** omsync has no master password of its own.
+- **The vault locks on its own timer.** A locked vault does not end your session. Locked is the
+  normal state, so the status dot is gray, not red.
+- **Secrets never touch disk or logs.** The master password and the vault session stay in memory.
+  A secret goes only to the Bitwarden process that needs it.
+- **API keys live in the keychain.** The settings file and the database never hold them.
+- **One error for a wrong email or password.** The error does not tell which was wrong.
+- **Local HTTP is correct here.** A secure-cookie rule would block sign-in on `127.0.0.1`.
+  SameSite cookies and origin checks protect requests instead.
+- **The demo has no vault.** Demo sign-in reads no password. Bank sync is off.
 
-The sign-in presentation draws inspiration from Sure; the access model is built around
-omsync's local operation and the user's existing vault.
+## Terms
+
+- **Vault:** your Bitwarden account. It checks sign-in and holds bank logins.
+- **Application session:** in memory. It ends after 12 idle hours or a server restart.
+- **Vault session:** in memory, with its own idle timeout.

@@ -187,15 +187,6 @@ def expected_income(session: Session, month: date, *, joint_share: bool) -> int:
     return sum(point.income_cents for point in points) // EXPECTED_INCOME_MONTHS
 
 
-def rollover_balance(session: Session, category_id: int, month: date, *, joint_share: bool) -> int:
-    """The carry into `month` for one category: the sum of (budget - actual) over each earlier
-    month that has a line for it with rollover on. A negative value carries overspending."""
-    _check_month(month)
-    carries = _carries(session, month, joint_share=joint_share, category_id=category_id)
-    carry = carries.get(category_id)
-    return 0 if carry is None else carry.cents
-
-
 def goals_contribution_cents(session: Session) -> int:
     """The monthly contributions of all goals that are not archived."""
     total = session.scalar(
@@ -597,10 +588,8 @@ def _line_id(
     return session.scalar(query)
 
 
-def _carries(
-    session: Session, month: date, *, joint_share: bool, category_id: int | None = None
-) -> dict[int, Carry]:
-    """Carry into `month` for every category with an earlier rollover line, or for one. Each such
+def _carries(session: Session, month: date, *, joint_share: bool) -> dict[int, Carry]:
+    """Carry into `month` for every category with an earlier rollover line. Each such
     line contributes its budget and that month's actual. Every earlier month's actuals come from
     one report query, so a long history costs one pass over the ledger, not one per month."""
     query = select(BudgetLine.month, BudgetLine.category_id, BudgetLine.amount_cents).where(
@@ -608,8 +597,6 @@ def _carries(
         BudgetLine.rollover.is_(True),
         BudgetLine.month < month,
     )
-    if category_id is not None:
-        query = query.where(BudgetLine.category_id == category_id)
     by_month: dict[date, list] = defaultdict(list)
     for row in session.execute(query):
         by_month[row.month].append(row)

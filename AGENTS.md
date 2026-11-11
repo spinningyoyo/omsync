@@ -5,8 +5,9 @@ user's real data lives in `~/omsync-data`, never in this repository.
 
 ## Where to look
 
-- [docs/README.md](docs/README.md) maps each package to its architecture page. Architecture
-  defines intended behavior; code is the implementation. Use its vocabulary.
+- [docs/README.md](docs/README.md) maps each package to its architecture page. Code is the behavior;
+  architecture pages record the key decisions, with diagrams. Use their vocabulary. Keep them high
+  level: do not restate code. Write them in ASD-STE100 style with the same five sections.
 - Before changing anything that writes financial data, read
   [ledger](docs/architecture/ledger.md) and [changes](docs/architecture/changes.md).
 - Review standards: [CODING_STANDARDS.md](CODING_STANDARDS.md).

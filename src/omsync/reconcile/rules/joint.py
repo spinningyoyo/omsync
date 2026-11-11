@@ -40,7 +40,7 @@ class _Fit:
 _TIGHT = _Fit()
 
 
-def rule_joint_settlement(pool: Pool, emit: Emitter) -> None:
+def rule_joint_card_bill(pool: Pool, emit: Emitter) -> None:
     """For each joint card bill, find your outflow and your joint-checking inflow at half of it.
 
     Bills are evidence, so they come from every loaded transaction, linked or not: the bill's own
@@ -107,7 +107,7 @@ def rule_joint_settlement(pool: Pool, emit: Emitter) -> None:
         emitted = claim(
             pool,
             emit,
-            rule="2a",
+            rule="joint_card_bill",
             kind=LinkKind.joint_settlement,
             first=my_outflow,
             second=my_inflow,
@@ -274,15 +274,15 @@ def _propose_outflow_only(
     emit.add(
         Draft(
             kind=LinkKind.joint_settlement,
-            rule_key="2a",
+            rule_key="joint_card_bill",
             out_txn_id=outflow.id,
             in_txn_id=None,
             amount_cents=amount,
             confidence=OUTFLOW_ONLY_CONFIDENCE,
             queue=Queue.manual,
             evidence={
-                "rule": "2a",
-                "description": DESCRIPTIONS["2a"],
+                "rule": "joint_card_bill",
+                "description": DESCRIPTIONS["joint_card_bill"],
                 "conf_number": None,
                 "date_gap_days": abs((outflow.posted_on - bill.posted_on).days),
                 "amount_diff_cents": 0,

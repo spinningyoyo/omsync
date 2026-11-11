@@ -1,7 +1,7 @@
-"""The other side of every transaction: the contact, and the contact's account, money moved to or
+"""The counterparty of every transaction: the contact, and the contact's account, money moved to or
 from.
 
-Recognition reads each transaction's statement description and works out its other side, in order:
+Recognition reads each transaction's statement description and works out its counterparty, in order:
 
 1. A contact account that the description names by its last four digits, or that a pattern tied to
    it matches: that contact and account.
@@ -12,7 +12,7 @@ Recognition reads each transaction's statement description and works out its oth
 4. A pass-through: a transfer to an account of the owner's whose exact amount one other contact
    paid in during the seven days before or after, with no other such partner on either side. The
    contact may fund the transfer first or reimburse it afterwards. The money is the contact's, so
-   the contact is the other side.
+   the contact is the counterparty.
 
 When a step finds several contacts or accounts it identifies nobody, and no later step guesses. A
 payment identified only as the owner by name has no account, tracked or not, so nothing is stored
@@ -22,12 +22,13 @@ The result is stored on the transaction with an origin, as a category is: your c
 recognition, and recognition never replaces it. Recognition never sets a split. It reruns as a
 plan and one batch, as categorize does, so undo reverses it like any other change.
 
-PersonSides tells whether a payment is with a person, from the other side stored on it or, with none
-stored, from the name its description gives. Categorize asks it for the rules limited to a person.
+PersonCounterparties tells whether a payment is with a person, from the counterparty stored on it
+or, with none stored, from the name its description gives. Categorize asks it for the rules limited
+to a person.
 
-You set the other side of transactions, or of one split, with set_other_side and
-set_split_other_side. Each is one batch, the origin is manual, and clearing returns the origin to
-none so that recognition may set the other side again.
+You set the counterparty of transactions, or of one split, with set_counterparty and
+set_split_counterparty. Each is one batch, the origin is manual, and clearing returns the origin to
+none so that recognition may set the counterparty again.
 """
 
 import re
@@ -76,7 +77,7 @@ PASS_THROUGH_DAYS = 7
 
 
 @dataclass(frozen=True)
-class OtherSide:
+class Counterparty:
     """A contact, and one of its accounts when the description names one."""
 
     contact_id: int
@@ -84,11 +85,11 @@ class OtherSide:
 
 
 @dataclass(frozen=True)
-class OtherSidePlan:
+class CounterpartyPlan:
     """What recognition would do, computed without writing anything.
 
     preview is None when no transaction would change. recognized counts the transactions that
-    would have a recognized other side afterward.
+    would have a recognized counterparty afterward.
     """
 
     preview: Preview | None
@@ -98,8 +99,8 @@ class OtherSidePlan:
 
 
 @dataclass(frozen=True)
-class StoredOtherSide:
-    """The other side stored on a transaction or a split, with the names to show for it."""
+class StoredCounterparty:
+    """The counterparty stored on a transaction or a split, with the names to show for it."""
 
     contact_id: int | None
     contact_name: str | None
@@ -110,12 +111,12 @@ class StoredOtherSide:
 
 
 @dataclass(frozen=True)
-class TransactionOtherSide:
-    """The other side of a transaction and of each of its splits, by split ID and in position
+class TransactionCounterparty:
+    """The counterparty of a transaction and of each of its splits, by split ID and in position
     order. A split with none of its own belongs to its transaction's contact."""
 
-    transaction: StoredOtherSide
-    splits: tuple[tuple[int, StoredOtherSide], ...]
+    transaction: StoredCounterparty
+    splits: tuple[tuple[int, StoredCounterparty], ...]
 
 
 @dataclass(frozen=True)
@@ -141,22 +142,22 @@ class _Index:
     accounts: tuple[tuple[int, int, str], ...]  # contact, account, last four digits
 
 
-def plan_other_side(session: Session) -> OtherSidePlan:
-    """Plan the recognized other side of every transaction. Writes nothing.
+def plan_counterparty(session: Session) -> CounterpartyPlan:
+    """Plan the recognized counterparty of every transaction. Writes nothing.
 
     A transaction whose origin is manual is left alone, though its stored contact still counts as
-    the other side of a pass-through. Zero-amount transactions are skipped.
+    the counterparty of a pass-through. Zero-amount transactions are skipped.
     """
     contacts = load_contacts(session)
     if not contacts:
-        return OtherSidePlan(None, 0, 0, 0)
+        return CounterpartyPlan(None, 0, 0, 0)
     index = _index(session, contacts)
     rows = _rows(session)
-    found: dict[int, OtherSide] = {}
+    found: dict[int, Counterparty] = {}
     for row in rows:
         if row.origin is ContactOrigin.manual:
             if row.contact_id is not None:
-                found[row.id] = OtherSide(row.contact_id, row.contact_account_id)
+                found[row.id] = Counterparty(row.contact_id, row.contact_account_id)
             continue
         other = _identify(index, row.description, row.amount_cents)
         if other is not None:
@@ -194,17 +195,17 @@ def plan_other_side(session: Session) -> OtherSidePlan:
     preview = (
         make_preview(
             session,
-            "other_side",
+            "counterparty",
             changes,
             summary={"considered": considered, "changed": len(changes)},
         )
         if changes
         else None
     )
-    return OtherSidePlan(preview, considered, len(changes), recognized)
+    return CounterpartyPlan(preview, considered, len(changes), recognized)
 
 
-def apply_other_side(session: Session, plan: OtherSidePlan, *, idempotency_key: str) -> Batch:
+def apply_counterparty(session: Session, plan: CounterpartyPlan, *, idempotency_key: str) -> Batch:
     """Write a recognition plan as one batch. The same key applies at most once.
 
     Raises BatchError if the plan has no changes, and StalePreview if the data changed since the
@@ -218,8 +219,8 @@ def apply_other_side(session: Session, plan: OtherSidePlan, *, idempotency_key: 
     return apply(session, plan.preview, idempotency_key=idempotency_key)
 
 
-def transaction_other_side(session: Session, transaction_id: int) -> TransactionOtherSide:
-    """Read the other side stored on a transaction and its splits. Raises LookupError if the
+def transaction_counterparty(session: Session, transaction_id: int) -> TransactionCounterparty:
+    """Read the counterparty stored on a transaction and its splits. Raises LookupError if the
     transaction does not exist."""
     txn = session.get(Transaction, transaction_id)
     if txn is None:
@@ -228,12 +229,12 @@ def transaction_other_side(session: Session, transaction_id: int) -> Transaction
 
     def describe(
         contact_id: int | None, account_id: int | None, origin: ContactOrigin
-    ) -> StoredOtherSide:
+    ) -> StoredCounterparty:
         contact = contacts.get(contact_id) if contact_id is not None else None
         label = None
         if contact is not None and account_id is not None:
             label = next((a.label for a in contact.accounts if a.id == account_id), None)
-        return StoredOtherSide(
+        return StoredCounterparty(
             contact_id=contact.id if contact else None,
             contact_name=contact.name if contact else None,
             contact_role=contact.role if contact else None,
@@ -242,7 +243,7 @@ def transaction_other_side(session: Session, transaction_id: int) -> Transaction
             origin=ContactOrigin(origin),
         )
 
-    return TransactionOtherSide(
+    return TransactionCounterparty(
         transaction=describe(txn.contact_id, txn.contact_account_id, txn.contact_origin),
         splits=tuple(
             (split.id, describe(split.contact_id, split.contact_account_id, split.contact_origin))
@@ -251,10 +252,10 @@ def transaction_other_side(session: Session, transaction_id: int) -> Transaction
     )
 
 
-class PersonSides:
+class PersonCounterparties:
     """Whether a payment is with a person, which a rule with the person condition asks.
 
-    A transaction whose stored other side is a contact is with a person when that contact is a
+    A transaction whose stored counterparty is a contact is with a person when that contact is a
     person with the other role. With no stored contact it is when its description is a payment that
     names a person, in the wordings recognition reads, and the name is not your own money: none of
     your names or account nicknames, no tracked account by its digits, no saved contact that is a
@@ -287,7 +288,7 @@ class PersonSides:
         source: SourceText | None,
         amount_cents: int,
     ) -> bool:
-        """True when the payment's other side is a person. source is the transaction's statement
+        """True when the payment's counterparty is a person. source is the transaction's statement
         row, as source_texts returns it, or None when no row describes it."""
         if contact_id is not None:
             contact = self._by_id.get(contact_id)
@@ -319,7 +320,7 @@ def _is_other_person(contact: ContactView) -> bool:
     return contact.kind is ContactKind.person and contact.role is ContactRole.other
 
 
-def set_other_side(
+def set_counterparty(
     session: Session,
     *,
     transaction_ids: Sequence[int],
@@ -327,10 +328,10 @@ def set_other_side(
     contact_account_id: int | None = None,
     idempotency_key: str,
 ) -> Batch:
-    """Set the other side of several transactions at once, with the manual origin, as one batch.
+    """Set the counterparty of several transactions at once, with the manual origin, as one batch.
 
     A contact_id of None with no account clears them: the origin goes back to none, so recognition
-    may set them again. Transactions that already have exactly this other side from you are left
+    may set them again. Transactions that already have exactly this counterparty from you are left
     out. Raises LookupError for an unknown transaction or contact, ValueError for no transactions,
     an account without a contact or one that is not the contact's, and NothingChanged when no
     transaction would change.
@@ -349,10 +350,10 @@ def set_other_side(
     if len(ids) == 1:
         payee = session.scalar(select(Transaction.payee).where(Transaction.id == ids[0]))
         noun = str(payee)
-    label = _label(target, f"the other side of {noun}")
+    label = _label(target, f"the counterparty of {noun}")
     preview = make_preview(
         session,
-        "contact.set_other_side",
+        "contact.set_counterparty",
         changes,
         summary={
             "label": label,
@@ -362,7 +363,7 @@ def set_other_side(
     return apply(session, preview, idempotency_key=idempotency_key)
 
 
-def set_split_other_side(
+def set_split_counterparty(
     session: Session,
     split_id: int,
     *,
@@ -370,9 +371,9 @@ def set_split_other_side(
     contact_account_id: int | None = None,
     idempotency_key: str,
 ) -> Batch:
-    """Set the other side of one split, as set_other_side does for transactions. A split with
+    """Set the counterparty of one split, as set_counterparty does for transactions. A split with
     none of its own belongs to its transaction's contact. Raises LookupError if the split does not
-    exist, and otherwise as set_other_side does."""
+    exist, and otherwise as set_counterparty does."""
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
         return replay
@@ -383,10 +384,10 @@ def set_split_other_side(
     changes = _manual_changes(session, "split", Split, [split_id], target)
     if not changes:
         raise NothingChanged("Nothing has changed.")
-    label = _label(target, "the other side of a split")
+    label = _label(target, "the counterparty of a split")
     preview = make_preview(
         session,
-        "contact.set_split_other_side",
+        "contact.set_split_counterparty",
         changes,
         summary={"label": label, "transaction_id": split.transaction_id, "split_id": split_id},
     )
@@ -466,8 +467,8 @@ def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
-def _identify(index: _Index, description: str, amount_cents: int) -> OtherSide | None:
-    """The other side a description names, by the first step that finds anybody, or None.
+def _identify(index: _Index, description: str, amount_cents: int) -> Counterparty | None:
+    """The counterparty a description names, by the first step that finds anybody, or None.
 
     A step that finds more than one contact or account stops the search: nobody is identified.
     """
@@ -479,16 +480,16 @@ def _identify(index: _Index, description: str, amount_cents: int) -> OtherSide |
     if name_text is not None:
         ids = {match.contact_id for match in find_names(name_text, index.contacts)}
         if ids:
-            return _only(index, {OtherSide(contact_id) for contact_id in ids})
+            return _only(index, {Counterparty(contact_id) for contact_id in ids})
     matched = {
-        OtherSide(contact_id)
+        Counterparty(contact_id)
         for contact_id, pattern_side, pattern in index.plain
         if pattern_side == side and pattern.search(description)
     }
     return _only(index, matched) if matched else None
 
 
-def _only(index: _Index, candidates: set[OtherSide]) -> OtherSide | None:
+def _only(index: _Index, candidates: set[Counterparty]) -> Counterparty | None:
     """The one candidate, or None when there are several or it is the owner with no account."""
     if len(candidates) != 1:
         return None
@@ -498,15 +499,15 @@ def _only(index: _Index, candidates: set[OtherSide]) -> OtherSide | None:
     return other
 
 
-def _named_accounts(index: _Index, description: str, side: str) -> set[OtherSide]:
+def _named_accounts(index: _Index, description: str, side: str) -> set[Counterparty]:
     mentioned = account_mentions(description) - index.tracked_digits
     found = {
-        OtherSide(contact_id, account_id)
+        Counterparty(contact_id, account_id)
         for contact_id, account_id, last4 in index.accounts
         if last4 in mentioned
     }
     found.update(
-        OtherSide(contact_id, account_id)
+        Counterparty(contact_id, account_id)
         for contact_id, account_id, pattern_side, pattern in index.tied
         if pattern_side == side and pattern.search(description)
     )
@@ -514,15 +515,15 @@ def _named_accounts(index: _Index, description: str, side: str) -> set[OtherSide
 
 
 def _pass_through(
-    roles: dict[int, ContactRole], rows: Sequence[_Row], found: dict[int, OtherSide]
-) -> dict[int, OtherSide]:
+    roles: dict[int, ContactRole], rows: Sequence[_Row], found: dict[int, Counterparty]
+) -> dict[int, Counterparty]:
     """The transfers to the owner's accounts that carry one other contact's money.
 
     A transfer qualifies when exactly one payment of the same amount from a contact (not the owner
     or the co-owner) posted within 7 days of it, before or after and the same day included, and
     that payment has no other transfer to pair with. The window is counted once for both
     directions, so a second payment on either side makes the transfer ambiguous. The transfer's
-    other side is that contact. A transfer you set by hand is left alone.
+    counterparty is that contact. A transfer you set by hand is left alone.
     """
     payments: dict[int, list[_Row]] = defaultdict(list)
     transfers: list[_Row] = []
@@ -552,16 +553,16 @@ def _pass_through(
     for matches in partners.values():
         for payment in matches:
             taken[payment.id] += 1
-    result: dict[int, OtherSide] = {}
+    result: dict[int, Counterparty] = {}
     for row in transfers:
         matches = partners[row.id]
         if len(matches) == 1 and taken[matches[0].id] == 1:
-            result[row.id] = OtherSide(found[matches[0].id].contact_id)
+            result[row.id] = Counterparty(found[matches[0].id].contact_id)
     return result
 
 
 def _decide(
-    row: _Row, target: OtherSide | None
+    row: _Row, target: Counterparty | None
 ) -> tuple[int | None, int | None, ContactOrigin] | None:
     """The contact, account, and origin a transaction should have, or None to leave it alone."""
     if target is not None:
@@ -571,7 +572,7 @@ def _decide(
             return None
         return wanted
     if row.origin is ContactOrigin.recognized:
-        # What recognized this other side no longer does, so it goes back to unknown.
+        # What recognized this counterparty no longer does, so it goes back to unknown.
         return None, None, ContactOrigin.none
     return None
 

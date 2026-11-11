@@ -43,6 +43,7 @@ from omsync.ingest.dropfolder import PendingFile, location_of
 from omsync.ingest.pipeline import ImportReport, import_files
 from omsync.ingest.timing import timed
 from omsync.ledger.categorize import InvalidKeyword, apply_categorize, plan_categorize
+from omsync.ledger.counterparty import apply_counterparty, plan_counterparty
 from omsync.ledger.models import (
     Account,
     AccountAlias,
@@ -54,7 +55,6 @@ from omsync.ledger.models import (
     SyncStatus,
     Transaction,
 )
-from omsync.ledger.other_side import apply_other_side, plan_other_side
 from omsync.ledger.sources import current_alias_id
 
 LOOKBACK = timedelta(days=45)
@@ -319,14 +319,14 @@ def _run(
 
 
 def _categorize(session: Session, plan: _Plan) -> tuple[int, str | None]:
-    """Categorize the provider's accounts as one batch, after identifying the other side as the
+    """Categorize the provider's accounts as one batch, after identifying the counterparty as the
     automatic step does, because a rule can read it. Returns the transactions categorized,
     and a problem when the keywords could not be applied. The imported statements stay either
     way."""
     try:
-        identifying = plan_other_side(session)
+        identifying = plan_counterparty(session)
         if identifying.preview is not None:
-            apply_other_side(session, identifying, idempotency_key=f"sync-other-side:{uuid4()}")
+            apply_counterparty(session, identifying, idempotency_key=f"sync-counterparty:{uuid4()}")
         categorizing = plan_categorize(
             session, account_ids=[account.account_id for account in plan.accounts]
         )

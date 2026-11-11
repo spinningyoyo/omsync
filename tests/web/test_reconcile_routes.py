@@ -111,7 +111,7 @@ def test_approve_one_proposal_then_undo_returns_it(
     client: TestClient, app: FastAPI, ledger: dict
 ) -> None:
     sign_in(client)
-    sig = _sig(app, "1b")
+    sig = _sig(app, "zelle_same_confirmation")
 
     response = client.post(
         "/reconcile/approve",
@@ -135,7 +135,7 @@ def test_approve_one_proposal_then_undo_returns_it(
     assert undone.status_code == 200
     assert "Undone" in undone.text
     assert 'id="reconcile-results"' in undone.text
-    assert _sig(app, "1b") == sig  # the proposal is back
+    assert _sig(app, "zelle_same_confirmation") == sig  # the proposal is back
     with Session(app.state.engine) as db:
         assert db.scalar(select(func.count()).select_from(Link)) == 0
 
@@ -144,7 +144,7 @@ def test_a_stale_proposal_says_to_run_again_and_writes_nothing(
     client: TestClient, app: FastAPI, ledger: dict
 ) -> None:
     sign_in(client)
-    sig = _sig(app, "1b")
+    sig = _sig(app, "zelle_same_confirmation")
     with Session(app.state.engine) as db:
         db.get(Transaction, ledger["zelle_in"]).amount_cents = 9_000  # the pair no longer agrees
         db.commit()

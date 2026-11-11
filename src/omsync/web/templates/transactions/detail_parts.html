@@ -1,4 +1,4 @@
-{# The transaction detail: the transaction, who is on the other side of it, and the same for each
+{# The transaction detail: the transaction, who its counterparty is, and the same for each
    split. The region swaps itself on each write, and out of band after an undo. Macros import what
    they use, because a fragment block renders without this file's top level. #}
 {% from "components/button.html" import button %}
@@ -23,33 +23,33 @@
     {%- endif %}
   </section>
 
-  <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="other-side-title">
+  <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="counterparty-title">
     <div>
-      <h2 id="other-side-title" class="font-medium text-primary">What is on the other side?</h2>
-      <p class="text-sm text-secondary">The person, business, or account of yours outside omsync that this money went to or came from. omsync guesses it after each import; what you choose here is kept.</p>
+      <h2 id="counterparty-title" class="font-medium text-primary">Counterparty</h2>
+      <p class="text-sm text-secondary">Who this money went to or came from. Your choice overrides omsync's guess.</p>
     </div>
     {%- if error %}
     <p class="text-sm text-destructive" role="alert">{{ error }}</p>
     {%- endif %}
-    {{ side_status(detail.side, none) }}
-    {{ side_form("/transactions/" ~ row.id ~ "/other-side", detail.groups, detail.side, detail.set_key, detail.clear_key, "the transaction") }}
+    {{ counterparty_status(detail.counterparty, none) }}
+    {{ counterparty_form("/transactions/" ~ row.id ~ "/counterparty", detail.groups, detail.counterparty, detail.set_key, detail.clear_key, "the transaction") }}
   </section>
 
   {%- if detail.splits %}
   <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="splits-title">
     <div>
       <h2 id="splits-title" class="font-medium text-primary">Splits</h2>
-      <p class="text-sm text-secondary">A part can be owed by a contact of its own, such as a purchase shared with a friend. A part with none belongs to the transaction's other side.</p>
+      <p class="text-sm text-secondary">A split can have its own counterparty, like a friend's share.</p>
     </div>
     <ul class="flex flex-col divide-y divide-subdued">
       {%- for part in detail.splits %}
       <li class="flex flex-col gap-3 py-3">
         <div class="flex flex-wrap justify-between gap-2 text-sm">
-          <span class="text-primary">Part {{ part.number }}{% if part.split.category %} · {{ part.split.category }}{% endif %}{% if part.split.memo %} · {{ part.split.memo }}{% endif %}</span>
+          <span class="text-primary">Split {{ part.number }}{% if part.split.category %} · {{ part.split.category }}{% endif %}{% if part.split.memo %} · {{ part.split.memo }}{% endif %}</span>
           <span class="tabular-nums text-primary">{{ part.split.amount_cents|money }}</span>
         </div>
-        {{ side_status(part.side, detail.side) }}
-        {{ side_form("/transactions/" ~ row.id ~ "/splits/" ~ part.split.id ~ "/other-side", detail.groups, part.side, part.set_key, part.clear_key, "part " ~ part.number) }}
+        {{ counterparty_status(part.counterparty, detail.counterparty) }}
+        {{ counterparty_form("/transactions/" ~ row.id ~ "/splits/" ~ part.split.id ~ "/counterparty", detail.groups, part.counterparty, part.set_key, part.clear_key, "split " ~ part.number) }}
       </li>
       {%- endfor %}
     </ul>
@@ -58,38 +58,38 @@
 </div>
 {%- endmacro %}
 
-{# Who is on the other side now, and what set it. inherited is the transaction's side, for a split
+{# The counterparty now, and what set it. inherited is the transaction's counterparty, for a split
    with none of its own. #}
-{% macro side_status(side, inherited) -%}
-{%- if side.contact_id %}
+{% macro counterparty_status(counterparty, inherited) -%}
+{%- if counterparty.contact_id %}
 <p class="flex flex-wrap items-center gap-2 text-sm text-primary">
-  {%- if side.is_you %}
-  <span>Your account {{ side.account or "outside omsync" }}</span>
+  {%- if counterparty.is_you %}
+  <span>Your account {{ counterparty.account or "outside omsync" }}</span>
   {%- else %}
-  <a href="/settings/contacts/{{ side.contact_id }}" class="underline-offset-2 hover:underline focus-ring">{{ side.name }}</a>{% if side.account %}<span class="text-secondary">· {{ side.account }}</span>{% endif %}
+  <a href="/settings/contacts/{{ counterparty.contact_id }}" class="underline-offset-2 hover:underline focus-ring">{{ counterparty.name }}</a>{% if counterparty.account %}<span class="text-secondary">· {{ counterparty.account }}</span>{% endif %}
   {%- endif %}
-  {{ pill(side.origin_label, tone="indigo" if side.origin == "manual" else "gray", style="soft") }}
+  {{ pill(counterparty.origin_label, tone="indigo" if counterparty.origin == "manual" else "gray", style="soft") }}
 </p>
 {%- elif inherited is not none and inherited.contact_id %}
-<p class="text-sm text-secondary">Belongs to {{ inherited.name if not inherited.is_you else "your account " ~ (inherited.account or "outside omsync") }}, the transaction's other side.</p>
+<p class="text-sm text-secondary">Belongs to {{ inherited.name if not inherited.is_you else "your account " ~ (inherited.account or "outside omsync") }}, the transaction's counterparty.</p>
 {%- else %}
 <p class="text-sm text-secondary">Not identified.</p>
 {%- endif %}
 {%- endmacro %}
 
-{# Choose who is on the other side, or clear it so that recognition may set it again. #}
-{% macro side_form(url, groups, side, set_key, clear_key, what) -%}
+{# Choose the counterparty, or clear it so that recognition may set it again. #}
+{% macro counterparty_form(url, groups, counterparty, set_key, clear_key, what) -%}
 <div class="flex flex-wrap items-end gap-3">
   <form class="flex flex-wrap items-end gap-3" hx-post="{{ url }}">
     <input type="hidden" name="idempotency_key" value="{{ set_key }}">
     <label class="form-field w-auto min-w-[16rem]">
-      <span class="form-field__label">Set the other side of {{ what }} to</span>
+      <span class="form-field__label">Set the counterparty of {{ what }} to</span>
       <select name="target" class="form-field__input" required>
         <option value="">Choose…</option>
         {%- for group in groups %}
         <optgroup label="{{ group.label }}">
           {%- for choice in group.choices %}
-          <option value="{{ choice.value }}"{% if choice.value == side.selected %} selected{% endif %}>{{ choice.label }}</option>
+          <option value="{{ choice.value }}"{% if choice.value == counterparty.selected %} selected{% endif %}>{{ choice.label }}</option>
           {%- endfor %}
         </optgroup>
         {%- endfor %}
@@ -97,11 +97,11 @@
     </label>
     {{ button("Set", variant="primary", type="submit") }}
   </form>
-  {%- if side.origin != "none" or side.contact_id %}
+  {%- if counterparty.origin != "none" or counterparty.contact_id %}
   <form hx-post="{{ url }}">
     <input type="hidden" name="idempotency_key" value="{{ clear_key }}">
     <input type="hidden" name="target" value="">
-    {{ button("Clear", variant="outline", type="submit", aria_label="Clear the other side of " ~ what) }}
+    {{ button("Clear", variant="outline", type="submit", aria_label="Clear the counterparty of " ~ what) }}
   </form>
   {%- endif %}
 </div>

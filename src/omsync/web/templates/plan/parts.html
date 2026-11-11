@@ -76,7 +76,7 @@
    The caller supplies the flex column that holds it, so Home can place it in its own section. #}
 {% macro budget_card_body(card) -%}
   {%- if card.empty %}
-  <p class="text-sm text-secondary">No budget for {{ card.month_label }} yet. Copy last month's lines or set a budget for each category.</p>
+  <p class="text-sm text-secondary">No budget for {{ card.month_label }} yet. Copy last month or start fresh.</p>
   <div>{{ link_button("Set up the budget", href=card.href, variant="outline", size="sm") }}</div>
   {%- else %}
   <div class="flex flex-col gap-1">
@@ -133,7 +133,7 @@
    goals. The caller supplies the flex column that holds it. #}
 {% macro goals_card_body(card) -%}
   {%- if not card.count %}
-  <p class="text-sm text-secondary">No goals yet. A goal is a savings or payoff target, funded by a monthly contribution.</p>
+  <p class="text-sm text-secondary">No goals yet.</p>
   <div>{{ link_button("Add a goal", href="/plan/goals", variant="outline", size="sm", icon="plus") }}</div>
   {%- else %}
   <div class="flex flex-col gap-1">
@@ -192,9 +192,9 @@
     </div>
   </div>
   <p class="text-sm text-secondary">
-    {%- if page.is_flex %}Flex: you budget fixed and non-monthly costs, and everything else is one amount to spend, the flex number.
-    {%- else %}Category: every category has its own budget.
-    {%- endif %} Switching between Flex and Category keeps the budgets of both.</p>
+    {%- if page.is_flex %}Flex: budget fixed costs; everything else shares one amount.
+    {%- else %}Category: budget each one.
+    {%- endif %}</p>
   <div class="flex flex-wrap items-center gap-2">
     <a href="/plan/budget/{{ page.prev_key }}" class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-secondary hover:bg-container-inset-hover hover:text-primary focus-ring" aria-label="Previous month, {{ page.prev_title }}">{{ icon("chevron-left", 20) }}</a>
     <h2 class="w-40 text-center text-base font-medium tabular-nums text-primary">{{ page.title }}</h2>
@@ -230,7 +230,7 @@
   </div>
   {{ bucket_bars(f.buckets) }}
   {%- if f.unassigned_spent %}
-  <p class="text-xs text-secondary">{{ f.unassigned_spent|sensitive }} spent in categories with no type — not in the flex number.</p>
+  <p class="text-xs text-secondary">{{ f.unassigned_spent|sensitive }} spent in categories with no type, not counted here.</p>
   {%- endif %}
   <dl class="flex flex-col gap-1.5 border-t border-subdued pt-4 text-sm">
     <div class="flex items-baseline justify-between gap-3">
@@ -334,7 +334,7 @@
 {% macro copy_prompt(page) -%}
 <section class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="copy-title">
   <h2 id="copy-title" class="text-sm font-medium text-primary">Nothing is budgeted for {{ page.title }} yet</h2>
-  <p class="text-sm text-secondary">Copy the budget lines from {{ page.copy_from }} to start from them. You can change any line afterward.</p>
+  <p class="text-sm text-secondary">Start from {{ page.copy_from }}'s budget. You can change it after.</p>
   <form method="post" action="/plan/budget/{{ page.key }}/copy" hx-post="/plan/budget/{{ page.key }}/copy" hx-swap="none">
     <input type="hidden" name="idempotency_key" value="{{ page.copy_key }}">
     {{ button("Copy last month", variant="primary", size="md", icon="copy", type="submit") }}
@@ -593,7 +593,7 @@
       {{ type_table(type_section, page) }}
       {%- endfor %}
       {%- if not page.type_sections %}
-      <p class="text-sm text-secondary">Nothing is budgeted for {{ page.title }} yet. Add a budget below, or copy last month.</p>
+      <p class="text-sm text-secondary">Nothing budgeted yet. Add one below, or copy last month.</p>
       {%- endif %}
       {{ unbudgeted_card(page) }}
       {%- endif %}
@@ -747,7 +747,7 @@
     {%- endfor %}
   </ul>
   {%- else %}
-  {{ empty_state("No goals yet", "A goal is a savings or payoff target. Give it a target, a date, and a monthly contribution, and link an account to track its balance.") }}
+  {{ empty_state("No goals yet", "Set a target, date, and monthly amount. Link an account to track it.") }}
   {%- endif %}
   {{ goal_dialog("goal-create-dialog", create) }}
 </div>
@@ -828,7 +828,7 @@
   <dialog id="goal-delete-dialog" class="m-auto w-full max-w-md bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="goal-delete-title" data-action="close->page-dialogs#restoreFocus">
     <div class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs">
       <h2 id="goal-delete-title" class="text-lg font-medium text-primary">Delete {{ goal.name }}?</h2>
-      <p class="text-sm text-secondary">The goal and its contribution are removed. You can undo this from the notice that follows.</p>
+      <p class="text-sm text-secondary">Deletes the goal and its contribution.</p>
       <form method="post" action="/plan/goals/{{ goal.id }}/delete" hx-post="/plan/goals/{{ goal.id }}/delete" hx-swap="none" class="flex items-center justify-end gap-2">
         <input type="hidden" name="idempotency_key" value="{{ goal.delete_key }}">
         {{ button("Cancel", variant="outline", attrs={"data-action": "page-dialogs#closeDialog"}) }}
@@ -844,7 +844,7 @@
 <dialog id="goal-archive-dialog" class="m-auto w-full max-w-md bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="goal-archive-title" data-action="close->page-dialogs#restoreFocus">
   <div class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs">
     <h2 id="goal-archive-title" class="text-lg font-medium text-primary">Archive {{ goal.name }}?</h2>
-    <p class="text-sm text-secondary">An archived goal leaves the flex number and the goal totals. Restore it at any time.</p>
+    <p class="text-sm text-secondary">Archived goals don't count. Restore any time.</p>
     <form method="post" action="/plan/goals/{{ goal.id }}/archive" hx-post="/plan/goals/{{ goal.id }}/archive" hx-swap="none" class="flex items-center justify-end gap-2">
       <input type="hidden" name="idempotency_key" value="{{ goal.archive_key }}">
       <input type="hidden" name="archived" value="1">
@@ -859,7 +859,7 @@
 {% macro goal_deleted(name, oob=false) -%}
 <div id="goal-main" class="flex flex-col gap-4 rounded-xl bg-container p-8 shadow-border-xs"{% if oob %} hx-swap-oob="true"{% endif %}>
   <h1 class="text-2xl font-medium text-primary">Goal deleted</h1>
-  <p class="text-sm text-secondary">{{ name }} was deleted. Undo in the notice below brings it back.</p>
+  <p class="text-sm text-secondary">{{ name }} was deleted.</p>
   <div>{{ link_button("Back to goals", href="/plan/goals", variant="outline", size="sm", icon="chevron-right", icon_position="right") }}</div>
 </div>
 {%- endmacro %}

@@ -77,7 +77,7 @@ def echo_import_report(report: ImportReport) -> None:
     if auto.categorized:
         typer.echo(f"Categorized {auto.categorized} transactions from keywords.")
     if auto.identified:
-        typer.echo(f"Identified the other side of {auto.identified} transactions.")
+        typer.echo(f"Identified the counterparty of {auto.identified} transactions.")
     if auto.linked:
         noun = "link" if auto.linked == 1 else "links"
         typer.echo(

@@ -94,13 +94,6 @@ class Preview:
     summary: dict[str, Any]
 
 
-def current_revision(session: Session) -> int:
-    """Return the data revision. The revision row is created at 0 on first use."""
-    if session.execute(select(_REVISION.c.id).where(_REVISION.c.id == 1)).first() is None:
-        _seed_revision(session)
-    return _read_revision(session)
-
-
 def make_preview(
     session: Session,
     kind: str,

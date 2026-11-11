@@ -7,10 +7,10 @@
 
 {% block settings_page %}
 {% if demo_mode %}
-{{ alert("In the demo, bank sync is off: it needs a Bitwarden vault and your bank logins. The accounts below were filled from statement files.", variant="info") }}
+{{ alert("Demo: bank sync is off.", variant="info") }}
 {% endif %}
 <div class="flex flex-wrap items-start justify-between gap-4">
-  {{ page_header(page_title, "How omsync fetches each institution's statements: the providers that log in to its bank, and the accounts each one fetches.") }}
+  {{ page_header(page_title, "Banks omsync syncs, and the accounts each one fetches.") }}
   <div class="flex flex-wrap items-center gap-2">
     {{ sync_all_control(sync.running) }}
     {{ link_button("Add provider", href="/settings/providers/new", variant="primary", icon="plus") }}

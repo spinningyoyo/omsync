@@ -25,7 +25,8 @@ MERCHANT_RETURN_WINDOW_DAYS = 30
 BRAND_SIMILARITY_THRESHOLD = 0.85
 ONE_CENT = 1
 
-# PayPal processor prefix, used by rule 7c to keep same-account returns to PayPal payees.
+# PayPal processor prefix, used by rule_paypal_return_same_account to keep same-account returns
+# to PayPal payees.
 PAYPAL_RE = re.compile(r"\bPAYPAL\b", re.IGNORECASE)
 
 # Money sent to or received from a person: a Zelle payment, anything through Venmo, or a PayPal
@@ -39,7 +40,7 @@ _PERSON_PAYMENT_RE = re.compile(
 )
 
 
-def rule_7a(pool: Pool, emit: Emitter) -> None:
+def rule_return_same_account(pool: Pool, emit: Emitter) -> None:
     """Same-account merchant return: an exact-amount refund 1 to 30 days after a purchase.
 
     It is automatic when the two share a brand, and a review proposal otherwise. Purchases with the
@@ -70,7 +71,7 @@ def rule_7a(pool: Pool, emit: Emitter) -> None:
             _settle_return(
                 pool,
                 emit,
-                rule="7a",
+                rule="return_same_account",
                 refund=refund,
                 candidates=candidates,
                 queue=Queue.auto_approve if same_brand else Queue.review,
@@ -81,7 +82,7 @@ def rule_7a(pool: Pool, emit: Emitter) -> None:
             )
 
 
-def rule_7c(pool: Pool, emit: Emitter) -> None:
+def rule_paypal_return_same_account(pool: Pool, emit: Emitter) -> None:
     """Same-account PayPal return: a PayPal refund within a cent of a PayPal purchase.
 
     Both sides must be on the same account, within 30 days, and share a brand.
@@ -113,7 +114,7 @@ def rule_7c(pool: Pool, emit: Emitter) -> None:
         _settle_return(
             pool,
             emit,
-            rule="7c",
+            rule="paypal_return_same_account",
             refund=refund,
             candidates=candidates,
             queue=Queue.review,
@@ -121,41 +122,11 @@ def rule_7c(pool: Pool, emit: Emitter) -> None:
         )
 
 
-def rule_7b(pool: Pool, emit: Emitter) -> None:
-    """Cross-account merchant return: a refund within a cent of a purchase on another account.
+def rule_return_other_account_same_store(pool: Pool, emit: Emitter) -> None:
+    """Cross-account return: a refund within a cent of a purchase on another account.
 
-    The merchant must match, and the refund must come 1 to 30 days after the purchase.
+    The two must share a brand, and the refund must come 1 to 30 days after the purchase.
     """
-    merchants = _merchant_candidates(pool)
-    purchases = [t for t in merchants if t.amount_cents < 0]
-    refunds = [t for t in merchants if t.amount_cents > 0]
-
-    for refund in refunds:
-        if refund.id not in pool:
-            continue
-        candidates = [
-            p
-            for p in purchases
-            if p.id in pool
-            and p.account_id != refund.account_id
-            and _within_one_cent(p, refund)
-            and _is_return_window(p, refund)
-            and _same_merchant(p, refund)
-            and emit.allowed(p, refund)
-        ]
-        _settle_return(
-            pool,
-            emit,
-            rule="7b",
-            refund=refund,
-            candidates=candidates,
-            queue=Queue.review,
-            ambiguous_note="cross_account_ambiguity",
-        )
-
-
-def rule_7d(pool: Pool, emit: Emitter) -> None:
-    """Cross-account return by brand: as 7b, but the brand words must match, not the merchant."""
     merchants = _merchant_candidates(pool)
     purchases = [t for t in merchants if t.amount_cents < 0]
     refunds = [t for t in merchants if t.amount_cents > 0]
@@ -180,7 +151,7 @@ def rule_7d(pool: Pool, emit: Emitter) -> None:
         _settle_return(
             pool,
             emit,
-            rule="7d",
+            rule="return_other_account_same_store",
             refund=refund,
             candidates=candidates,
             queue=Queue.review,
@@ -259,13 +230,3 @@ def _is_return_window(purchase: TxnView, refund: TxnView) -> bool:
 
 def _within_one_cent(first: TxnView, second: TxnView) -> bool:
     return abs(abs(first.amount_cents) - abs(second.amount_cents)) <= ONE_CENT
-
-
-def _same_merchant(first: TxnView, second: TxnView) -> bool:
-    key = _normalized_merchant(first.payee)
-    return key is not None and key == _normalized_merchant(second.payee)
-
-
-def _normalized_merchant(payee: str) -> str | None:
-    words = payee.split()
-    return words[0].upper() if words else None

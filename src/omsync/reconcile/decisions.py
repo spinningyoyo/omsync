@@ -181,7 +181,7 @@ def manual_link(
     if link_kind not in MANUAL_KINDS:
         raise ValueError(f"A {link_kind.value} link cannot be made by hand.")
     if out_txn_id == in_txn_id:
-        raise ValueError("Choose a different transaction for the other side.")
+        raise ValueError("Choose a different transaction for the counterparty.")
     if isinstance(amount_cents, bool) or not isinstance(amount_cents, int) or amount_cents <= 0:
         raise ValueError("Enter an amount more than zero, such as 25.00.")
     out = _transaction_or_raise(session, out_txn_id)

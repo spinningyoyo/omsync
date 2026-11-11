@@ -10,25 +10,25 @@ from omsync.reconcile.patterns import DEFAULT_PATTERNS, Patterns
 from omsync.reconcile.pool import Pool
 
 DESCRIPTIONS: dict[str, str] = {
-    "rv": "Reversal: Same-Account",
-    "2a": "Joint: Card Bill Settlement",
-    "1a": "Transfer: Conf# Hash Match",
-    "1b": "Transfer: Zelle Conf# Match",
-    "1c": "Transfer: Shared Transaction ID",
-    "1d": "Transfer: Account Reference",
-    "2": "Transfer: CC Bill Payment",
-    "2b": "Transfer: CC Credit Balance Refund",
-    "3": "Transfer: Generic (No Conf#)",
-    "7a": "Merchant: Same-Account Return",
-    "7c": "Merchant: Same-Account PayPal Return (±$0.01)",
-    "rt": "P2P: Round Trip",
-    "ru": "Return: Round Trip via Untracked Account",
-    "7b": "Merchant: Cross-Account Return",
-    "7d": "Merchant: Cross-Account Return (Brand Match)",
+    "reversal_same_account": "Reversal on the same account",
+    "joint_card_bill": "Joint card bill settled",
+    "transfer_same_confirmation": "Transfer with the same confirmation number",
+    "zelle_same_confirmation": "Zelle with the same confirmation number",
+    "transfer_same_transaction_id": "Transfer with the same transaction ID",
+    "transfer_names_account": "Transfer whose description names the other account",
+    "card_bill_payment": "Credit card bill payment",
+    "card_credit_refund": "Credit card credit balance refunded",
+    "transfer_same_amount": "Transfer with the same amount and date, no confirmation",
+    "return_same_account": "Return on the same account",
+    "paypal_return_same_account": "PayPal return on the same account (within $0.01)",
+    "p2p_round_trip": "Money sent and sent back",
+    "return_via_untracked_account": "Return through an untracked account",
+    "return_other_account_same_store": "Return at the same store on another account",
     # Proposed by earlier versions. Links made from those proposals keep these names.
-    "cp": "P2P: Named Counterparty",
-    "p2p": "P2P: General Reimbursement",
-    "p2p_solo": "P2P: Solo Inflow (No Debit Match)",
+    "return_other_account": "Return on another account",
+    "p2p_named_counterparty": "Payment app with a named contact",
+    "p2p_reimbursement": "Payment app reimbursement",
+    "p2p_unmatched_inflow": "Payment app money in, no matching payment",
 }
 
 CONFIDENCE_BY_QUEUE: dict[Queue, float] = {
@@ -129,10 +129,6 @@ def days_gap(first: TxnView, second: TxnView) -> int:
 def days_after(later: TxnView, earlier: TxnView) -> int:
     """Return how many days later is after earlier. Negative when it comes first."""
     return (later.posted_on - earlier.posted_on).days
-
-
-def within_one_cent(first: TxnView, second: TxnView) -> bool:
-    return abs(abs(first.amount_cents) - abs(second.amount_cents)) <= 1
 
 
 def claim(

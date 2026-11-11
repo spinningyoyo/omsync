@@ -1,4 +1,4 @@
-// The Reconcile page's manual link: choosing the other side sets the amount to the smaller of the
+// The Reconcile page's manual link: choosing the counterpart sets the amount to the smaller of the
 // two unlinked remainders, which is the most a link can explain. Amounts are integer cents here,
 // and the server checks the amount it receives again.
 import { Controller } from "/static/vendor/stimulus.js";

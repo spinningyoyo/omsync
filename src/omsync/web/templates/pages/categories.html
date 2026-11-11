@@ -16,7 +16,7 @@
    The grid is the one row of columns that the fill chain passes through. From 2xl it takes the
    height left under the header, and each column passes the row's height on to its table. #}
 <div class="fill-chain flex flex-col gap-6" data-controller="categories" data-action="htmx:afterSettle->categories#settled close-dialogs@window->categories#closeDialogs">
-  {{ page_header("Categories", "Categories group your spending. Keywords assign them to payees and receipt items.") }}
+  {{ page_header("Categories", "Group spending. Keywords and rules fill categories in.") }}
 
   <div class="grid gap-6 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[minmax(27rem,1fr)_minmax(0,1.6fr)] 2xl:grid-rows-[minmax(0,1fr)]">
     {{ category_list(rows, view, drafts, errors) }}

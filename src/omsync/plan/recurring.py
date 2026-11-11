@@ -28,7 +28,7 @@ from omsync.ledger.models import (
     SeriesStatus,
     Transaction,
 )
-from omsync.reconcile.text import normalize_payee
+from omsync.reconcile.text import comparable_payee
 
 MIN_OCCURRENCES = 3
 MIN_CONFIDENCE = 0.5
@@ -210,7 +210,7 @@ def payee_key(payee_raw: str | None) -> str:
     """The grouping key for a raw payee: normalized, then stripped of per-transaction noise such as
     reference numbers, order codes, masked account numbers, phone numbers, and dates. It is empty
     when nothing is left."""
-    base = normalize_payee(_RAW_STAR_CODE.sub(" ", payee_raw or ""))
+    base = comparable_payee(_RAW_STAR_CODE.sub(" ", payee_raw or ""))
     text = base
     for pattern in _NOISE:
         text = pattern.sub(" ", text)

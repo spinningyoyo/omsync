@@ -16,8 +16,8 @@ from omsync.core.batches import BatchError, StalePreview, applied_batch_for_key
 from omsync.core.money import to_cents
 from omsync.core.months import parse_day
 from omsync.ledger.contacts import ContactKind, create_contact, starting_names
+from omsync.ledger.counterparty import set_counterparty
 from omsync.ledger.links import LinkKind
-from omsync.ledger.other_side import set_other_side
 from omsync.ledger.sources import Account
 from omsync.ledger.transactions import Transaction
 from omsync.receipts.service import apply_digest, apply_report, registered_vendors, run_vendor
@@ -52,7 +52,6 @@ DbSession = Annotated[Session, Depends(get_db)]
 PAGE = "pages/reconcile.html"
 FRAGMENTS = "reconcile/fragments.html"
 STALE = "Results changed since you ran this; run again"
-UNDO_CONFLICT = "Can't undo: changed since this was made."
 LINK_KINDS = tuple(sorted(kind.value for kind in MANUAL_KINDS))  # the order the dialog lists
 
 
@@ -240,11 +239,11 @@ def unlink_link(
     return _region(request, db, start_date, end_date, toast=_toast(batch, batch.summary))
 
 
-# The other side
+# The counterparty
 
 
-@router.post("/reconcile/other-side", response_class=HTMLResponse)
-def set_other_side_rows(
+@router.post("/reconcile/counterparty", response_class=HTMLResponse)
+def set_counterparty_rows(
     request: Request,
     db: DbSession,
     start: Annotated[str, Form()] = "",
@@ -255,7 +254,7 @@ def set_other_side_rows(
     new_kind: Annotated[str, Form()] = ContactKind.person.value,
     idempotency_key: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """Set what is on the other side of the chosen Not matched rows, as one batch, then run the
+    """Set the counterparty of the chosen Not matched rows, as one batch, then run the
     automatic step. target is a contact, a contact's account, or NEW_CONTACT with new_name."""
     try:
         start_date, end_date = parse_range(start, end, date.today())
@@ -264,7 +263,7 @@ def set_other_side_rows(
     if not txn:
         return _form_error(request, "Tick at least one row in the table below first.")
     if not target:
-        return _form_error(request, "Choose what is on the other side of the ticked rows.")
+        return _form_error(request, "Choose the counterparty of the ticked rows.")
     key = idempotency_key or uuid4().hex
     try:
         if target == NEW_CONTACT:
@@ -272,7 +271,7 @@ def set_other_side_rows(
             account_id = None
         else:
             contact_id, account_id = parse_choice(target)
-        batch = set_other_side(
+        batch = set_counterparty(
             db,
             transaction_ids=txn,
             contact_id=contact_id,
@@ -388,7 +387,7 @@ def link_submit(
     except RangeError as exc:
         return _dialog_error(request, str(exc), 422)
     if other is None:
-        return _dialog_error(request, "Choose the transaction on the other side.", 422)
+        return _dialog_error(request, "Choose the counterpart.", 422)
     try:
         cents = to_cents(amount.replace("$", "").strip() or "0")
     except (ValueError, TypeError):
@@ -427,7 +426,7 @@ def undo_reply(
     """After an undo of a reconcile or receipts batch: the toast, and the results re-run.
 
     Called from the shared undo route. The range comes from the undo URL, and the default range
-    applies when it names none. After an undo of the other side, `automatic` runs the automatic
+    applies when it names none. After an undo of the counterparty, `automatic` runs the automatic
     step again, because what it identified rested on what was undone.
     """
     message = with_automatic(message, run_automatic(db)) if automatic else message
@@ -560,10 +559,10 @@ def _dialog_error(request: Request, message: str, status: int) -> HTMLResponse:
 
 
 def _form_error(request: Request, message: str) -> HTMLResponse:
-    """A refusal of the Set other side form, shown beside its button. The form otherwise swaps the
+    """A refusal of the Set counterparty form, shown beside its button. The form otherwise swaps the
     whole results region, so the reply retargets itself and the page does not move."""
     response = _fragment(request, "frag_dialog_error", status=422, message=message)
-    response.headers["HX-Retarget"] = "#other-side-error"
+    response.headers["HX-Retarget"] = "#counterparty-error"
     response.headers["HX-Reswap"] = "innerHTML"
     return response
 

@@ -1,7 +1,7 @@
 """Transactions, their splits, the statement rows they came from, and ambiguous imports.
 
 A transaction keeps its permanent ID for life, however many statement rows describe it.
-Its splits always add up to its amount, to the cent. The other side of the money, a contact and
+Its splits always add up to its amount, to the cent. The counterparty of the money, a contact and
 optionally one of its accounts, is stored on a transaction or a split with an origin, as a category
 is.
 """
@@ -62,7 +62,7 @@ def may_replace(new: CategoryOrigin, current: CategoryOrigin) -> bool:
 
 
 class ContactOrigin(StrEnum):
-    """What set the other side of a transaction or split. Higher rank means a stronger claim."""
+    """What set the counterparty of a transaction or split. Higher rank means a stronger claim."""
 
     none = "none"
     recognized = "recognized"
@@ -80,7 +80,7 @@ class ContactOrigin(StrEnum):
 
 
 def may_replace_contact(new: ContactOrigin, current: ContactOrigin) -> bool:
-    """Return True when an other side set by origin `new` may overwrite one set by `current`.
+    """Return True when a counterparty set by origin `new` may overwrite one set by `current`.
 
     Recognition never replaces your choice, may replace an earlier recognition so it can rerun,
     and may replace none. A manual choice may replace any, because that is you changing your mind.

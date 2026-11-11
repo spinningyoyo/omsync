@@ -1,7 +1,7 @@
 # Back up and restore
 
 Use a full archive to recover the database together with statement and receipt evidence.
-[Backup architecture](../architecture/backups.md) defines what is included and how
+[Changes, undo, and backups](../architecture/changes.md) defines what is included and how
 replacement is protected. Commands use `uv run` from a checkout; omit it for an installed
 application.
 

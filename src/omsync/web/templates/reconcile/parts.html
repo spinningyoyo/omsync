@@ -37,11 +37,11 @@
   {{ alert(notice, variant="warning", live="status") }}
   {%- endif %}
   <p class="text-sm text-secondary">
-    Needs you: {{ results.needs_you }}
-    ({{ results.queue_counts[1][1] }} to review, {{ results.queue_counts[2][1] }} to choose, {{ results.not_matched|length }} not matched).
-    Of {{ results.proposal_count }} proposal{{ '' if results.proposal_count == 1 else 's' }}
-    {%- for label, count in results.queue_counts %}, {{ count }} {{ label|lower }}{% endfor %}.
-    Automatic proposals are linked after each import; the rest wait for you.
+    {%- set parts = [] %}
+    {%- if results.queue_counts[1][1] %}{% set _ = parts.append(results.queue_counts[1][1] ~ " to review") %}{% endif %}
+    {%- if results.queue_counts[2][1] %}{% set _ = parts.append(results.queue_counts[2][1] ~ " to choose") %}{% endif %}
+    {%- if results.not_matched %}{% set _ = parts.append(results.not_matched|length ~ " not matched") %}{% endif %}
+    {{ results.needs_you }} need{{ 's' if results.needs_you == 1 else '' }} you{{ ": " ~ parts|join(", ") if parts }}.
   </p>
 
   {%- if results.groups %}
@@ -50,12 +50,12 @@
   {%- endfor %}
   {%- elif results.not_matched %}
   {%- set count = results.not_matched|length %}
-  {{ alert("Nothing to review. " ~ count ~ " transaction" ~ (" has" if count == 1 else "s have") ~ " no other side yet: link " ~ ("it" if count == 1 else "each one") ~ " or say what is on the other side, under Not matched below.", title="Next step", variant="info") }}
+  {{ alert("Nothing to review. " ~ count ~ " not matched below.", title="Next step", variant="info") }}
   {%- else %}
-  {{ empty_state("No proposals in this range", "The rules found no links to propose. Transactions that should have a counterpart and do not are listed under Not matched.", mascot=true) }}
+  {{ empty_state("All caught up", "Nothing needs you in this range.", mascot=true) }}
   {%- endif %}
 
-  {{ not_matched_card(results.not_matched, start, end, results.side_choices) }}
+  {{ not_matched_card(results.not_matched, start, end, results.counterparty_choices) }}
 
   {%- for vendor in results.vendors if vendor.files %}
   {{ receipts_card(vendor, start, end) }}
@@ -67,7 +67,7 @@
 
   {%- set no_exports = results.vendors|rejectattr("files")|map(attribute="title")|list %}
   {%- if no_exports %}
-  <p class="text-sm text-secondary">No {{ no_exports|join(" or ") }} receipt exports yet. Put a vendor's files in its folder under receipts, then run again.</p>
+  <p class="text-sm text-secondary">No {{ no_exports|join(" or ") }} receipts yet. Add the vendor's export to its receipts folder.</p>
   {%- endif %}
 </section>
 {%- endmacro %}
@@ -184,7 +184,7 @@
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
       <h2 id="receipts-{{ vendor.key }}" class="font-medium text-primary">{{ vendor.title }} receipts in this period</h2>
-      <p class="text-sm text-secondary">{{ vendor.files }} file{{ '' if vendor.files == 1 else 's' }} and {{ vendor.receipts }} receipt{{ '' if vendor.receipts == 1 else 's' }} read from your receipts folder. Matching uses all history; only charges whose transaction posted in this period are applied.</p>
+      <p class="text-sm text-secondary">{{ vendor.files }} file{{ '' if vendor.files == 1 else 's' }} and {{ vendor.receipts }} receipt{{ '' if vendor.receipts == 1 else 's' }}. Applied to charges in this period.</p>
     </div>
     {{ button("Apply " ~ vendor.to_apply ~ " " ~ vendor.title ~ " receipt" ~ ('' if vendor.to_apply == 1 else 's') ~ " in this period", variant="primary", size="sm", disabled=vendor.to_apply == 0, attrs={
       "hx-post": "/reconcile/receipts/" ~ vendor.key ~ "/apply",
@@ -192,7 +192,7 @@
     }) }}
   </div>
   {%- if vendor.files == 0 %}
-  <p class="text-sm text-secondary">No exports yet. Put this vendor's files in its folder under receipts, then run again.</p>
+  <p class="text-sm text-secondary">No receipts yet. Add the vendor's export to its receipts folder.</p>
   {%- endif %}
   <dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm sm:grid-cols-[repeat(4,auto)_1fr]">
     {%- for label, count in vendor.counts %}
@@ -214,20 +214,20 @@
 {%- endmacro %}
 
 {# Transactions whose wording says a counterpart should exist, with no link or proposal for them
-   and no known other side. #}
+   and no known counterparty. #}
 {% macro not_matched_card(rows, start, end, choices) -%}
 <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="not-matched-title">
   <div>
     <h2 id="not-matched-title" class="font-medium text-primary">Not matched <span class="text-sm text-secondary">({{ rows|length }})</span></h2>
-    <p class="text-sm text-secondary">Transfers, card payments, and payments from people whose other side is not linked or proposed and not known. Link one yourself, or choose rows and say what is on the other side.</p>
+    <p class="text-sm text-secondary">No counterpart found. Link one, or set its counterparty.</p>
   </div>
   {%- if rows %}
-  <form id="other-side-form" class="flex flex-wrap items-end gap-3" hx-post="/reconcile/other-side">
+  <form id="counterparty-form" class="flex flex-wrap items-end gap-3" hx-post="/reconcile/counterparty">
     <input type="hidden" name="start" value="{{ start }}">
     <input type="hidden" name="end" value="{{ end }}">
     <input type="hidden" name="idempotency_key" value="{{ new_key() }}">
     <label class="form-field w-auto min-w-[16rem]">
-      <span class="form-field__label">What is on the other side of the selected rows?</span>
+      <span class="form-field__label">Counterparty of the selected rows</span>
       <select name="target" class="form-field__input">
         <option value="">Choose…</option>
         {%- for group in choices %}
@@ -251,8 +251,8 @@
         <option value="business">Business</option>
       </select>
     </label>
-    {{ button("Set other side", variant="primary", type="submit") }}
-    <div id="other-side-error" class="basis-full" aria-live="assertive"></div>
+    {{ button("Set counterparty", variant="primary", type="submit") }}
+    <div id="counterparty-error" class="basis-full" aria-live="assertive"></div>
   </form>
   <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Not matched transactions">
     <table class="w-full border-separate border-spacing-0 text-sm text-primary">
@@ -271,7 +271,7 @@
         {%- for row in rows %}
         <tr>
           <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
-            <input type="checkbox" class="checkbox" name="txn" value="{{ row.txn_id }}" form="other-side-form" aria-label="Select {{ row.description }}">
+            <input type="checkbox" class="checkbox" name="txn" value="{{ row.txn_id }}" form="counterparty-form" aria-label="Select {{ row.description }}">
           </td>
           <td class="px-3 py-3 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.on }}</td>
           <td class="px-3 py-3 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.account }}</td>
@@ -302,12 +302,12 @@
 </section>
 {%- endmacro %}
 
-{# What would be Not matched, with the other side that explains it. None of it is a link. #}
+{# What would be Not matched, with the counterparty that explains it. None of it is a link. #}
 {% macro explained_card(rows, start, end) -%}
 <details class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs">
   <summary class="cursor-pointer font-medium text-primary">Explained ({{ rows|length }})</summary>
   {%- if rows %}
-  <p class="text-sm text-secondary">Expected to have a counterpart, but its other side is known: a contact, or one of your accounts outside omsync. These are not reconciled: only links reconcile a transaction.</p>
+  <p class="text-sm text-secondary">No counterpart needed: the counterparty is known.</p>
   <div class="table-scroll rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Explained transactions">
     <table class="w-full border-separate border-spacing-0 text-sm text-primary">
       <thead>
@@ -316,7 +316,7 @@
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Account</th>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Description</th>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Other side</th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Counterparty</th>
         </tr>
       </thead>
       <tbody>
@@ -419,11 +419,11 @@
 {%- endif %}
 {%- endmacro %}
 
-{# The link dialog body: the transaction, a search for the other side, the kind, and the amount. #}
+{# The link dialog body: the transaction, a search for the counterpart, the kind, and the amount. #}
 {% macro link_body(source, source_remaining, source_remaining_text, candidates, amount, kinds, default_kind, start, end, idempotency_key, txn) -%}
 <div class="flex flex-col gap-1">
   <h2 id="reconcile-link-title" class="font-medium text-primary">Link manually</h2>
-  <p class="text-sm text-secondary">{{ source.on }} · {{ source.account }} · {{ source.payee }} · {{ source.amount }}. Choose the transaction on the other side of the ${{ source_remaining_text }} that is not linked yet.</p>
+  <p class="text-sm text-secondary">{{ source.on }} · {{ source.account }} · {{ source.payee }} · {{ source.amount }}. Pick the counterpart for ${{ source_remaining_text }}.</p>
 </div>
 <form id="reconcile-link-form" class="flex flex-col gap-4" hx-post="/reconcile/link" hx-target="#reconcile-link-error" hx-swap="innerHTML" data-source-remaining="{{ source_remaining }}">
   <input type="hidden" name="txn" value="{{ txn }}">
@@ -431,11 +431,11 @@
   <input type="hidden" name="end" value="{{ end }}">
   <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
   <label class="form-field">
-    <span class="form-field__label">Find the other side by payee, amount, or date</span>
+    <span class="form-field__label">Find the counterpart by payee, amount, or date</span>
     <input type="search" name="q" class="form-field__input" placeholder="Payee, 25.00, or 2026-08-01" autocomplete="off" data-autofocus
       hx-get="/reconcile/link/candidates" hx-trigger="input changed delay:250ms, search" hx-target="#reconcile-link-candidates" hx-swap="innerHTML" hx-include="closest form">
   </label>
-  <div role="radiogroup" aria-label="Other side" class="rounded-lg border border-secondary" data-action="change->reconcile#pickCandidate">
+  <div role="radiogroup" aria-label="Counterpart" class="rounded-lg border border-secondary" data-action="change->reconcile#pickCandidate">
     <div id="reconcile-link-candidates" class="flex max-h-64 flex-col gap-1 overflow-auto p-1">{{ candidate_list(candidates) }}</div>
   </div>
   <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -471,7 +471,7 @@
   <span class="tabular-nums text-primary">{{ c.amount }}</span>
 </label>
 {%- else %}
-<p class="px-2 py-2 text-sm text-secondary">No open transaction matches. Try a payee, an amount such as 25.00, or a date such as 2026-08-01.</p>
+<p class="px-2 py-2 text-sm text-secondary">No match. Try a payee, amount (25.00), or date (2026-08-01).</p>
 {%- endfor %}
 {%- endmacro %}
 

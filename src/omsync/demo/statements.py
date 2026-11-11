@@ -402,12 +402,14 @@ def _code(rng: random.Random, alphabet: str, length: int) -> str:
 
 def _dollars(cents: int) -> str:
     sign = "-" if cents < 0 else ""
-    return f"{sign}${abs(cents) / 100:,.2f}"
+    dollars, rem = divmod(abs(cents), 100)
+    return f"{sign}${dollars:,}.{rem:02d}"
 
 
 def _amount(cents: int, *, grouped: bool = True) -> str:
     sign = "-" if cents < 0 else ""
-    value = f"{abs(cents) / 100:,.2f}" if grouped else f"{abs(cents) / 100:.2f}"
+    dollars, rem = divmod(abs(cents), 100)
+    value = f"{dollars:,}.{rem:02d}" if grouped else f"{dollars}.{rem:02d}"
     return f"{sign}{value}"
 
 

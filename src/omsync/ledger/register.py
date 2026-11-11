@@ -312,7 +312,7 @@ def set_splits(
 
     One batch: the old split rows are deleted, the new ones are inserted with ids that no row
     holds yet, and the transaction's own category is cleared. The lines must pass
-    check_split_lines. Each split's origin is manual. A new line keeps the other side of the old
+    check_split_lines. Each split's origin is manual. A new line keeps the counterparty of the old
     line at the same position, so editing amounts or categories does not forget who a part is
     owed by. Raises ValueError otherwise.
     """

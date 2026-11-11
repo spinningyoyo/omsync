@@ -84,10 +84,6 @@ class Pool:
     def partner_ids(self) -> frozenset[int]:
         return frozenset(self._partners)
 
-    @property
-    def settled_bill_ids(self) -> frozenset[int]:
-        return frozenset(self.settled_outflows)
-
     def linked_cents(self, txn_id: int) -> int:
         return self._linked_cents.get(txn_id, 0)
 

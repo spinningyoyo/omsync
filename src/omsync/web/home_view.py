@@ -66,7 +66,6 @@ SECTION_SCOPES: dict[str, str] = {
 # group at once. No section has grouped rows yet; one that does is listed here.
 EXPANDABLE_SECTIONS = frozenset({"cash_flow"})
 GROUPED_SECTIONS: frozenset[str] = frozenset()
-SCOPE_HINT = "Relative to today, not the selected period"
 REVIEW_HREF = "/transactions/review"
 SYNC_HREF = "/settings/providers"
 _SYNC_WORDS = {SyncStatus.failed: "failed", SyncStatus.needs_user_action: "needs your action"}

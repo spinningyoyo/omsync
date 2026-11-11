@@ -18,7 +18,7 @@ from omsync.core.batches import BatchError
 from omsync.core.money import format_cents
 from omsync.ledger import categories_admin as admin
 from omsync.ledger.categories_admin import NothingChanged, RuleDraft, RuleRow
-from omsync.ledger.models import RuleOtherSide
+from omsync.ledger.models import RuleCounterparty
 from omsync.web.categories_replies import (
     applied_toast,
     block,
@@ -31,7 +31,7 @@ from omsync.web.deps import get_db
 
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
-_FORM_FIELDS = ("paid_by", "below", "at_least", "other_side", "account_id")
+_FORM_FIELDS = ("paid_by", "below", "at_least", "counterparty", "account_id")
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ class RuleFields:
     paid_by: tuple[str, ...] = ()
     below: str = ""
     at_least: str = ""
-    other_side: str = ""
+    counterparty: str = ""
     account_id: str = ""
     to_category_id: str = ""
     idempotency_key: str = ""
@@ -52,7 +52,7 @@ def rule_fields(
     paid_by: Annotated[list[str] | None, Form()] = None,
     below: Annotated[str, Form()] = "",
     at_least: Annotated[str, Form()] = "",
-    other_side: Annotated[str, Form()] = "",
+    counterparty: Annotated[str, Form()] = "",
     account_id: Annotated[str, Form()] = "",
     to_category_id: Annotated[str, Form()] = "",
     idempotency_key: Annotated[str, Form()] = "",
@@ -61,7 +61,7 @@ def rule_fields(
         paid_by=tuple(paid_by or ()),
         below=below,
         at_least=at_least,
-        other_side=other_side,
+        counterparty=counterparty,
         account_id=account_id,
         to_category_id=to_category_id,
         idempotency_key=idempotency_key,
@@ -222,30 +222,30 @@ def rule_context(db: Session) -> dict[str, Any]:
 
 def _draft(fields: RuleFields) -> RuleDraft:
     """The rule the form describes. Text the form cannot read is refused with a message."""
-    other, contact_id = _other_side(fields.other_side)
+    other, contact_id = _counterparty(fields.counterparty)
     return RuleDraft(
         to_category_id=whole_number(fields.to_category_id, "Pick the category to set."),
         paid_by=fields.paid_by,
         below_cents=_optional_dollars(fields.below),
         at_least_cents=_optional_dollars(fields.at_least),
-        other_side=other,
+        counterparty=other,
         contact_id=contact_id,
         account_id=_optional_number(fields.account_id, "Pick an account."),
     )
 
 
-def _other_side(value: str) -> tuple[str | None, int | None]:
-    """The other side the form names: anyone (blank), a person, one of your accounts, or a contact
+def _counterparty(value: str) -> tuple[str | None, int | None]:
+    """The counterparty the form names: anyone (blank), a person, one of your accounts, or a contact
     written as contact:ID."""
     value = value.strip()
     if not value:
         return None, None
     if value.startswith("contact:"):
         contact = whole_number(value.removeprefix("contact:"), "Pick the contact.")
-        return RuleOtherSide.contact.value, contact
-    if value in (RuleOtherSide.person.value, RuleOtherSide.owner_account.value):
+        return RuleCounterparty.contact.value, contact
+    if value in (RuleCounterparty.person.value, RuleCounterparty.owner_account.value):
         return value, None
-    raise ValueError("Pick who is on the other side from the list.")
+    raise ValueError("Pick the counterparty from the list.")
 
 
 def _optional_number(text: str, message: str) -> int | None:
@@ -266,7 +266,7 @@ def _rule_form(**values: Any) -> dict[str, Any]:
         "paid_by": (),
         "below": "",
         "at_least": "",
-        "other_side": "",
+        "counterparty": "",
         "account_id": "",
         "to_category_id": "",
         "error": "",
@@ -294,18 +294,18 @@ def _rule_edit(db: Session, row: RuleRow, *, form: dict[str, Any] | None = None)
         paid_by=row.paid_by,
         below=_dollars(row.below_cents),
         at_least=_dollars(row.at_least_cents),
-        other_side=_other_side_text(row),
+        counterparty=_counterparty_text(row),
         account_id=_text(row.account_id),
         to_category_id=str(row.to_category_id),
     )
     return {"row": row, "form": {**values, "id": row.id}, **_pickers(db, row)}
 
 
-def _other_side_text(row: RuleRow) -> str:
-    """The other side as the form's select names it: a contact as contact:ID."""
-    if row.other_side == RuleOtherSide.contact.value:
+def _counterparty_text(row: RuleRow) -> str:
+    """The counterparty as the form's select names it: a contact as contact:ID."""
+    if row.counterparty == RuleCounterparty.contact.value:
         return f"contact:{row.contact_id}"
-    return row.other_side or ""
+    return row.counterparty or ""
 
 
 def _text(number: int | None) -> str:
