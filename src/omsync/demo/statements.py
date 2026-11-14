@@ -14,8 +14,10 @@ year every time, shifted to the dates of the day it is built.
 
 import csv
 import io
+import itertools
 import random
 import string
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -52,7 +54,7 @@ TRAVEL = DemoAccount(
     "travel", "boa", "Bank of America", "5560", "Travel Savings", AccountType.savings, 115_000
 )
 SAPPHIRE = DemoAccount(
-    "sapphire", "chase", "Chase", "4147202655107702", "Sapphire Card", AccountType.credit_card, 0
+    "sapphire", "chase", "Chase", "4147202655117702", "Sapphire Card", AccountType.credit_card, 0
 )
 DOUBLE_CASH = DemoAccount(
     "double_cash", "citi", "Citi", "5424180000003310", "Double Cash", AccountType.credit_card, 0
@@ -115,6 +117,9 @@ def generate(today: date, seed: int = 20261025) -> list[Line]:
     return sorted(kept, key=lambda line: (line.day, line.account.key, -line.amount_cents))
 
 
+_Add = Callable[[DemoAccount, int, int, str], None]
+
+
 def _month(rng: random.Random, index: int, month: date, end: date) -> list[Line]:
     lines: list[Line] = []
 
@@ -123,7 +128,16 @@ def _month(rng: random.Random, index: int, month: date, end: date) -> list[Line]
         if posted <= end:
             lines.append(Line(account, posted, cents, description))
 
-    # Card spending, spread over the month.
+    _card_spending(rng, add, index, month)
+    _bills_and_savings(rng, add, month, index)
+    _people(rng, add, index)
+    _summer_trip(rng, add, index)
+    _return(rng, add, index)
+    return lines
+
+
+def _card_spending(rng: random.Random, add: _Add, index: int, month: date) -> None:
+    # Spread over the month.
     for description, fewest, most, low, high in _SAPPHIRE_SPENDING:
         for _ in range(rng.randint(fewest, most)):
             add(SAPPHIRE, rng.randint(1, 28), -rng.randint(low, high), description)
@@ -141,7 +155,9 @@ def _month(rng: random.Random, index: int, month: date, end: date) -> list[Line]
         add(DOUBLE_CASH, 11, -rng.randint(4_000, 9_000), "ETSY.COM*PAPERANDINK")
         add(SAPPHIRE, 14, -rng.randint(6_000, 12_000), _amazon(rng))
 
-    # Bills and savings from checking.
+
+def _bills_and_savings(rng: random.Random, add: _Add, month: date, index: int) -> None:
+    # From checking.
     add(CHECKING, 1, -240_000, _ach("MAPLE COURT APTS", "RENT", rng, "WEB"))
     add(CHECKING, 2, 120_000, _zelle("from", "SAM PARK", rng))
     add(CHECKING, 12, -_utilities(rng, month), _ach("PGANDE", "WEB ONLINE", rng, "WEB"))
@@ -168,7 +184,8 @@ def _month(rng: random.Random, index: int, month: date, end: date) -> list[Line]
             f"BKOFAMERICA ATM {when:%m/%d} #000004821 WITHDRWL 2000 MISSION ST",
         )
 
-    # People.
+
+def _people(rng: random.Random, add: _Add, index: int) -> None:
     if index == MONTHS - 6:
         add(CHECKING, 9, -30_000, _zelle("to", "PRIYA NAIR", rng))
     if index == MONTHS - 3:
@@ -185,7 +202,9 @@ def _month(rng: random.Random, index: int, month: date, end: date) -> list[Line]
         # Kunchorn's own money from a bank omsync does not track: Reconcile lists it as not matched.
         add(CHECKING, 9, 50_000, _zelle("from", OWNER_INDN, rng))
 
-    # The summer trip, paid by card and topped up from travel savings.
+
+def _summer_trip(rng: random.Random, add: _Add, index: int) -> None:
+    # Paid by card and topped up from travel savings.
     if index == MONTHS - 4:
         add(DOUBLE_CASH, 3, -48_260, "UNITED 0162345678901")
         add(DOUBLE_CASH, 5, -64_000, "AIRBNB * HMXY12ZQ")
@@ -207,12 +226,13 @@ def _month(rng: random.Random, index: int, month: date, end: date) -> list[Line]
             f"Online Banking transfer from {TRAVEL.last4} Confirmation# {conf}",
         )
 
-    # A return: the purchase and its refund.
+
+def _return(rng: random.Random, add: _Add, index: int) -> None:
+    # The purchase and its refund.
     if index == MONTHS - 2:
         order = _amazon(rng)
         add(SAPPHIRE, 5, -5_499, order)
         add(SAPPHIRE, 19, 5_499, order)
-    return lines
 
 
 def _paychecks(first: date, end: date) -> list[Line]:
@@ -238,7 +258,7 @@ def _card_payments(lines: list[Line], months: list[date], end: date) -> list[Lin
         (SAPPHIRE, 25, "CHASE", "AUTOMATIC PAYMENT - THANK"),
         (DOUBLE_CASH, 21, "CITI", "PAYMENT THANK YOU"),
     ):
-        for previous, month in zip(months, months[1:], strict=False):
+        for previous, month in itertools.pairwise(months):
             owed = -sum(
                 line.amount_cents
                 for line in lines

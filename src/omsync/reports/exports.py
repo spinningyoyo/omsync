@@ -25,8 +25,9 @@ from sqlalchemy.orm import Session, selectinload
 
 from omsync.ledger.categories import NOT_IN_REPORTS, TYPE_LABELS
 from omsync.ledger.models import Account, Category, Link, Transaction
+from omsync.ledger.rental import get_rental_accounts, get_rental_categories
 from omsync.ledger.sources import account_digits
-from omsync.reports.queries import (
+from omsync.ledger.spending import (
     Period,
     by_category,
     counted_amount,
@@ -35,7 +36,6 @@ from omsync.reports.queries import (
     summary,
     uncategorized_total,
 )
-from omsync.reports.rental import get_rental_accounts, get_rental_categories
 
 MONEY_FORMAT = "#,##0.00"
 DATE_FORMAT = "yyyy-mm-dd"
@@ -166,9 +166,10 @@ def export_rental(
 
     Income and expenses are operating results only, and they count what the reports count: a
     transaction counts the amount its transfer and joint settlement links leave unexplained, and a
-    split shares that counted amount in proportion (see queries.py). Joint share is off, as in the
-    other exports. The explained part is excluded, as are lines in a category left out of reports,
-    since owner contributions and distributions are not operating results. Those lines sit on a
+    split shares that counted amount in proportion (see ledger/spending.py). Joint share is off,
+    as in the other exports. The explained part is excluded, as are lines in a category left out
+    of reports, since owner contributions and distributions are not operating results. Those lines
+    sit on a
     "Transfers and loans (not in reports)" row below each property's totals, and in the Summary's
     last column.
     So for each property, income minus expenses plus the transfers row is the sum of every ledger

@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from omsync.ledger.categories import NOT_IN_REPORTS, CategoryType
 from omsync.ledger.links import LinkKind
-from omsync.receipts.vendors import BUILT_IN_VENDORS
+from omsync.ledger.receipt_vendors import is_receipt_merchant
 from omsync.reconcile.model import Queue, TxnView
 from omsync.reconcile.pool import Pool
 from omsync.reconcile.rules.base import Emitter, claim, days_after
@@ -162,8 +162,7 @@ def rule_return_other_account_same_store(pool: Pool, emit: Emitter) -> None:
 
 def is_pipeline_merchant(payee: str | None) -> bool:
     """True for merchants that receipt matching owns (Amazon, Costco), so returns skip them."""
-    text = payee or ""
-    return any(vendor.is_vendor_payee(text) for vendor in BUILT_IN_VENDORS)
+    return is_receipt_merchant(payee)
 
 
 def _merchant_candidates(pool: Pool) -> list[TxnView]:

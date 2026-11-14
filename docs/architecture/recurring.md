@@ -2,7 +2,8 @@
 
 ## Purpose
 
-Recurring shows what is due and what is wrong: bills, subscriptions, and paychecks on a schedule.
+Recurring tracks bills, subscriptions, and paychecks that repeat on a schedule. It shows what is
+due, paid, or missed.
 
 ## Context
 
@@ -27,6 +28,8 @@ flowchart TD
     Decide -->|Add bill| Series[(Series)]
     Decide -->|Not recurring| Dismissed[(Dismissed)]
     Decide -->|Skip| Visit[Only for this visit]
+    class Decide waits
+    classDef waits fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#1f1f1f
 ```
 
 ### One occurrence
@@ -43,17 +46,12 @@ stateDiagram-v2
 
 ## Design decisions
 
-- **Never say something false about money.** A false Missed or a false bill is worse than a
-  missing one. Doubt becomes a question, never a state.
-- **Store only your decisions.** omsync derives everything else from the ledger on each read. An
-  import, undo, or edit cannot leave the page out of step.
-- **You confirm every series.** Detection only suggests. A false bill would inflate Left to pay.
-- **Ask each question once.** omsync stores each answer.
-- **An amount has an effective date.** A price change never turns past months into Missed.
-- **A price change is a question.** Only you know if it is the same bill at a new price.
-- **Transfers are not in totals.** A card autopay moves money that the card's purchases already
-  count.
-- **Upcoming is not ledger money.** It never changes reports or balances.
+- **Detection only suggests a series. You confirm it.** An uncertain charge, such as a new price,
+  becomes a question, not a Missed state.
+- **omsync stores only your decisions.** It calculates everything else from the ledger at each
+  read, so the page stays correct after an import, an undo, or an edit.
+- **An amount has an effective date.** A price change does not make past months Missed.
+- **Totals leave out transfers.** A card autopay moves money that the card purchases already count.
 
 ## Terms
 

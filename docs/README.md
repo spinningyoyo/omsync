@@ -1,8 +1,11 @@
 # omsync documentation
 
 Good code explains itself. These pages are for people. Each page shows a feature with diagrams and
-lists the design decisions that the code cannot show. Each page has the same sections: Purpose,
-Context, Flow, Design decisions, and Terms.
+lists the design decisions that the code cannot show. Each architecture page has five sections:
+Purpose, Context, Flow, Design decisions, and Terms.
+
+In diagrams, a yellow node is a step that waits for you. omsync does nothing more until you act.
+Every diagram that has such a step defines the style `waits`.
 
 ## Foundations
 
@@ -45,6 +48,7 @@ Context, Flow, Design decisions, and Terms.
 | `demo/` | [access](architecture/access.md), [system](architecture/system.md) |
 | `ingest/` | [import](architecture/import.md), [sync](architecture/sync.md), [bank requests](architecture/bank-requests/README.md) |
 | `ledger/` | [ledger](architecture/ledger.md), [transactions](architecture/transactions.md), [categories](architecture/categories.md), [accounts](architecture/accounts.md), [contacts](architecture/contacts.md) |
+| `migrations/` | Alembic revisions. Never edit a revision that has run; add a new one. |
 | `reconcile/` | [reconciliation](architecture/reconciliation.md) |
 | `receipts/` | [receipts](architecture/receipts.md) |
 | `plan/` | [plan](architecture/plan.md), [recurring](architecture/recurring.md) |
@@ -53,8 +57,7 @@ Context, Flow, Design decisions, and Terms.
 
 ## Operating guides
 
-- [Import and review statements](how-to/import-statements.md)
-- [Run sync and obtain receipts](how-to/sync-and-receipts.md)
+- [Get receipts](how-to/get-receipts.md)
 - [Back up and restore](how-to/back-up-and-restore.md)
 - In the app: Settings → Guides. The text is in
   [templates/guides](../src/omsync/web/templates/guides/).
@@ -65,4 +68,4 @@ Context, Flow, Design decisions, and Terms.
 - [Download statements from bank websites instead of using an aggregator](adr/0002-download-statements-instead-of-using-an-aggregator.md)
 
 To install and start omsync, see the [project README](../README.md). Engineering instructions are in
-[AGENTS.md](../AGENTS.md). Review standards are in [CODING_STANDARDS.md](../CODING_STANDARDS.md).
+[AGENTS.md](../AGENTS.md), with the review standards.

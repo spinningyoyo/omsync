@@ -417,7 +417,7 @@ def _named_id(
         if existing.casefold() == wanted:
             return int(row_id)
     noun = {Category: "category", Contact: "contact", Account: "account"}[model]
-    fail(f"no {noun} named {name.strip()!r}")
+    return fail(f"no {noun} named {name.strip()!r}")
 
 
 def _parse_date(option: str, raw: str | None) -> date | None:

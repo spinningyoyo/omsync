@@ -12,12 +12,11 @@ from datetime import date
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from omsync.ingest.formats.registry import statement_description
 from omsync.ledger.categories import Category
 from omsync.ledger.contacts import Contact
 from omsync.ledger.links import Link, LinkKind
 from omsync.ledger.sources import Account
-from omsync.ledger.statements import SourceText, source_texts
+from omsync.ledger.statements import source_texts, statement_text
 from omsync.ledger.transactions import Transaction
 from omsync.reconcile.model import TxnView
 
@@ -172,16 +171,6 @@ def load_pool(
         parked=parked,
         settled_outflows=settled_outflows,
     )
-
-
-def statement_text(payee_raw: str, source: SourceText | None) -> str:
-    """The text rules read for a transaction: its statement row's description, read through the
-    same function as import, or its raw payee when no statement row describes it."""
-    if source is None:
-        return payee_raw
-    return statement_description(
-        source.institution_key, source.format_key, source.name, source.memo
-    ).strip()
 
 
 def _joint_settlement_evidence(

@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
 from omsync.core.batches import BatchError
+from omsync.ingest.institutions import recent_syncs
 from omsync.ledger.accounts_view import (
     AccountDetail,
     account_detail,
@@ -39,7 +40,6 @@ from omsync.ledger.contacts import (
 from omsync.web.account_page import (
     chart_points,
     connector_label,
-    issue_views,
     nickname_context,
     sync_views,
 )
@@ -82,9 +82,8 @@ def account_page(
         form_key=uuid4().hex,
         transactions_href=f"/transactions?account={account_id}",
         chart_points=chart_points(detail.points),
-        issues=issue_views(account_id, summary.status),
         connector=connector_label(detail.connector_key, detail.connector_enabled),
-        syncs=sync_views(detail.recent_syncs),
+        syncs=sync_views(recent_syncs(db, detail.institution_key)),
         **nickname_context(db, account_id),
         numbers=account_numbers(db, account_id),
         number_key=uuid4().hex,

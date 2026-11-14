@@ -8,9 +8,8 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
-from omsync.ingest.accounts import NewAccount, last4_of
 from omsync.ingest.discovery import scan_statement_files, suggested_account
-from omsync.ingest.institutions import current_balances, institution_accounts
+from omsync.ingest.institutions import institution_accounts
 from omsync.ingest.pipeline import ImportReport, import_institution
 from omsync.ingest.providers import (
     ProviderSetupError,
@@ -23,6 +22,7 @@ from omsync.ingest.providers import (
     map_new_account,
     provider_setup,
 )
+from omsync.ledger.accounts import NewAccount, last4_of
 from omsync.web.deps import get_db
 from omsync.web.routes.shell import shell_context
 from omsync.web.settings_views import (
@@ -32,7 +32,6 @@ from omsync.web.settings_views import (
     Outcome,
     WizardState,
     account_row,
-    balance_row,
     blank_account_rows,
     import_view,
     last4_text,
@@ -345,8 +344,8 @@ async def save_mappings(request: Request, db: DbSession) -> HTMLResponse:
     form_key = str(form.get("idempotency_key") or uuid4().hex)[:MAX_FORM_VALUE]
     tokens = request.app.state.mapping_tokens
     outcomes: list[Outcome] = []
-    for token in form.getlist("row"):
-        token = str(token)[:MAX_FORM_VALUE]
+    for raw_token in form.getlist("row"):
+        token = str(raw_token)[:MAX_FORM_VALUE]
         choice = str(form.get(f"choice_{token}", "skip"))
         if choice == "skip":
             continue
@@ -458,10 +457,6 @@ def _preview_step(
 ) -> HTMLResponse:
     """The preview step. Its Import button carries the report's identity, so the import runs only
     if the files and the ledger still match what this step shows."""
-    balances = [
-        balance_row(f"{account.name} {last4_text(account.last4, account.alias_last4)}", status)
-        for account, status in current_balances(db, state.institution)
-    ]
     view = import_view(report)
     return _step(
         request,
@@ -469,7 +464,6 @@ def _preview_step(
         status_code=status_code,
         state=state,
         view=view,
-        balances=balances,
         can_import=view.planned > 0,
         identity=report.identity,
         notice=notice,

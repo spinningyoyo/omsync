@@ -36,37 +36,38 @@ flowchart TD
 ### Sign-in
 
 ```mermaid
-flowchart TD
-    Type[Type the login] --> Watch{The bank answers the account list, or the page needs you?}
-    Watch -->|The list| Fetch[Download with that list]
-    Watch -->|CAPTCHA| You[Give control to you]
-    Watch -->|Identity check| How{Code or app approval?}
-    How -->|Code| Code[Ask you for the code]
-    How -->|App approval| QR[Show the bank's QR]
-    Code --> Watch
-    QR --> Watch
-    Watch -->|Nothing after a minute| Needs[End as needs you]
+stateDiagram-v2
+    [*] --> Watching: the connector types the login
+    Watching --> SignedIn: the bank answers the account list
+    Watching --> Captcha: a CAPTCHA appears
+    Watching --> Identity: an identity check appears
+    Watching --> NeedsYou: nothing happens for a minute
+    Captcha --> Watching: you solve it
+    Identity --> EnterCode: the bank offers a code
+    Identity --> ScanQR: only an app approval is offered
+    EnterCode --> Watching: you enter the code
+    ScanQR --> Watching: you approve in the app
+    SignedIn --> [*]
+    NeedsYou --> [*]
+    class Captcha,EnterCode,ScanQR waits
+    classDef waits fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#1f1f1f
 ```
+
 
 ## Design decisions
 
-- **Signed in means the bank answers the account list.** omsync never reads this from the page. A
-  redesign cannot fake or hide a sign-in.
-- **Files stay as the bank sent them.** omsync never converts or merges them.
-- **One bad account does not stop the sync.** omsync skips it, keeps the other files, and reports
-  the sync as failed.
-- **A failed sync leaves Chrome open.** You can see the page where it stopped.
-- **Each sync overlaps recent history.** It gets corrections. Import identity stops duplicates.
-- **A new statement number never links by guess.** omsync links it only to one clear account.
-  Otherwise you decide.
-- **Chase takes a code before an app approval.** A code has passed live tests the longest.
-- **The provider sets Chase personal or Business.** omsync never guesses it from the page, because
-  Chase can skip the page.
-- **One sync at a time.** Sync, receipt downloads, backup, and restore share one lock. A second
-  operation is refused, not queued.
-- **Logs hold no secrets.** No passwords, tokens, usernames, or full account numbers.
-- **Each scraper change needs a live test at the bank.** Fixtures cannot prove what a website
-  accepts.
+- **Sign-in is complete when the bank returns the account list.** omsync does not read the sign-in
+  state from the page. A redesign cannot hide a sign-in or show a false one.
+- **Files are kept as the bank sent them.** omsync never converts or merges them, because merged
+  files caused duplicates in maneko.
+- **Each download overlaps the one before it.** Banks post some transactions late with an earlier
+  date. Import joins the repeated rows.
+- **A new statement number links automatically only when one account matches it.** Otherwise you
+  choose the account.
+- **Sync uses its own Chrome profile in the data directory**, not your usual profile. A debugging
+  port on 127.0.0.1 is open while a sync runs.
+- **Bank sync is tested on macOS with Google Chrome.** The code has paths for other systems, which
+  are not tested.
 
 ## Terms
 

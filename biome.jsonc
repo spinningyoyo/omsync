@@ -1,0 +1,41 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "includes": [
+      "src/omsync/web/static/js/**/*.js",
+      "src/omsync/web/static/js/**/*.json",
+      "src/omsync/web/styles/**/*.css",
+      "src/omsync/web/styles/**/*.json",
+      "biome.jsonc",
+      // Sure's adapted CSS stays as upstream wrote it, so later changes in Sure still diff against it.
+      "!**/styles/sure"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120,
+    "lineEnding": "lf"
+  },
+  "javascript": {
+    "formatter": { "quoteStyle": "double", "semicolons": "always", "trailingCommas": "all" }
+  },
+  "css": { "parser": { "tailwindDirectives": true } },
+  "overrides": [
+    {
+      // Tailwind's entry file puts its own at-rules (@source, @custom-variant) before the @imports it inlines.
+      "includes": ["**/styles/app.css"],
+      "linter": { "rules": { "correctness": { "noInvalidPositionAtImportRule": "off" } } }
+    },
+    {
+      // The print rules must beat the screen styles and the inline styles of the page, so !important is the point.
+      "includes": ["**/styles/print-report.css"],
+      "linter": { "rules": { "complexity": { "noImportantStyles": "off" } } }
+    }
+  ],
+  // noDescendingSpecificity is off: the cascade order of these files is deliberate, and reordering rules changes the page.
+  "linter": { "enabled": true, "rules": { "preset": "recommended", "style": { "noDescendingSpecificity": "off" } } },
+  "assist": { "enabled": true, "actions": { "source": { "organizeImports": "on" } } }
+}

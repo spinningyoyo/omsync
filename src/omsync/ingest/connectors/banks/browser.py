@@ -55,6 +55,7 @@ class BrowserSession:
         self._proc: subprocess.Popen[bytes] | None = None
         self._download_dir: Path | None = None
         self._profile_dir: Path | None = None
+        self._debug_port: int | None = None
 
     def prepare(self, *, download_dir: Path, profile_dir: Path) -> None:
         self._download_dir = download_dir
@@ -63,7 +64,7 @@ class BrowserSession:
     def scratch_dir(self) -> Path:
         """The fresh download directory for this fetch."""
         if self._download_dir is None:
-            raise RuntimeError("prepare() must run before the browser is used")
+            raise BrowserError("prepare() must run before the browser is used")
         return self._download_dir
 
     def get_driver(self, browser_name: str, useragent: str | None = None) -> Any:
@@ -71,7 +72,7 @@ class BrowserSession:
         if browser_name not in BROWSER_MODES:
             raise ValueError(f"browser type must be one of {', '.join(BROWSER_MODES)}")
         if self._profile_dir is None:
-            raise RuntimeError("prepare() must run before the browser is started")
+            raise BrowserError("prepare() must run before the browser is started")
         self._browser_name = browser_name
         self._close_left_open()
         download_dir = self.scratch_dir()
@@ -92,9 +93,10 @@ class BrowserSession:
             chrome_options.add_experimental_option("prefs", prefs)
 
             if browser_name == "chrome-attach":
-                # omsync launches Chrome with the profile, then Selenium attaches to it.
-                self._proc = self._start_debug_chrome(port=ATTACH_PORT)
-                chrome_options.debugger_address = ATTACH_ADDRESS
+                # omsync launches Chrome with the profile, then Selenium attaches to it. Chrome
+                # picks a free port for each run, so a second Chrome cannot take the port first.
+                self._proc = self._start_debug_chrome(port=0)
+                chrome_options.debugger_address = f"127.0.0.1:{self._debug_port}"
             else:
                 chrome_options.add_argument(f"--user-data-dir={profile_dir}")
 
@@ -113,7 +115,7 @@ class BrowserSession:
             # not launch Chrome, and close() leaves the browser open.
             try:
                 self._wait_for_port("127.0.0.1", ATTACH_PORT, timeout=5.0)
-            except RuntimeError:
+            except BrowserError:
                 command = build_manual_chrome_debug_command(ATTACH_PORT, profile_dir)
                 raise BrowserError(
                     "Chrome is not listening for debugging on port "
@@ -159,9 +161,30 @@ class BrowserSession:
             except OSError as exc:
                 last_err = exc
                 time.sleep(0.2)
-        raise RuntimeError(f"Chrome debugging port {host}:{port} not reachable ({last_err})")
+        raise BrowserError(f"Chrome debugging port {host}:{port} not reachable ({last_err})")
 
-    def _start_debug_chrome(self, port: int) -> subprocess.Popen[bytes]:
+    def _wait_for_chosen_port(self, proc: subprocess.Popen[bytes], profile_dir: Path) -> int:
+        """The port Chrome chose for --remote-debugging-port=0. Chrome writes it to the profile's
+        DevToolsActivePort file, first line, once the port is open."""
+        marker = profile_dir / "DevToolsActivePort"
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                break  # Chrome handed the profile to a running Chrome and exited, or crashed
+            try:
+                first_line = marker.read_text().splitlines()[0]
+                port = int(first_line)
+            except (OSError, IndexError, ValueError):
+                time.sleep(0.2)
+                continue
+            self._wait_for_port("127.0.0.1", port, timeout=5)
+            return port
+        raise BrowserError(
+            "Chrome started but did not open its debugging port; close other Chrome "
+            "windows that use omsync's browser profile, then sync again."
+        )
+
+    def _start_debug_chrome(self, port: int = 0) -> subprocess.Popen[bytes]:
         sysname = platform.system().lower()
         if "darwin" in sysname:
             cmd = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
@@ -175,8 +198,10 @@ class BrowserSession:
 
         profile_dir = self._profile_dir
         if profile_dir is None:
-            raise RuntimeError("prepare() must run before Chrome is launched")
+            raise BrowserError("prepare() must run before Chrome is launched")
         profile_dir.mkdir(parents=True, exist_ok=True)
+        # A file left by an earlier Chrome would name a port that is closed now.
+        (profile_dir / "DevToolsActivePort").unlink(missing_ok=True)
         cmd += [
             f"--remote-debugging-port={port}",
             f"--user-data-dir={profile_dir}",
@@ -191,13 +216,10 @@ class BrowserSession:
         except OSError:
             raise BrowserError("Chrome could not be started; is it installed?") from None
         try:
-            self._wait_for_port("127.0.0.1", port, timeout=10)
-        except RuntimeError:
+            self._debug_port = self._wait_for_chosen_port(proc, profile_dir)
+        except BrowserError:
             proc.terminate()
-            raise BrowserError(
-                "Chrome started but did not open its debugging port; close other Chrome "
-                "windows that use omsync's browser profile, then sync again."
-            ) from None
+            raise
         return proc
 
     def leave_open(self) -> None:

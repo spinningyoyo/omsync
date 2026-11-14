@@ -8,6 +8,7 @@ Job state lives in memory and is lost when the server restarts; the sync log kee
 every sync. An answer is handed to the connector and is never stored, logged, or shown again.
 """
 
+import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -19,9 +20,11 @@ from omsync.core.settings import Settings
 from omsync.core.vault import Vault
 from omsync.ingest.connectors.base import ConnectorError, SyncCancelled
 from omsync.ingest.discovery import mask_account_numbers
+from omsync.ingest.models import SyncStatus
 from omsync.ingest.pipeline import ImportReport
 from omsync.ingest.sync import ProviderSync, SyncBusy, SyncResult, sync_all, sync_provider
-from omsync.ledger.sync_models import SyncStatus
+
+logger = logging.getLogger(__name__)
 
 # The scope of a sync of every enabled provider. Not a valid provider key, so it cannot collide.
 ALL = "*"
@@ -269,6 +272,7 @@ class SyncRunner:
         except ConnectorError as exc:
             self._fail_unfinished(job, str(exc))
         except Exception as exc:  # the worker must never take the server down
+            logger.exception("The sync worker failed unexpectedly")
             self._fail_unfinished(job, f"unexpected error ({type(exc).__name__})")
         finally:
             if session is not None:

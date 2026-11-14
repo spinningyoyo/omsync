@@ -18,8 +18,7 @@ syncing. maneko then downloaded statements from the bank websites. These scraper
 An aggregator sets its own prices, plans, and terms, and it can change them at any time. Plaid
 also needs an app that the internet can reach over HTTPS. omsync listens only on this Mac.
 
-Statement files contain the statement balances. The balance check uses these balances to find
-missing or duplicate transactions.
+Statement files contain the statement balances. omsync shows each balance as the bank reported it.
 
 ## Decision
 

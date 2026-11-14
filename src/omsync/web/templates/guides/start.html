@@ -1,0 +1,53 @@
+{% extends "layouts/guide.html" %}
+{% from "guides/parts.html" import section, figure, try_it, compare_table, callout with context %}
+
+{% set sections = [
+  ("what", "What omsync does"),
+  ("amounts", "Reading amounts"),
+  ("demo", "The demo"),
+] %}
+
+{% block guide_body %}
+{% call section("what", "What omsync does") %}
+<ul class="guide-list">
+  <li>It keeps a <strong>ledger</strong> from your bank statements: one record for each transaction.</li>
+  <li>It sorts transactions into categories, links transfers between your accounts, and plans budgets and goals.</li>
+  <li>It never changes a category that you set. When it is not sure, it asks you.</li>
+  <li>You can undo each change from the message that follows it. Undo never overwrites a later edit.</li>
+  <li>Undo does not cover display settings, statement files, or anything at your bank.</li>
+  <li>Your data stays on this Mac. Only this Mac can open omsync, and nothing goes to its authors.</li>
+</ul>
+{{ figure("tour-home", "The Home page with the Accounts panel open beside it.", "Home, with the Accounts panel beside it.") }}
+{{ try_it("/", "Open Home") }}
+{% endcall %}
+
+{% call section("amounts", "Reading amounts") %}
+{{ compare_table(
+  ["Transaction", "Checking", "Card"],
+  [
+    ["Paycheck", "Positive", ""],
+    ["Purchase on the card", "", "Negative"],
+    ["Card payment from checking", "Negative", "Positive"],
+  ],
+  "Which way the signs run",
+) }}
+<ul class="guide-list">
+  <li>Negative is money out. Positive is money in.</li>
+  <li>A card balance that you owe is negative.</li>
+  <li>An account's balance is the balance on the bank's last statement, with its date.</li>
+  <li>A transfer between your accounts shows in both accounts. Reports leave it out.</li>
+  <li>Joint accounts count at half in reports. Balances stay as the bank reports them.</li>
+  <li><strong>Privacy mode</strong> in the top bar blurs amounts. It does not lock omsync.</li>
+</ul>
+{{ try_it("/reports", "Open Reports") }}
+{% endcall %}
+
+{% call section("demo", "The demo") %}
+<ul class="guide-list">
+  <li><strong>Kunchorn Omsin</strong> and all the names and numbers here are made up.</li>
+  <li>Change anything. <strong>Reset demo</strong> in the user menu puts the year back. The demo also starts over when the server stops.</li>
+  <li>Everyone who opens this server sees the same demo.</li>
+  <li>To start your own ledger, follow the README that comes with omsync.</li>
+</ul>
+{% endcall %}
+{% endblock %}

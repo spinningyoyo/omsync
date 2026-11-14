@@ -60,11 +60,7 @@ export default class extends Controller {
     const last = data[data.length - 1].date;
     const x = d3
       .scaleTime()
-      .domain(
-        +first === +last
-          ? [d3.timeDay.offset(first, -1), d3.timeDay.offset(last, 1)]
-          : [first, last],
-      )
+      .domain(+first === +last ? [d3.timeDay.offset(first, -1), d3.timeDay.offset(last, 1)] : [first, last])
       .range([MARGIN.left, width - MARGIN.right]);
 
     let low = d3.min(values);
@@ -97,12 +93,7 @@ export default class extends Controller {
       .x((datum) => x(datum.date))
       .y0(height - MARGIN.bottom)
       .y1((datum) => y(datum.cents));
-    svg
-      .append("path")
-      .datum(data)
-      .attr("d", area)
-      .style("fill", color)
-      .attr("fill-opacity", 0.08);
+    svg.append("path").datum(data).attr("d", area).style("fill", color).attr("fill-opacity", 0.08);
 
     const line = d3
       .line()
@@ -120,19 +111,11 @@ export default class extends Controller {
 
     if (data.length === 1) {
       // A line needs two points, so a lone balance is marked with a dot.
-      svg
-        .append("circle")
-        .attr("r", 4)
-        .attr("cx", x(first))
-        .attr("cy", y(data[0].cents))
-        .style("fill", color);
+      svg.append("circle").attr("r", 4).attr("cx", x(first)).attr("cy", y(data[0].cents)).style("fill", color);
     }
 
     const labelStyle = (text) =>
-      text
-        .style("fill", "var(--utility-text-secondary)")
-        .style("font-size", "12px")
-        .style("font-weight", "500");
+      text.style("fill", "var(--utility-text-secondary)").style("font-size", "12px").style("font-weight", "500");
     labelStyle(
       svg
         .append("text")
@@ -191,10 +174,7 @@ export default class extends Controller {
       dot.attr("cx", cx).attr("cy", cy).style("display", null);
       tooltip.selectAll("*").remove();
       tooltip.append("span").attr("class", "text-secondary").text(datum.label);
-      tooltip
-        .append("span")
-        .attr("class", "font-medium tabular-nums text-primary")
-        .text(datum.formatted);
+      tooltip.append("span").attr("class", "font-medium tabular-nums text-primary").text(datum.formatted);
       const tipWidth = tooltip.node().offsetWidth;
       const left = cx + 12 + tipWidth > width ? cx - tipWidth - 12 : cx + 12;
       tooltip

@@ -44,29 +44,31 @@ flowchart TD
     Confirm -->|Yes| Save[Back up the current data first]
     Save --> Replace[Replace database, statements, and receipts together]
     Replace --> Upgrade[Upgrade the database schema]
+    class Archive,Confirm waits
+    classDef waits fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#1f1f1f
 ```
 
 ## Design decisions
 
-- **Undo is a guarded reversal, not a rewind.** It refuses when a later change depends on the
-  batch. Refusal is better than lost work.
-- **A stale preview never applies.** You approve what you saw, or you see it again.
-- **A retry never applies twice.** A repeated request returns the first batch.
+- **Undo reverses one batch.** If a later batch changed the same data, undo stops and changes
+  nothing.
 - **Preferences are not batches.** Theme, layout, and joint share save directly.
-- **A backup includes the evidence.** A database alone cannot explain itself without its
-  statement files.
-- **Credentials stay out of backups.** Vault, keychain, and browser sessions are not archived.
-- **Archives are not encrypted.** Keep them on protected storage. Restore only your own archives.
-- **A restore replaces everything.** It does not merge. It backs up the current data first.
-- **A restore keeps the machine config.** An old archive cannot move the data directory.
-- **The server and a restore never run together.** One lock covers sync, backup, and restore.
+- **A backup contains the statement files.** Without them, the database cannot show where a
+  transaction came from. A backup does not contain credentials, vault state, browser sessions,
+  exports, logs, or other backups.
+- **Backups are not encrypted.** Keep them on protected storage. Restore only your own backups.
+- **A restore replaces all data.** It does not merge. omsync first makes a backup of the current
+  data. A restore writes the config file only if no config file exists.
+- **A lock refuses a second operation.** The operation does not wait. The sync lock covers sync,
+  receipt download, backup, and restore. The serve lock covers the server and restore.
 
 ## Terms
 
 - **Batch:** all changes from one operation.
 - **Preview:** what an operation would change, computed without a write.
-- **Archive:** a `.tar.gz` file with the database, statements, receipts, and a checksum manifest.
-- **Database copy:** an automatic copy before each schema upgrade. omsync keeps the newest ten.
+- **Archive:** a `.tar.gz` file with the database, statements, receipts, the config file in use,
+  and a checksum manifest.
+- **Database copy:** an automatic copy before each schema upgrade. omsync keeps the newest few.
 - **Snapshot:** a migrated copy in a new data directory, for tests. It is not a backup.
 
 See [back up and restore](../how-to/back-up-and-restore.md) for the steps.

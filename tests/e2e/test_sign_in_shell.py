@@ -21,7 +21,7 @@ from omsync.core.settings import Settings
 from omsync.core.vault import VaultError
 from omsync.web.app import create_app
 
-pytestmark = pytest.mark.e2e
+pytestmark = pytest.mark.browser
 
 EMAIL = "ana@example.test"
 PASSWORD = "correct-horse-battery"

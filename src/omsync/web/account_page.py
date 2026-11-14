@@ -1,26 +1,23 @@
-"""View data for the account page: the chart's points, the balance check's issue rows with the
-register link for each interval, the sync card's rows, and the nicknames card's rows. The numbers
-come from omsync.ledger.accounts_view and omsync.ledger.contacts. This module only formats them and
-builds links.
+"""View data for the account page: the chart's points, the sync card's rows, and the nicknames
+card's rows. The numbers come from omsync.ledger.accounts_view and omsync.ledger.contacts. This
+module only formats them.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
-from urllib.parse import urlencode
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
 from omsync.core.money import format_cents
-from omsync.ingest.balance_check import BalanceIssue, BalanceStatus
 from omsync.ingest.connectors.base import ConnectorError
 from omsync.ingest.connectors.registry import get_connector
-from omsync.ledger.accounts_view import BalancePoint, RecentSync
+from omsync.ingest.institutions import RecentSync
+from omsync.ingest.models import SyncStatus
+from omsync.ledger.accounts_view import BalancePoint
 from omsync.ledger.contacts import list_nicknames
-from omsync.ledger.filters import Condition, FilterSpec
-from omsync.ledger.models import SyncStatus
-from omsync.web.register_state import encode_filter
+from omsync.web.formats import long_day
 
 SYNC_STATUS: dict[SyncStatus, tuple[str, str]] = {
     SyncStatus.running: ("Running", "indigo"),
@@ -29,15 +26,6 @@ SYNC_STATUS: dict[SyncStatus, tuple[str, str]] = {
     SyncStatus.needs_user_action: ("Needs you", "amber"),
     SyncStatus.cancelled: ("Cancelled", "gray"),
 }
-
-
-@dataclass(frozen=True)
-class IssueView:
-    span: str  # the interval, or the day two balances disagree on
-    expected: str
-    computed: str
-    difference: str
-    href: str  # the register, for the transactions in the interval
 
 
 @dataclass(frozen=True)
@@ -56,44 +44,17 @@ class NicknameRow:
     remove_key: str
 
 
-def day_label(day: date) -> str:
-    return day.strftime("%b %-d, %Y")
-
-
 def chart_points(points: Sequence[BalancePoint]) -> list[dict[str, object]]:
     """The chart's data: each point has its ISO date, a label, its cents, and its amount text."""
     return [
         {
             "date": point.as_of.isoformat(),
-            "label": day_label(point.as_of),
+            "label": long_day(point.as_of),
             "cents": point.cents,
             "formatted": format_cents(point.cents),
         }
         for point in points
     ]
-
-
-def issue_views(account_id: int, status: BalanceStatus) -> list[IssueView]:
-    return [_issue_view(account_id, issue) for issue in status.issues]
-
-
-def _issue_view(account_id: int, issue: BalanceIssue) -> IssueView:
-    if issue.from_date == issue.to_date:
-        span = f"{day_label(issue.from_date)}, two different balances"
-        start = issue.from_date
-    else:
-        span = f"{day_label(issue.from_date)} to {day_label(issue.to_date)}"
-        # The check counts transactions after the earlier balance up to the later one.
-        start = issue.from_date + timedelta(days=1)
-    spec = FilterSpec(conditions=(Condition("date", "between", (start, issue.to_date)),))
-    query = urlencode({"account": account_id, "f": encode_filter(spec)})
-    return IssueView(
-        span=span,
-        expected=format_cents(issue.expected_cents),
-        computed=format_cents(issue.computed_cents),
-        difference=format_cents(issue.difference_cents),
-        href=f"/transactions?{query}",
-    )
 
 
 def sync_views(runs: Sequence[RecentSync]) -> list[SyncView]:

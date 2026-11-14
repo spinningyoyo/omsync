@@ -31,83 +31,50 @@ class Guide:
 START = Group("Start here", "blue")
 EVERYDAY = Group("Everyday", "green")
 PLANNING = Group("Planning", "violet")
-PEACE = Group("Peace of mind", "amber")
 
 GUIDES: tuple[Guide, ...] = (
     Guide(
-        "tour",
-        "A quick tour",
-        "What omsync is, the screen you will use, and the made-up person the demo follows.",
+        "start",
+        "Start here",
+        "What omsync does, how amounts read, and the demo.",
         "compass",
-        3,
+        1,
         START,
     ),
     Guide(
         "statements",
-        "Bring in your statements",
-        "Where statement files go, how the Bank sync wizard maps them, and what a preview shows.",
+        "Statements and bank sync",
+        "The banks, where files go, and rows that need review.",
         "file-up",
-        4,
+        1,
         START,
     ),
     Guide(
-        "reading-amounts",
-        "Reading amounts and balances",
-        "Which way the signs run, why a card balance looks negative, and what counts in a report.",
-        "scale",
-        3,
-        START,
-    ),
-    Guide(
-        "categorize",
-        "Categorize spending",
-        "Category types, keywords, triage, and rules, and which choice wins when they disagree.",
+        "categories",
+        "Categories",
+        "Category types, what sets a category, and rules.",
         "wand-sparkles",
-        5,
+        2,
         EVERYDAY,
     ),
     Guide(
-        "contacts",
-        "People and the counterparty",
-        "Who is on the other end of a payment, how omsync recognizes them, and what is owed.",
-        "users-round",
-        4,
-        EVERYDAY,
-    ),
-    Guide(
-        "reconcile",
-        "Reconcile related money",
-        "Transfers, card payments, and payments to people: what links itself, and what waits.",
+        "links",
+        "Links and contacts",
+        "Transfers and payments that pair up, and what contacts owe.",
         "handshake",
-        3,
+        1,
         EVERYDAY,
     ),
     Guide(
         "plan",
         "Budgets, goals, and recurring",
-        "Flex and category budgets, goals linked to an account, and the bills that repeat.",
+        "Flex and category budgets, goals, and bills that repeat.",
         "land-plot",
-        5,
+        2,
         PLANNING,
     ),
-    Guide(
-        "safety",
-        "Undo, backups, and privacy",
-        "How each change can be previewed and undone, how to back up, and what stays on this Mac.",
-        "shield-check",
-        3,
-        PEACE,
-    ),
-    Guide(
-        "own-ledger",
-        "Start your own ledger",
-        "Set up omsync with your own accounts, statements, and vault login.",
-        "hard-drive",
-        3,
-        PEACE,
-    ),
 )
-GROUPS: tuple[Group, ...] = (START, EVERYDAY, PLANNING, PEACE)
+GROUPS: tuple[Group, ...] = (START, EVERYDAY, PLANNING)
 
 
 def guide_for(slug: str) -> Guide | None:

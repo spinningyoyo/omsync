@@ -1,0 +1,66 @@
+{% extends "layouts/guide.html" %}
+{% from "guides/parts.html" import section, figure, try_it, compare_table with context %}
+
+{% set sections = [
+  ("types", "Category types"),
+  ("order", "What sets a category"),
+  ("rules", "Rules"),
+] %}
+
+{% block guide_body %}
+{% call section("types", "Category types") %}
+{{ compare_table(
+  ["Type", "Counts as", "Examples"],
+  [
+    ["Fixed", "Expense, with a fixed budget", "Rent, Utilities"],
+    ["Flexible", "Expense, part of the flex number", "Groceries, Dining"],
+    ["Non-monthly", "Expense, saved for across months", "Travel, Gifts"],
+    ["Income", "Income", "Paycheck, Interest"],
+    ["Excluded", "Not in reports", "Transfer, Credit card payment"],
+    ["Owed", "Not in reports. Counts in contact balances", "Loans"],
+    ["Unassigned", "Expense, not sorted yet", ""],
+  ],
+  "Category types",
+) }}
+{{ try_it("/settings/categories", "Open Categories") }}
+{% endcall %}
+
+{% call section("order", "What sets a category") %}
+<p>The first of these wins:</p>
+<ol class="guide-list guide-list--numbered">
+  <li><strong>You.</strong> A category or a split that you set stays until you change it.</li>
+  <li><strong>A receipt.</strong></li>
+  <li><strong>A keyword</strong>: text in the payee. For example, NETFLIX sets Subscriptions.</li>
+  <li><strong>A rule</strong>, only when no keyword fits.</li>
+</ol>
+<ul class="guide-list">
+  <li><strong>Triage</strong> lists payees with no keyword. One keyword then covers all of their transactions.</li>
+  <li><strong>Preview</strong> shows what a keyword or rule would change. Nothing is saved until you add it.</li>
+  <li>You need no keywords for Zelle, Venmo, transfers, or Square. omsync reads how the money was paid from the bank's text.</li>
+  <li>The parts of a split must add up to the transaction amount.</li>
+</ul>
+{{ try_it("/settings/categories?tab=triage", "Open Triage") }}
+{% endcall %}
+
+{% call section("rules", "Rules") %}
+<ul class="guide-list">
+  <li>Rules run from top to bottom. The first rule that fits sets the category.</li>
+  <li>A rule can check how the money was paid, the amount, who it was with, and the account.</li>
+</ul>
+{{ compare_table(
+  ["Rule", "Category"],
+  [
+    ["1. Transfer with Sam Park", "Rent"],
+    ["2. Transfer of $100 or more with a person", "Loans"],
+    ["3. Transfer under $40 with a person", "Dining"],
+    ["4. Transfer, check, or cash", "Transfer"],
+  ],
+  "The demo's rules, in order",
+) }}
+<ul class="guide-list">
+  <li>Sam's $1,200 fits rule 1 first, so it is Rent, not a loan.</li>
+</ul>
+{{ figure("categorize-rules", "The Rules tab: each rule as a sentence, with buttons to move it up or down, turn it off, edit it, or delete it.", "Rules, in the order they run.") }}
+{{ try_it("/settings/categories?tab=rules", "Open Rules") }}
+{% endcall %}
+{% endblock %}

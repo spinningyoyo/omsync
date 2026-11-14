@@ -258,7 +258,7 @@ def _join_extra_cells(row: list[str], layout: _Layout) -> list[str]:
         return row
     start = layout.description
     joined = ",".join(row[start : start + extra + 1])
-    return row[:start] + [joined] + row[start + extra + 1 :]
+    return [*row[:start], joined, *row[start + extra + 1 :]]
 
 
 def _without_trailing_empty(row: list[str]) -> list[str]:

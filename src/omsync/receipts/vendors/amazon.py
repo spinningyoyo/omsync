@@ -37,6 +37,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from omsync.core import money
+from omsync.ledger.receipt_vendors import is_amazon_payee
 from omsync.receipts.model import (
     Charge,
     ChargeResult,
@@ -116,8 +117,7 @@ class AmazonVendor(BaseVendor):
         raise AmazonFileError(f"{path.name} is not an Amazon order or refund file")
 
     def is_vendor_payee(self, payee: str) -> bool:
-        lowered = payee.lower()
-        return "amazon" in lowered or "amzn" in lowered
+        return is_amazon_payee(payee)
 
     def charges(self, receipt: Receipt) -> ChargeResult:
         if receipt.is_refund:
@@ -244,7 +244,7 @@ def _date(value: str, path: Path, line: int, column: str) -> date:
 
 def _parse_date(value: str) -> date | None:
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+        return datetime.fromisoformat(value).date()
     except ValueError:
         return None
 

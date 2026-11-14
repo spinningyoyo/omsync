@@ -22,14 +22,6 @@ const DEFAULT_WIDTH = 320;
 // Keyboard nudge in pixels for the focused divider.
 const KEY_STEP = 16;
 
-function readStorage(key) {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
 function writeStorage(key, value) {
   try {
     localStorage.setItem(key, value);
@@ -79,10 +71,7 @@ export default class extends Controller {
   }
 
   get width() {
-    const value = Number.parseInt(
-      this.root.style.getPropertyValue("--accounts-width"),
-      10,
-    );
+    const value = Number.parseInt(this.root.style.getPropertyValue("--accounts-width"), 10);
     return Number.isFinite(value) ? value : DEFAULT_WIDTH;
   }
 

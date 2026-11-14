@@ -46,18 +46,12 @@ flowchart LR
 
 ## Design decisions
 
-- **Two modes, one set of data.** Flex budgets fixed and non-monthly costs. Everything else shares
-  one number. Category mode budgets each category. A switch keeps both.
-- **Actuals are report numbers.** Budget progress and reports agree for the same month.
-- **Rollover stays with its category.** It never adds to the flex number. A reserve is not new
-  money.
-- **Non-monthly lines roll over by default.** Irregular costs need funds across months.
-- **Expected income skips the current month.** A part month is not a full month of income.
-- **Copy a month only into an empty month.** A copy never overwrites your work.
-- **Goal progress is a reported balance.** A planned contribution is not savings until a
-  statement shows it.
-- **A goal does not reserve money.** Two goals on one account do not split it.
-- **Flex comes from Monarch.** See [ADR 0001](../adr/0001-build-omsync-instead-of-using-sure.md).
+- **Two budget modes use one set of data.** Flex mode budgets fixed and non-monthly costs, plus one
+  amount for all other spending. Category mode budgets each category. A mode change keeps both.
+- **Budget actuals are report amounts.** Budget progress and reports agree for the same month.
+- **Rollover stays with its category.** It is not added to the flex amount.
+- **Goal progress is a reported balance.** A planned contribution is not savings until a statement
+  shows it. A goal does not reserve money, so two goals on one account do not divide it.
 
 ## Terms
 

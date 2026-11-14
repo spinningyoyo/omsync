@@ -7,12 +7,15 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2_fragments.fastapi import Jinja2Blocks
+from nursery.assets import FAVICON_PNG as NURSERY_FAVICON_PNG
+from nursery.assets import FAVICON_SVG as NURSERY_FAVICON_SVG
 from nursery.assets import JS as NURSERY_JS
 from nursery.assets import SCENES_CSS as NURSERY_SCENES_CSS
 
+import omsync.models  # noqa: F401 -- every table on Base.metadata
 from omsync import __version__
 from omsync.core.db import database_url, make_engine, make_session_factory
 from omsync.core.money import format_cents
@@ -155,6 +158,17 @@ def create_app(
     # path does not fall through to the app's own static files. The scenes' colours (css/) sit
     # beside the engine's folder in the package, so they get their own mount, ahead of the
     # engine's.
+    # The favicons come from the same package; these two routes sit ahead of the /static mount.
+    app.add_api_route(
+        "/static/img/favicon.svg",
+        lambda: FileResponse(NURSERY_FAVICON_SVG, media_type="image/svg+xml"),
+        include_in_schema=False,
+    )
+    app.add_api_route(
+        "/static/img/favicon-32.png",
+        lambda: FileResponse(NURSERY_FAVICON_PNG, media_type="image/png"),
+        include_in_schema=False,
+    )
     app.mount(
         "/static/vendor/nursery/css",
         StaticFiles(directory=NURSERY_SCENES_CSS.parent),

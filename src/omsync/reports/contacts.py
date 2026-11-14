@@ -7,8 +7,8 @@ without splits, and its splits, whose category type is owed, such as a loan. Tra
 your own accounts, so they are not lines. A split belongs to the contact it names, or, naming none,
 to the contact of its transaction. Spending and income lines are settled when paid, so they never
 count. A line counts as reports count it, joint
-share included (see queries.py), except that a link never reduces it: the two payments of a round
-trip cancel by clearing.
+share included (see ledger/spending.py), except that a link never reduces it: the two payments of
+a round trip cancel by clearing.
 
 Money out to a contact (a negative amount) is what the contact owes you, and money in from them
 reduces it. The balance is the negated sum of the counted amounts: positive when the contact owes
@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from omsync.ledger.contacts import Contact, ContactRole
 from omsync.ledger.models import Account, Category, CategoryType, Split, Transaction
-from omsync.reports.queries import counted_amount, counted_splits
+from omsync.ledger.spending import counted_amount, counted_splits
 
 
 class NoBalance(ValueError):

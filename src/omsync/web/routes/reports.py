@@ -29,9 +29,10 @@ from fastapi.responses import (
 )
 from sqlalchemy.orm import Session
 
+from omsync.ledger.rental import get_rental_accounts
 from omsync.reports import exports
-from omsync.reports.rental import get_rental_accounts
 from omsync.web.deps import get_db
+from omsync.web.formats import long_day
 from omsync.web.reports_view import (
     DEFAULT_PRESET,
     Selection,
@@ -149,7 +150,7 @@ def reports_print(
     return request.app.state.templates.TemplateResponse(
         request,
         PRINT,
-        {"view": view, "printed": today.strftime("%b %-d, %Y")},
+        {"view": view, "printed": long_day(today)},
     )
 
 
@@ -195,7 +196,7 @@ def _send_workbook(request: Request, name: str, build: Callable[[Path], Path]) -
     target = exports_dir / name
     try:
         build(temp)
-        os.replace(temp, target)
+        temp.replace(target)
     except exports.NoRentalAccounts:
         return PlainTextResponse(NO_RENTAL, status_code=409)
     except OSError:

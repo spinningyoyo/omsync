@@ -341,8 +341,10 @@ def _evidence(draft: Draft) -> tuple[tuple[str, ...], tuple[str, ...]]:
         notes.append(
             f"Not applied automatically: you removed {ev['rule_unlinked']} links this rule made"
         )
-    for contribution in ev.get("partner_contributions", []):
-        notes.append(f"Partner contribution: transaction #{contribution['txn_id']}")
+    notes.extend(
+        f"Partner contribution: transaction #{contribution['txn_id']}"
+        for contribution in ev.get("partner_contributions", [])
+    )
     if ev.get("partner_candidates"):
         notes.append("Several partner inflows could be the contribution, so none is named")
     return tuple(chips), tuple(notes)

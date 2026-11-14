@@ -18,14 +18,6 @@ from sqlalchemy.orm import Session
 from omsync.core.batch_models import Batch
 from omsync.core.batches import BatchError, StalePreview, applied_batch_for_key
 from omsync.core.settings import Settings
-from omsync.ingest.accounts import (
-    AccountError,
-    NewAccount,
-    add_alias,
-    create_account,
-    create_accounts_without_alias,
-    last4_of,
-)
 from omsync.ingest.connectors.base import ConnectorError
 from omsync.ingest.connectors.config import (
     DROP_FOLDER,
@@ -37,6 +29,14 @@ from omsync.ingest.connectors.config import (
 )
 from omsync.ingest.connectors.registry import get_connector, registered_connectors
 from omsync.ingest.discovery import mask_account_numbers
+from omsync.ledger.accounts import (
+    AccountError,
+    NewAccount,
+    add_alias,
+    create_account,
+    create_accounts_without_alias,
+    last4_of,
+)
 from omsync.ledger.models import AccountType, Institution, Provider
 
 VAULT_ITEM_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
@@ -279,7 +279,7 @@ def create_wizard_accounts(
 ) -> Batch:
     """Create the accounts a bank connector will sync, before any file names them, as one batch.
     The accounts join the provider, so its next sync fetches them. The institution and provider
-    must already exist (step two saves them). See ingest.accounts."""
+    must already exist (step two saves them). See ledger.accounts."""
     row = session.scalars(select(Institution).where(Institution.key == institution)).first()
     if row is None:
         raise ProviderSetupError("Save the institution first. Start the wizard again.")

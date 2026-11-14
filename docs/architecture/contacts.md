@@ -22,54 +22,50 @@ flowchart LR
 
 ### Recognition
 
-The first step that finds somebody wins. Two or more matches in one step find nobody.
+The first step that finds exactly one contact wins. A step that finds two or more contacts finds
+nobody, and the next step runs.
 
 ```mermaid
 flowchart TD
-    D[Description] --> A{Names a contact account by digits or a tied pattern?}
-    A -->|Yes| Done[That contact and account]
-    A -->|No| B{A payment that names a saved contact?}
-    B -->|Yes| Done2[That contact]
-    B -->|No| C{A contact pattern matches?}
-    C -->|Yes| Done2
-    C -->|No| P{Transfer to your account, same amount as one contact's payment within 7 days?}
-    P -->|Yes| Done3[That contact: a pass-through]
-    P -->|No| None[Nobody]
+    D[Bank description] --> S1{"Step 1<br/>Does it name one contact account,<br/>by last four digits or a tied pattern?"}
+    S1 -->|Yes| Found1([That contact and account])
+    S1 -->|No, or several| S2{"Step 2<br/>Is it a payment that names<br/>one saved contact?"}
+    S2 -->|Yes| Found2([That contact])
+    S2 -->|No, or several| S3{"Step 3<br/>Does one contact pattern match?"}
+    S3 -->|Yes| Found2
+    S3 -->|No, or several| S4{"Step 4<br/>Is it a transfer to your account with the<br/>same amount as one contact's payment<br/>in the last 7 days?"}
+    S4 -->|Yes| Found3([That contact, as a pass-through])
+    S4 -->|No, or several| None([Nobody])
 ```
 
 ### Balances
 
 ```mermaid
 flowchart LR
-    Lines[Owed transactions with the contact] --> Walk[Oldest first]
+    Owed[Owed transactions with the contact] --> Walk[Oldest first]
     Walk --> Clear[Each payment clears the oldest open items]
     Clear --> Open[Open items add up to the balance]
 ```
 
 ## Design decisions
 
-- **A counterparty is never a category.** A category says what money was for. A category per
-  person would misstate reports. A loan to a friend needs no counterpart. A loan through a tracked
-  account does. The category cannot tell these apart.
-- **A name is stored in parts.** Banks print a name in many orders and forms. omsync makes the
-  forms from the parts. Each form keeps the given name, so a relative who shares a family name is
-  not you.
-- **The longest name match wins.** "ALEX J EXAMPLE" is the owner, and "JAMIE EXAMPLE" is the
-  relative.
-- **Your choice beats recognition.** Recognition never replaces it and never sets a split.
-- **No guess when two match.** A step that finds two contacts finds nobody.
-- **Only Owed money moves a balance.** Spending and income settle when paid.
-- **Clearing is oldest first.** Several loans, part payments, and late repayments clear without a
-  pairing rule.
-- **You and your partner have no balance.** Money between the owners is shared.
-- **The automatic step follows each change to contacts.** It undoes with your change.
+- **The counterparty and the category are separate.** The category tells what the money was for.
+  A category for each person would make reports incorrect.
+- **omsync stores a name in parts.** Banks print a name in many orders and forms. omsync makes the
+  forms from the parts. Each form contains the given name, so a relative with the same family name
+  does not match you.
+- **Only transactions in an Owed category change a contact's balance.** Spending and income are
+  complete when paid.
+- **A payment clears the oldest amount first.** Several loans, part payments, and late payments then
+  clear without a pairing rule.
+- **You and the co-owner have no balance.** Money between the owners is shared.
 
 ## Terms
 
 - **Owner:** the contact that is you. Your names find transfers between your own accounts.
 - **Co-owner:** the other owner of the joint accounts.
-- **Pattern:** a regex for bank wording that no name covers, for money out or money in.
+- **Pattern:** a regular expression for bank wording that no name covers, for money out or money in.
 - **Contact account:** an account outside omsync, found by its last four digits.
 - **Nickname:** the name a payment app shows for one of your tracked accounts.
 - **Pass-through:** money a contact paid you that you then moved through your own account.
-- **Open item:** the part of a loan or payment that is not cleared yet.
+- **Open item:** the amount of a loan or payment that is not cleared yet.

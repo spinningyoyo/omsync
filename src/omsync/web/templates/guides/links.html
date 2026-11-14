@@ -1,0 +1,52 @@
+{% extends "layouts/guide.html" %}
+{% from "guides/parts.html" import section, figure, try_it, compare_table with context %}
+
+{% set sections = [
+  ("links", "Linked transactions"),
+  ("unmatched", "Not matched"),
+  ("contacts", "Contacts and balances"),
+] %}
+
+{% block guide_body %}
+{% call section("links", "Linked transactions") %}
+<ul class="guide-list">
+  <li>A link pairs two transactions that explain each other: a transfer, a card payment, a refund, or money back from a person.</li>
+  <li>A linked transfer is not spending or income.</li>
+  <li>A link never changes an amount.</li>
+</ul>
+{{ compare_table(
+  ["List", "Holds", "You"],
+  [
+    ["Auto", "Exact matches. They link after each import.", "Do nothing. Undo removes them all."],
+    ["Review", "Likely matches", "Approve or reject"],
+    ["Manual", "Transactions with no clear partner", "Link them yourself"],
+  ],
+  "The lists on Reconcile",
+) }}
+<ul class="guide-list">
+  <li>Equal amounts alone never make a link.</li>
+  <li>omsync never suggests a pair again after you reject or unlink it.</li>
+</ul>
+{{ figure("reconcile-page", "The Reconcile page for the year so far: the date range at the top, a note that no proposals are in it, then the Not matched row for a Zelle payment from KUNCHORN OMSIN.", "Reconcile, with one transaction under Not matched.") }}
+{{ try_it("/reconcile", "Open Reconcile") }}
+{% endcall %}
+
+{% call section("unmatched", "Not matched") %}
+<ul class="guide-list">
+  <li>A transfer or card payment with no partner shows under <strong>Not matched</strong>. Fix each one.</li>
+  <li>Money from your own account at a bank that omsync does not track: set that account as its counterparty. In the demo, this is the $500 Zelle payment from Kunchorn Omsin.</li>
+</ul>
+{% endcall %}
+
+{% call section("contacts", "Contacts and balances") %}
+<ul class="guide-list">
+  <li>The <strong>counterparty</strong> is who the money moved to or from.</li>
+  <li>Add your own names first. You are the owner.</li>
+  <li>omsync finds names as banks print them. Sam Park also fits SAM PARK, PARK SAM, and S PARK.</li>
+  <li>When more than one contact fits, omsync names nobody, and you choose.</li>
+  <li>A person with no contact shows by name, such as TAYLOR KIM. Save them as a contact to keep their payments together.</li>
+  <li>A contact's balance counts only Owed categories, such as Loans. In the demo, Priya borrowed $300, paid back $150, and owes $150.</li>
+</ul>
+{{ try_it("/settings/contacts", "Open Contacts") }}
+{% endcall %}
+{% endblock %}

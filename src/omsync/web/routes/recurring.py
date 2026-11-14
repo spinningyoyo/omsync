@@ -26,11 +26,10 @@ from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
 from omsync.core.batches import BatchError, StalePreview, applied_batch_for_key
-from omsync.core.money import format_cents, to_cents
-from omsync.core.months import parse_day
+from omsync.core.money import format_cents
 from omsync.ledger.categories_admin import category_choices
 from omsync.ledger.models import Account, Category, Transaction
-from omsync.ledger.plan_models import Cadence, RecurringSeries
+from omsync.plan.models import Cadence, RecurringSeries
 from omsync.plan.recurring import (
     SeriesSuggestion,
     accept_new_amount,
@@ -52,6 +51,12 @@ from omsync.plan.recurring import (
     restore_dismissed,
     resume_series,
     update_series,
+)
+from omsync.web.amounts import (
+    parse_date,
+    parse_optional_date,
+    parse_positive_cents,
+    parse_tolerance_cents,
 )
 from omsync.web.deps import get_db
 from omsync.web.recurring_view import (
@@ -199,7 +204,7 @@ def dismiss_suggestion(
     return _review_saved(request, db, index, batch, f"Dismissed {suggestion.name}")
 
 
-# Bills: add
+# Section: bills, add
 
 # The add form takes its fields as typed. A new bill is confirmed at once.
 
@@ -264,7 +269,7 @@ def series_drawer(
     return _block(
         request,
         "frag_drawer",
-        drawer=build_drawer(db, series, _today(), _day(due)),
+        drawer=build_drawer(db, series, _today(), parse_optional_date(due)),
     )
 
 
@@ -368,7 +373,7 @@ def end_bill(
         batch = end_series(
             db,
             series_id,
-            ended_on=_date(ended_on, "Pick the last day the bill is due."),
+            ended_on=parse_date(ended_on, "Pick the last day the bill is due."),
             idempotency_key=idempotency_key or uuid4().hex,
         )
     except (ValueError, BatchError) as exc:
@@ -403,7 +408,7 @@ def mark_elsewhere(
 ) -> HTMLResponse:
     name = _name_of(db, series_id)
     try:
-        due = _date(due_on, "Pick the due date to mark.")
+        due = parse_date(due_on, "Pick the due date to mark.")
         batch = mark_paid_elsewhere(
             db, series_id, due, idempotency_key=idempotency_key or uuid4().hex
         )
@@ -458,7 +463,7 @@ def reject_bill_charge(
     return _written(request, db, series_id, batch, f"Marked not this bill for {name}", from_drawer)
 
 
-# Helpers: lookups and validation
+# Section: helpers for lookups and validation
 
 
 def _shown_view(view: str) -> str:
@@ -510,20 +515,6 @@ def _name_of(db: Session, series_id: int) -> str:
     return row.name if row is not None else "bill"
 
 
-def _day(text: str | None) -> date | None:
-    try:
-        return parse_day(text) if text else None
-    except ValueError:
-        return None
-
-
-def _date(text: str, message: str) -> date:
-    try:
-        return parse_day(text)
-    except ValueError:
-        raise ValueError(message) from None
-
-
 def _charge_id(text: str) -> int:
     try:
         return int(text)
@@ -544,26 +535,6 @@ def _payee(text: str) -> str:
         return payee_pattern_for(text)
     except ValueError:
         raise ValueError("Enter the payee as it appears on statements.") from None
-
-
-def _tolerance(text: str) -> int:
-    try:
-        cents = to_cents(text.strip())
-    except (ValueError, TypeError):
-        raise ValueError("Enter the exact tolerance in dollars, such as 1.00.") from None
-    if cents < 0:
-        raise ValueError("The tolerance cannot be negative.")
-    return cents
-
-
-def _money(text: str) -> int:
-    try:
-        cents = to_cents(text.strip())
-    except (ValueError, TypeError):
-        raise ValueError("Enter the amount in dollars, such as 45.99.") from None
-    if cents <= 0:
-        raise ValueError("The amount must be more than zero.")
-    return cents
 
 
 def _mode(text: str) -> str:
@@ -621,14 +592,14 @@ def _add_values(
     starts_on: str,
     category_id: str,
 ) -> dict[str, Any]:
-    magnitude = _money(amount)
+    magnitude = parse_positive_cents(amount)
     return {
         "name": _name(name),
         "payee_pattern": _payee(payee),
         "account_id": _account(db, account_id),
         "cadence": _cadence(cadence),
         "amount_cents": magnitude if income else -magnitude,
-        "starts_on": _date(starts_on, "Pick the first due date."),
+        "starts_on": parse_date(starts_on, "Pick the first due date."),
         "category_id": _category(db, category_id),
     }
 
@@ -648,8 +619,10 @@ def _edit_values(
     its amount, so no amount is posted (None). The tolerance is the exact one when Advanced is
     filled, else the Fixed or Varies one. Fixed is measured from the amount in effect after the
     save."""
-    amount_cents = None if _has_prices(db, series) else edited_amount(series, _money(amount))
-    exact = _tolerance(tolerance) if tolerance.strip() else None
+    amount_cents = (
+        None if _has_prices(db, series) else edited_amount(series, parse_positive_cents(amount))
+    )
+    exact = parse_tolerance_cents(tolerance) if tolerance.strip() else None
     if exact is not None:
         tolerance_cents = exact
     elif _mode(mode) == "fixed":
@@ -758,7 +731,7 @@ def _prefill(db: Session, transaction_id: int | None) -> dict[str, str]:
     }
 
 
-# Helpers: replies
+# Section: helpers for replies
 
 
 def _block(

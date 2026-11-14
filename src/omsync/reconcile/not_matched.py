@@ -17,9 +17,10 @@ from sqlalchemy.orm import Session
 
 from omsync.ledger.categories import NOT_IN_REPORTS, CategoryType
 from omsync.ledger.contacts import ContactRole, ContactView, find_names, load_contacts
+from omsync.ledger.p2p_names import payment_name_text, written_name
 from omsync.reconcile.model import Draft, Explained, ExplainedBy, NotMatched, TxnView
 from omsync.reconcile.rules.base import Emitter
-from omsync.reconcile.rules.p2p import P2P_INFLOW_RE, payment_name_text, written_name
+from omsync.reconcile.rules.p2p import P2P_INFLOW_RE
 from omsync.reconcile.rules.transfers import ZELLE_PREFIX_RE, is_own_inflow, is_transfer_like
 
 

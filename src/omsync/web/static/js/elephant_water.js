@@ -66,7 +66,11 @@ export class ElephantWater {
     }
     this.bubbles = this.bubbles.filter((bubble) => {
       if (bubble.y > this.surfaceAt(Math.round(bubble.x)) + 0.5) return true;
-      this.pops.push({ x: Math.round(bubble.x), y: Math.round(this.surfaceAt(Math.round(bubble.x)) - 0.5), life: 0.12 });
+      this.pops.push({
+        x: Math.round(bubble.x),
+        y: Math.round(this.surfaceAt(Math.round(bubble.x)) - 0.5),
+        life: 0.12,
+      });
       return false;
     });
     for (const pop of this.pops) pop.life -= dt;

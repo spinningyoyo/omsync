@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 from omsync.core.batch_models import Batch
 from omsync.core.batches import Change, applied_batch_for_key, apply, make_preview, snapshot
 from omsync.core.months import shift_months
-from omsync.ledger.models import Account, BalanceKind, Goal, StatementBalance
+from omsync.ledger.models import Account, BalanceKind, StatementBalance
+from omsync.plan.models import Goal
 
 BASIS_POINTS = 10_000
 ICON_MAX = 32
@@ -123,11 +124,11 @@ def update_goal(
     *,
     name: str | _Unset = UNSET,
     target_cents: int | _Unset = UNSET,
-    target_date: date | None | _Unset = UNSET,
-    linked_account_id: int | None | _Unset = UNSET,
+    target_date: date | _Unset | None = UNSET,
+    linked_account_id: int | _Unset | None = UNSET,
     monthly_contribution_cents: int | _Unset = UNSET,
-    color: str | None | _Unset = UNSET,
-    icon: str | None | _Unset = UNSET,
+    color: str | _Unset | None = UNSET,
+    icon: str | _Unset | None = UNSET,
     idempotency_key: str,
 ) -> Batch:
     """Change the given fields as one batch. Omit a field to keep it, and pass None to clear one
@@ -226,10 +227,7 @@ def goal_progress(session: Session, goal: Goal, *, today: date) -> GoalProgress:
     saved, as_of = _saved(session, goal.linked_account_id)
     target = goal.target_cents
     remaining = max(target - saved, 0)
-    if target <= 0:
-        percent = BASIS_POINTS
-    else:
-        percent = min(saved * BASIS_POINTS // target, BASIS_POINTS)
+    percent = BASIS_POINTS if target <= 0 else min(saved * BASIS_POINTS // target, BASIS_POINTS)
     projected = _projected_date(today, remaining, goal.monthly_contribution_cents)
     return GoalProgress(
         goal_id=goal.id,

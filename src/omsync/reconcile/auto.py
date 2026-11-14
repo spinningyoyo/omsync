@@ -11,6 +11,7 @@ and rules whose links you keep removing are never applied here: the engine leave
 automatic queue.
 """
 
+import logging
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -27,6 +28,8 @@ from omsync.ledger.transactions import Transaction
 from omsync.reconcile.decisions import approve_drafts
 from omsync.reconcile.engine import run
 from omsync.reconcile.model import Draft, Queue
+
+logger = logging.getLogger(__name__)
 
 BATCH_LABEL = "Automatic reconcile after import"
 TRIGGER_KEY = "triggered_by"
@@ -104,6 +107,7 @@ def reconcile_after_import(session: Session, *, triggered_by: int | None = None)
         return AutoReconcile(problem=str(exc))
     except Exception as exc:  # the import is already saved; do not fail it for this step
         session.rollback()
+        logger.exception("The automatic step failed")
         return AutoReconcile(problem=f"unexpected error ({type(exc).__name__})")
     return AutoReconcile(
         linked=len(drafts), batch_id=batch.id, categorized=categorized, identified=identified

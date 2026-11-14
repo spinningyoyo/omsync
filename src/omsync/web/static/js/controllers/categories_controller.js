@@ -57,7 +57,9 @@ export default class extends Controller {
 
   // The server asks for this after a successful write, so a dialog never stays open over a result.
   closeDialogs() {
-    this.element.querySelectorAll("dialog[open]").forEach((dialog) => dialog.close());
+    this.element.querySelectorAll("dialog[open]").forEach((dialog) => {
+      dialog.close();
+    });
   }
 
   // A saved change redraws the table, so the opener may be gone; its replacement has the same id.
@@ -66,8 +68,12 @@ export default class extends Controller {
   restoreFocus(event) {
     const dialog = event?.currentTarget;
     if (dialog?.hasAttribute("data-reset-on-close")) {
-      dialog.querySelectorAll("form").forEach((form) => form.reset());
-      dialog.querySelectorAll("[aria-live]").forEach((area) => area.replaceChildren());
+      dialog.querySelectorAll("form").forEach((form) => {
+        form.reset();
+      });
+      dialog.querySelectorAll("[aria-live]").forEach((area) => {
+        area.replaceChildren();
+      });
     }
     const opener = this.opener;
     const id = this.openerId;
@@ -82,8 +88,12 @@ export default class extends Controller {
     const form = event.currentTarget.closest("form");
     if (!form) return;
     form.reset();
-    form.querySelectorAll("[aria-live]").forEach((area) => area.replaceChildren());
-    form.querySelectorAll('[data-popover-target="panel"]').forEach((panel) => this.namePaidBy(panel));
+    form.querySelectorAll("[aria-live]").forEach((area) => {
+      area.replaceChildren();
+    });
+    form.querySelectorAll('[data-popover-target="panel"]').forEach((panel) => {
+      this.namePaidBy(panel);
+    });
   }
 
   // A rule form's Paid by button names the ticked methods: "Any", "Transfer", or "Transfer, Check +1".
@@ -95,9 +105,7 @@ export default class extends Controller {
   namePaidBy(panel) {
     const button = panel.parentElement.querySelector("[data-paid-by-button]");
     if (!button) return;
-    const ticked = [...panel.querySelectorAll('input[name="paid_by"]:checked')].map(
-      (box) => box.dataset.label,
-    );
+    const ticked = [...panel.querySelectorAll('input[name="paid_by"]:checked')].map((box) => box.dataset.label);
     const more = ticked.length > 2 ? ` +${ticked.length - 2}` : "";
     const text = ticked.length ? ticked.slice(0, 2).join(", ") + more : "Any";
     const all = ticked.length ? ticked.join(", ") : "Any";
@@ -135,9 +143,7 @@ export default class extends Controller {
   // After a swap, focus the field the server marks with data-autofocus (a refused form's field).
   settled(event) {
     const target = event.target;
-    const field = target.matches?.("[data-autofocus]")
-      ? target
-      : target.querySelector?.("[data-autofocus]");
+    const field = target.matches?.("[data-autofocus]") ? target : target.querySelector?.("[data-autofocus]");
     field?.focus();
   }
 }

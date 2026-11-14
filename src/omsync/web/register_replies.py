@@ -68,7 +68,7 @@ def reply(
         response.headers["HX-Push-Url"] = state.url
     elif url_mode == "replace":
         response.headers["HX-Replace-Url"] = state.url
-    response.headers["HX-Trigger"] = json.dumps({name: True for name in events})
+    response.headers["HX-Trigger"] = json.dumps(dict.fromkeys(events, True))
     return response
 
 

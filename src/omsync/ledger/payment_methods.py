@@ -11,6 +11,7 @@ categorize.
 """
 
 import re
+from collections.abc import Iterable
 from enum import StrEnum
 from functools import cache
 
@@ -128,14 +129,9 @@ def payment_method(label: str) -> PaymentMethod | None:
             working, rail = pattern.sub("", working, count=1), name
             break
     if rail == "refund":
-        for name, pattern in _markers():
-            if name in _NESTED_RAILS and pattern.search(working):
-                working = pattern.sub("", working, count=1)
-                break
-    for pattern in _DATES:
-        if pattern.search(working):
-            working = pattern.sub(" ", working, count=1)
-            break
+        nested = [pattern for name, pattern in _markers() if name in _NESTED_RAILS]
+        working = _remove_first(working, nested, "")
+    working = _remove_first(working, _DATES, " ")
     working = working.lstrip()
     if rail is not None:
         working = _TERMINAL_ID.sub("", working, count=1)
@@ -146,6 +142,14 @@ def payment_method(label: str) -> PaymentMethod | None:
     if rail is None:
         return PaymentMethod.transfer if _ACH_LINE.search(label) else None
     return _RAIL_METHOD[rail]
+
+
+def _remove_first(text: str, patterns: Iterable[re.Pattern[str]], replacement: str) -> str:
+    """Text without the first match of the first pattern that matches."""
+    for pattern in patterns:
+        if pattern.search(text):
+            return pattern.sub(replacement, text, count=1)
+    return text
 
 
 @cache

@@ -64,12 +64,7 @@
       </span>
     </div>
     <div class="flex shrink-0 flex-col items-end">
-      <span class="flex items-center gap-1.5">
-        {%- if row.warning %}
-        <span class="size-2 shrink-0 rounded-full bg-warning" title="Balance check has issues"><span class="sr-only">Balance check has issues</span></span>
-        {%- endif %}
-        <span class="whitespace-nowrap text-sm tabular-nums text-primary">{{ row.balance }}</span>
-      </span>
+      <span class="whitespace-nowrap text-sm tabular-nums text-primary">{{ row.balance }}</span>
       {%- if row.spark %}
       <span class="relative flex items-center gap-1.5"{% if row.change %} title="{{ row.change_label }}"{% endif %}>
         <svg class="h-4 w-12" viewBox="0 0 56 20" preserveAspectRatio="none" aria-hidden="true" focusable="false">

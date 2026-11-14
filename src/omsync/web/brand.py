@@ -1,16 +1,17 @@
 """The pixel mascot for templates. Registered as the `mascot_svg` Jinja global in app.py.
 
 Inline the SVG shapes so the outline can take currentColor and the body can take the theme's
-variable. The file is read once and then served from the cache.
+variable. The file comes from the omsync-nursery package. It is read once and then served from
+the cache.
 """
 
 import re
 from functools import cache
-from pathlib import Path
 
 from markupsafe import Markup, escape
+from nursery.assets import MASCOT_SVG
 
-MASCOT_PATH = Path(__file__).resolve().parent / "static" / "img" / "mascot.svg"
+MASCOT_PATH = MASCOT_SVG
 _SVG = re.compile(r"<svg\b[^>]*>(?P<body>.*)</svg>", re.DOTALL)
 _BETWEEN_TAGS = re.compile(r">\s+<")
 _VIEWBOX = re.compile(r'viewBox="0 0 (\d+) (\d+)"')

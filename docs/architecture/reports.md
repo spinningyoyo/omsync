@@ -32,16 +32,12 @@ flowchart LR
 
 ## Design decisions
 
-- **A link removes only what it explains.** A $100 payment with a $40 transfer link still counts
-  $60. Removing the whole transaction would hide real spending.
-- **Refund and P2P links remove nothing.** The category already says how the money counts.
-- **Refunds reduce spending.** A positive amount in a spending category lowers that category.
-- **Joint share applies once per transaction, then to splits.** A split never changes a report
-  total.
-- **Uncategorized is its own line.** It is never shown as income or spending.
-- **Exports show full amounts.** They mark joint-account activity. Full amounts and counted
-  amounts are never added together.
-- **A comparison uses the period of the same length just before.**
+- **A link removes only the amount that it explains.** A $100 payment with a $40 transfer link
+  counts as $60 of spending.
+- **Refund and P2P links remove no amount.** The category tells how the money counts.
+- **A refund decreases spending.** A positive amount in a spending category decreases that category.
+- **Exports show full amounts.** They mark joint-account activity. omsync does not add full amounts
+  and counted amounts together.
 
 ## Terms
 

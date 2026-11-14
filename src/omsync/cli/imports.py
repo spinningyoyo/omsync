@@ -12,11 +12,9 @@ from sqlalchemy.orm import Session
 
 from omsync.cli.common import ready_session
 from omsync.cli.groups import app
-from omsync.core.money import format_cents
 from omsync.core.settings import Settings
-from omsync.ingest.balance_check import BalanceStatus
 from omsync.ingest.dropfolder import PendingFile, location_of, pending_files
-from omsync.ingest.pipeline import AccountCheck, FileResult, ImportReport, import_files
+from omsync.ingest.pipeline import FileResult, ImportReport, import_files
 from omsync.ledger.sources import account_digits
 
 _TYPES = "checking|savings|credit_card|brokerage|other"
@@ -65,11 +63,9 @@ def import_statements(
 
 
 def echo_import_report(report: ImportReport) -> None:
-    """Print one line per file, then the balance status of each account the import changed."""
+    """Print one line per file, then the rows that need review and the automatic links."""
     for result in report.files:
         _echo_file(result)
-    for check in report.checks:
-        _echo_balance(check)
     if report.applied and report.review:
         noun = "row needs" if report.review == 1 else "rows need"
         typer.echo(f"{report.review} {noun} review")
@@ -147,24 +143,4 @@ def _echo_file(result: FileResult) -> None:
         typer.echo(
             f"{result.name}  account {digits}  "
             f"joined {result.joined}, created {result.created}, review {result.review}"
-        )
-
-
-def _echo_balance(check: AccountCheck) -> None:
-    digits = account_digits(check.account_last4, check.account_alias_last4) or "••????"
-    label = f"account {digits}"
-    status: BalanceStatus = check.status
-    if status.ok:
-        if status.checked_through is None:
-            typer.echo(f"{label}: no statement balances to check")
-        else:
-            typer.echo(f"{label}: balances ok through {status.checked_through.isoformat()}")
-        return
-    typer.echo(f"{label}: balances do not add up")
-    for issue in status.issues:
-        typer.echo(
-            f"  {issue.from_date.isoformat()} to {issue.to_date.isoformat()}: "
-            f"expected {format_cents(issue.expected_cents)}, "
-            f"computed {format_cents(issue.computed_cents)}, "
-            f"difference {format_cents(issue.difference_cents)}"
         )

@@ -6,7 +6,6 @@ the routes, and every figure comes from omsync.reports.contacts, never from arit
 
 import re
 from dataclasses import dataclass
-from datetime import date
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -19,11 +18,12 @@ from omsync.ledger.contacts import (
     ContactView,
     load_contacts,
 )
+from omsync.ledger.own_names import name_literals
+from omsync.ledger.patterns import names_pattern
 from omsync.ledger.preferences import joint_share_on
 from omsync.ledger.transactions import Transaction
-from omsync.reconcile.own_names import name_literals
-from omsync.reconcile.patterns import names_pattern
 from omsync.reports.contacts import ContactBalance, Direction, contact_balance, contact_balances
+from omsync.web.formats import iso_day
 
 DIRECTION_LABELS = {
     Direction.owes_you: "Owes you",
@@ -355,12 +355,9 @@ def _balance_view(db: Session, balance: ContactBalance) -> BalanceView:
     ids = {item.transaction_id for item in balance.open_items} | {
         line.transaction_id for line in balance.lines
     }
-    payees = {
-        txn_id: payee
-        for txn_id, payee in db.execute(
-            select(Transaction.id, Transaction.payee).where(Transaction.id.in_(ids))
-        )
-    }
+    payees = dict(
+        db.execute(select(Transaction.id, Transaction.payee).where(Transaction.id.in_(ids)))
+    )
     return BalanceView(
         cents=balance.balance_cents,
         direction=DIRECTION_LABELS[balance.direction],
@@ -368,7 +365,7 @@ def _balance_view(db: Session, balance: ContactBalance) -> BalanceView:
         open_items=tuple(
             OpenItemRow(
                 txn_id=item.transaction_id,
-                on=_day(item.posted_on),
+                on=iso_day(item.posted_on),
                 payee=payees.get(item.transaction_id, ""),
                 amount_cents=item.amount_cents,
                 open_cents=item.open_cents,
@@ -378,7 +375,7 @@ def _balance_view(db: Session, balance: ContactBalance) -> BalanceView:
         lines=tuple(
             LineRow(
                 txn_id=line.transaction_id,
-                on=_day(line.posted_on),
+                on=iso_day(line.posted_on),
                 payee=payees.get(line.transaction_id, ""),
                 amount_cents=line.amount_cents,
                 cleared_cents=line.cleared_cents,
@@ -412,7 +409,3 @@ def _name_matches(db: Session, owner: ContactView) -> dict[int, int]:
 
 def _account_text(account: ContactAccountView) -> str:
     return f"{account.label} ••{account.last4}" if account.last4 else account.label
-
-
-def _day(day: date) -> str:
-    return day.isoformat()

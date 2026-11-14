@@ -1,12 +1,14 @@
-"""Text the Plan and Recurring pages show or accept: dates, months written YYYY-MM, and amounts as
-a form field holds them."""
+"""Text the web pages show for dates and amounts, and the months the Plan and Recurring pages
+accept as YYYY-MM. Amounts are integer cents; see omsync.core.money."""
 
 import re
 from datetime import date
 
+from omsync.core.money import format_cents
 from omsync.core.months import FIRST_DAY, LAST_DAY
 
 MONTH_RE = re.compile(r"(\d{4})-(\d{2})")
+EM_DASH = "—"
 
 
 def money_input(cents: int) -> str:
@@ -14,6 +16,25 @@ def money_input(cents: int) -> str:
     sign = "-" if cents < 0 else ""
     dollars, remainder = divmod(abs(cents), 100)
     return f"{sign}{dollars}.{remainder:02d}"
+
+
+def money_or_dash(cents: int | None) -> str:
+    """An amount, or an em dash when there is none. Privacy mode blurs the figures in CSS."""
+    return EM_DASH if cents is None else format_cents(cents)
+
+
+def long_day(day: date) -> str:
+    """A date such as Jan 5, 2026. Unlike fmt_date, strftime pads a year before 1000."""
+    return day.strftime("%b %-d, %Y")
+
+
+def short_day(day: date) -> str:
+    """A date with its weekday and no year, such as Mon Jan 5."""
+    return f"{day:%a %b} {day.day}"
+
+
+def iso_day(day: date) -> str:
+    return day.isoformat()
 
 
 def fmt_date(value: date) -> str:

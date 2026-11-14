@@ -20,14 +20,8 @@ from sqlalchemy.orm import Session
 from omsync.core.money import format_cents
 from omsync.core.months import month_end, shift_month_start
 from omsync.ledger.filters import Condition, FilterSpec
-from omsync.ledger.models import (
-    Account,
-    Cadence,
-    Category,
-    RecurringSeries,
-    SeriesStatus,
-    Transaction,
-)
+from omsync.ledger.models import Account, Category, Transaction
+from omsync.plan.models import Cadence, RecurringSeries, SeriesStatus
 from omsync.plan.recurring import (
     AttentionItem,
     AttentionKind,

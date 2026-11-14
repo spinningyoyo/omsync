@@ -27,30 +27,27 @@ flowchart TD
     Match -->|No or several| Review
     Match -->|Yes| Items[Categorize items with the vendor's keywords]
     Items --> Apply[Apply category or splits as one batch]
+    class Review waits
+    classDef waits fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#1f1f1f
 ```
 
 ## Design decisions
 
-- **Apply only a unique match.** Amount, sign, payee, card, and date window must fit one
-  transaction. A tie stays in review.
-- **An unknown card never applies automatically.** Amount and date cannot prove that a purchase
-  is yours.
-- **Your category wins.** A receipt never replaces a category or split that you set.
-- **A changed receipt goes to review.** It never applies twice. A new ship date alone is not a
-  change.
-- **The period limits what applies, not what counts as evidence.** A shorter period cannot make an
-  ambiguous match unique.
-- **Amazon: an order total needs an exact, unique set of charges.** A first-fit guess could take an
-  unrelated purchase.
-- **Amazon: a gift card goes to review.** Amazon does not say how much the gift card paid.
-- **Costco: each card payment is a charge.** With several cards, each charge gets its share of
-  the categories.
-- **Costco uses your signed-in browser.** omsync does not use vault logins for Costco.
+- **A receipt applies only to one matching transaction.** Amount, sign, payee, card, and date window
+  must match exactly one transaction. If more than one matches, the receipt waits for review.
+- **A receipt with an unknown card does not apply automatically.** Amount and date cannot show that
+  the purchase is yours.
+- **The period limits what applies, not the evidence.** A shorter period cannot make an ambiguous
+  match unique.
+- **Amazon: an order total must equal one exact set of charges.** A first-fit guess can take a
+  different purchase. An order with a gift card waits for review, because Amazon does not show the
+  gift card amount.
+- **Costco uses your signed-in browser.** omsync does not use a vault login for Costco.
 
 ## Terms
 
-- **Charge:** the part of a receipt paid as one transaction on one account.
+- **Charge:** the amount of a receipt that one transaction on one account paid.
 - **Receipt match:** the link from a charge to its transaction.
 - **Vendor login:** one sign-in's receipts at a vendor.
 
-See [sync and receipts](../how-to/sync-and-receipts.md) for the steps.
+See [get receipts](../how-to/get-receipts.md) for the steps.

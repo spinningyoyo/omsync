@@ -18,6 +18,7 @@ from omsync.ledger import categories_admin as admin
 from omsync.ledger.categories_admin import KeywordRow, NothingChanged
 from omsync.ledger.categorize import PAYEE_LIST, explain, find_conflicts, is_list_key, list_name
 from omsync.ledger.payment_methods import METHOD_LABELS
+from omsync.ledger.receipt_vendors import RECEIPT_VENDOR_KEYS
 from omsync.web.categories_replies import (
     applied_toast,
     block,
@@ -336,7 +337,7 @@ def _keyword_edit(
 
 def list_choices(db: Session) -> list[tuple[str, str]]:
     """Payees, each registered vendor, then any other list that has keywords."""
-    vendors = admin.receipt_vendor_keys()
+    vendors = RECEIPT_VENDOR_KEYS
     others = [
         key for key in admin.keyword_list_keys(db) if key != PAYEE_LIST and key not in vendors
     ]

@@ -10,8 +10,8 @@ accounting.
 ```mermaid
 flowchart LR
     Counted[Report counted amounts] --> Period[Cash flow, spending trend, outflows]
-    Views[Each destination view's query] --> Attention[Needs attention]
-    Recurring --> Upcoming[Upcoming: next 14 days]
+    Views[The query of each linked page] --> Attention[Needs attention]
+    Recurring --> Upcoming[Upcoming]
     Plan[Plan for this month] --> Cards[Budget and goals]
     Period --> Home
     Attention --> Home
@@ -32,19 +32,13 @@ flowchart LR
 ```
 
 The kinds are import reviews, reconciliation to resolve, uncategorized transactions, recurring
-items, balance check failures, and sync problems.
+items, and sync problems.
 
 ## Design decisions
 
-- **Each count uses its page's own query.** A second definition would let the count and the list
-  drift apart.
-- **Period sections follow the period picker. The others follow today.** Each header says which.
-- **Upcoming is expected money.** It is labelled as expected and never added to period figures.
-- **One color for each category on the page.** The donut and the cash-flow diagram read together.
-- **Figures go with every chart.** A chart's shape is never the only source of a number.
-- **Layout is a preference.** Order, width, height, and collapse save directly, not as batches.
-- **Sections keep one reading order.** A gap stays a gap, so the keyboard, a screen reader, and
-  the eye agree.
+- **Each count uses the query of the page it opens.** The count and the list always agree.
+- **Upcoming amounts are labeled as expected.** They are not added to period totals, reports, or
+  balances.
 
 ## Terms
 

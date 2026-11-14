@@ -9,5 +9,9 @@
  * The mixes are set by contrast: secondary text on the page (gray-600 in light, sure/tokens.css)
  * stays at 5.8:1 or more on every light tint, and well above 7:1 on every dark one.
  */
-[data-tint] { --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, var(--scene-tint, var(--color-gray-50))); }
-[data-theme="dark"][data-tint] { --color-surface: color-mix(in oklab, var(--color-black) 92%, var(--scene-tint-dark, var(--color-black))); }
+[data-tint] {
+  --color-surface: color-mix(in oklab, var(--color-gray-50) 82%, var(--scene-tint, var(--color-gray-50)));
+}
+[data-theme="dark"][data-tint] {
+  --color-surface: color-mix(in oklab, var(--color-black) 92%, var(--scene-tint-dark, var(--color-black)));
+}

@@ -15,8 +15,8 @@ from omsync.cli.imports import echo_import_report
 from omsync.core.settings import Settings
 from omsync.core.vault import BitwardenCLI, SystemKeychain, Vault, VaultError
 from omsync.ingest.connectors.base import ConnectorError, DateRange
+from omsync.ingest.models import SyncRun, SyncStatus
 from omsync.ingest.sync import SyncBusy, SyncResult, sync_all, sync_provider
-from omsync.ledger.sync_models import SyncRun, SyncStatus
 
 
 class TyperPrompt:
@@ -70,10 +70,7 @@ def sync_command(
     a provider that fails does not stop the others. Exits 1 if any sync failed or needs you, or
     another is running.
     """
-    if provider is None and not all_providers:
-        fail("give a provider key, or --all to sync every provider")
-    if provider is not None and all_providers:
-        fail("give a provider key or --all, not both")
+    _check_selection(provider, all_providers)
     period = _period(from_date, to_date)
     settings = load_settings_or_exit()
     address = (email or settings.email or "").strip()
@@ -106,26 +103,9 @@ def sync_command(
             vault.lock()
 
     if not all_providers:
-        _echo_result(result, provider.strip().lower())
-        if result.status is not SyncStatus.succeeded:
-            fail(_failure(result))
-        return
-
-    if not outcomes:
-        typer.echo("No enabled providers to sync.")
-        return
-    failed: list[str] = []
-    for outcome in outcomes:
-        if outcome.result is None:
-            typer.echo(f"{outcome.provider_key}: did not run: {outcome.error}")
-            failed.append(outcome.provider_key)
-            continue
-        _echo_result(outcome.result, outcome.provider_key)
-        if outcome.result.status is not SyncStatus.succeeded:
-            typer.echo(f"{outcome.provider_key}: {_failure(outcome.result)}")
-            failed.append(outcome.provider_key)
-    if failed:
-        fail(f"{len(failed)} of {len(outcomes)} providers did not sync: {', '.join(failed)}")
+        _report_one(result, provider.strip().lower())
+    else:
+        _report_all(outcomes)
 
 
 @app.command("sync-log")
@@ -148,6 +128,37 @@ def sync_log(
                 f"{run.status.value:<18}  {_files(run.files_fetched):<12}  {run.message or ''}"
             )
             typer.echo(line.rstrip())
+
+
+def _check_selection(provider: str | None, all_providers: bool) -> None:
+    if provider is None and not all_providers:
+        fail("give a provider key, or --all to sync every provider")
+    if provider is not None and all_providers:
+        fail("give a provider key or --all, not both")
+
+
+def _report_one(result: SyncResult, provider_key: str) -> None:
+    _echo_result(result, provider_key)
+    if result.status is not SyncStatus.succeeded:
+        fail(_failure(result))
+
+
+def _report_all(outcomes: list) -> None:
+    if not outcomes:
+        typer.echo("No enabled providers to sync.")
+        return
+    failed: list[str] = []
+    for outcome in outcomes:
+        if outcome.result is None:
+            typer.echo(f"{outcome.provider_key}: did not run: {outcome.error}")
+            failed.append(outcome.provider_key)
+            continue
+        _echo_result(outcome.result, outcome.provider_key)
+        if outcome.result.status is not SyncStatus.succeeded:
+            typer.echo(f"{outcome.provider_key}: {_failure(outcome.result)}")
+            failed.append(outcome.provider_key)
+    if failed:
+        fail(f"{len(failed)} of {len(outcomes)} providers did not sync: {', '.join(failed)}")
 
 
 def _unlock(vault: Vault, address: str) -> None:

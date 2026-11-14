@@ -79,7 +79,9 @@ export default class extends Controller {
 
   focusItem(item) {
     if (!item) return;
-    this.items.forEach((el) => el.setAttribute("tabindex", el === item ? "0" : "-1"));
+    this.items.forEach((el) => {
+      el.setAttribute("tabindex", el === item ? "0" : "-1");
+    });
     item.focus();
   }
 }

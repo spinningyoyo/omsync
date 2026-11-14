@@ -16,9 +16,10 @@ from urllib.parse import urlencode
 from sqlalchemy.orm import Session
 
 from omsync.core.money import format_cents
+from omsync.ingest.models import SyncStatus
 from omsync.ledger.filters import Condition, FilterSpec
-from omsync.ledger.models import SyncStatus
 from omsync.ledger.preferences import joint_share_on
+from omsync.ledger.spending import PRESETS, Period, has_transactions, ratio_bp
 from omsync.reports.attention import Attention, attention
 from omsync.reports.dashboard import (
     DEFICIT_KEY,
@@ -38,8 +39,8 @@ from omsync.reports.dashboard import (
     spending_trend,
     upcoming_expected,
 )
-from omsync.reports.queries import PRESETS, Period, has_transactions, ratio_bp
 from omsync.web.budget_view import BudgetCard, budget_card
+from omsync.web.formats import long_day, short_day
 from omsync.web.goals_view import GoalsCard, goals_card
 from omsync.web.reconcile_view import default_range
 from omsync.web.register_state import encode_filter
@@ -157,7 +158,7 @@ class OutflowsView:
 
 @dataclass(frozen=True)
 class AttentionRow:
-    """One thing that needs a look. count is None for a row that is one thing, such as an account.
+    """One thing that needs a look. count is None for a row that is one thing, such as a provider.
     href opens the page that lists exactly what the count counts."""
 
     label: str
@@ -299,15 +300,6 @@ def _attention_view(found: Attention, today: date) -> AttentionView:
         )
     rows.extend(
         AttentionRow(
-            f"{account.name} balance check fails",
-            _issues_text(account.issue_count),
-            f"/accounts/{account.account_id}",
-            badge="Check fails",
-        )
-        for account in found.accounts
-    )
-    rows.extend(
-        AttentionRow(
             f"{provider.institution_name} sync {_SYNC_WORDS[provider.status]}",
             provider.key,
             SYNC_HREF,
@@ -319,16 +311,12 @@ def _attention_view(found: Attention, today: date) -> AttentionView:
     return AttentionView(rows)
 
 
-def _issues_text(count: int) -> str:
-    return f"{count} to review"
-
-
 def _upcoming_view(window: Upcoming) -> UpcomingView:
     return UpcomingView(
         rows=[
             UpcomingRow(
                 name=item.name,
-                due=_short_day(item.due_on),
+                due=short_day(item.due_on),
                 amount=format_cents(abs(item.expected_cents)),
                 inflow=item.expected_cents > 0,
             )
@@ -336,7 +324,7 @@ def _upcoming_view(window: Upcoming) -> UpcomingView:
         ],
         inflow=format_cents(window.inflow_cents),
         outflow=format_cents(window.outflow_cents),
-        range=f"{_short_day(window.start)} to {_short_day(window.end)}",
+        range=f"{short_day(window.start)} to {short_day(window.end)}",
     )
 
 
@@ -427,7 +415,7 @@ def _flow_node(
     if node.key == DEFICIT_KEY:
         color = "var(--color-destructive)"
     elif spending:
-        color = colors[node.category_id] if node.category_id in colors else OTHER_COLOR
+        color = colors.get(node.category_id, OTHER_COLOR)
     else:
         color = "var(--color-success)"
     view = {"name": node.name, "text": format_cents(node.cents), "color": color}
@@ -486,7 +474,7 @@ def _outflows_view(spend: Outflows, period: Period, colors: dict[int, str]) -> O
     for row in spend.rows:
         # Other, and any refund-only category, draws no segment, so it gets the neutral swatch.
         drawn = row.category_id in colors
-        color = colors[row.category_id] if row.category_id in colors else OTHER_COLOR
+        color = colors.get(row.category_id, OTHER_COLOR)
         segment = len(segments) if drawn else -1
         rows.append(_outflow_row(row, period, color, segment))
         if drawn:
@@ -544,15 +532,7 @@ def _register_href(category_id: int, period: Period) -> str:
 
 
 def _range(period: Period) -> str:
-    return f"{_day(period.start)} to {_day(period.end)}"
-
-
-def _short_day(value: date) -> str:
-    return f"{value:%a %b} {value.day}"
-
-
-def _day(value: date) -> str:
-    return value.strftime("%b %-d, %Y")
+    return f"{long_day(period.start)} to {long_day(period.end)}"
 
 
 __all__ = [

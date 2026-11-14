@@ -324,7 +324,7 @@
 {%- endmacro %}
 
 {# Step 5: what the import would do. Nothing is written until Import. `identity` is the preview's token: Import sends it back, and the server imports only if it still matches. #}
-{% macro preview_step(state, view, balances, can_import, identity="", notice="") -%}
+{% macro preview_step(state, view, can_import, identity="", notice="") -%}
 <div id="wizard-step" class="flex flex-col gap-6">
   {{ state_fields(state) }}
   {{ step_heading(5, "Import") }}
@@ -334,14 +334,6 @@
   {%- if view.files %}
   <p class="text-sm text-secondary">This is a preview. Nothing has been written yet.</p>
   {{ table(view.columns, view.table_rows, "Files to import") }}
-  {%- if balances %}
-  <div class="flex flex-col gap-1 text-sm">
-    <p class="font-medium text-primary">Balances before this import</p>
-    {%- for check in balances %}
-    <p class="{{ 'text-primary' if check.ok else 'text-warning' }}">{{ check.account }}: {{ check.text }}</p>
-    {%- endfor %}
-  </div>
-  {%- endif %}
   <p class="text-sm text-primary">{{ view.planned }} file{{ "s" if view.planned != 1 }} will import, and {{ view.review }} row{{ "s" if view.review != 1 }} will wait for review.</p>
   {%- else %}
   <p class="text-sm text-secondary">No statements waiting. Add files to its folder, then check again.</p>
@@ -363,9 +355,6 @@
   {%- if view.files %}
   <p class="text-sm text-primary">Imported.</p>
   {{ table(view.columns, view.table_rows, "Imported files") }}
-  {%- for check in view.checks %}
-  <p class="text-sm {{ 'text-primary' if check.ok else 'text-warning' }}">{{ check.account }}: {{ check.text }}</p>
-  {%- endfor %}
   {%- if view.auto_linked %}
   <p class="text-sm text-primary">Linked {{ view.auto_linked }} pair{{ "s" if view.auto_linked != 1 }} automatically.</p>
   {{ link_button("Open Reconcile", href="/reconcile", variant="outline", size="sm") }}

@@ -4,6 +4,7 @@ Statement rows are the evidence that import matches against transactions. They a
 updated after insert: a correction is a new transaction change, not an edit to the row.
 """
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -145,3 +146,59 @@ def source_texts(session: Session, transaction_ids: Iterable[int]) -> dict[int, 
                 ),
             )
     return found
+
+
+# Institutions and file formats whose MEMO continues the NAME. Chase cuts NAME short.
+NAME_CONTINUES_IN_MEMO = frozenset({("chase", "ofx"), ("chase_business", "ofx")})
+# Chase cuts NAME at this many characters and continues the description in MEMO.
+NAME_CUT_LENGTH = 32
+# A cut NAME ending in one of these words ended between words: "Online Transfer 12345678901 from".
+_NAME_ENDS_WORD = re.compile(r"\s(?:from|to)$")
+# A MEMO starting with one of these starts a new word: a transfer's "transaction#", or a Zelle
+# confirmation ("BACab12cd34e", "JPM99ab12cd3").
+_MEMO_STARTS_WORD = re.compile(r"transaction#|(?:BAC|JPM)[a-z0-9]{7,}")
+
+
+def join_name_and_memo(name: str, memo: str | None) -> str:
+    """The whole description of a row whose MEMO continues its NAME.
+
+    A NAME of exactly NAME_CUT_LENGTH characters was cut at the limit, usually inside a word, so
+    the MEMO follows with no space. When the cut visibly fell between words, because the NAME ends
+    in "from" or "to" or the MEMO starts with a transaction# or a Zelle confirmation, one space
+    separates them, as it does after a shorter NAME, which ended where the bank wrote it. The MEMO
+    is left out when the NAME already contains it.
+    """
+    text = name.strip()
+    note = (memo or "").strip()
+    if not note or note.lower() in text.lower():
+        return text
+    cut_inside_word = (
+        len(name) == NAME_CUT_LENGTH
+        and not _NAME_ENDS_WORD.search(name)
+        and not _MEMO_STARTS_WORD.match(note)
+    )
+    return f"{text}{'' if cut_inside_word else ' '}{note}"
+
+
+def statement_description(
+    institution_key: str | None, format_key: str, name: str, memo: str | None
+) -> str:
+    """The description of a statement row: the text that names the transaction.
+
+    It is the NAME, with the MEMO joined on when the institution's format continues NAME there.
+    Any other MEMO is a separate field, such as a reference number, and stays out. Import and
+    reconciliation both read a row's description through this function.
+    """
+    if (institution_key, format_key) in NAME_CONTINUES_IN_MEMO:
+        return join_name_and_memo(name, memo)
+    return name
+
+
+def statement_text(payee_raw: str, source: SourceText | None) -> str:
+    """The text rules read for a transaction: its statement row's description, read through the
+    same function as import, or its raw payee when no statement row describes it."""
+    if source is None:
+        return payee_raw
+    return statement_description(
+        source.institution_key, source.format_key, source.name, source.memo
+    ).strip()

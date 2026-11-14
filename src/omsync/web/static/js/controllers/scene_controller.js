@@ -7,9 +7,10 @@
 // The shell holds one menu on wide screens and another in the phone header, so the controller sits
 // on the shell and both sets of scene buttons agree. Storage can be blocked, so every access is in
 // try/catch.
-import { Controller } from "/static/vendor/stimulus.js";
+
 import { iconSvg } from "/static/vendor/nursery/kit/pixel.js";
 import { SCENES } from "/static/vendor/nursery/nursery.js";
+import { Controller } from "/static/vendor/stimulus.js";
 
 const SCENE_KEY = "omsync-scene";
 

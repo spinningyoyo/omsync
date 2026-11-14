@@ -18,9 +18,9 @@ from omsync.ledger.categories import (
     Category,
     CategoryType,
 )
-from omsync.ledger.models import BudgetKind, BudgetLine, Goal
 from omsync.ledger.preferences import get_pref
-from omsync.reports.queries import Period, by_category, monthly_trend, spending_by_month
+from omsync.ledger.spending import Period, by_category, monthly_trend, spending_by_month
+from omsync.plan.models import BudgetKind, BudgetLine, Goal
 
 BUDGET_MODE_KEY = "budget_mode"
 EXPECTED_INCOME_KEY = "expected_income_cents"

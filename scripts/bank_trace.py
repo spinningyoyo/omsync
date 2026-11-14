@@ -16,13 +16,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, quote, unquote, urlsplit
 
-LIKELY_DOWNLOAD = re.compile(r"download|export|statement|transaction|txn|\.csv|\.qfx|\.ofx", re.I)
-ASSET = re.compile(r"\.(js|css|png|gif|svg|woff2?|jpg)(\?|$)", re.I)
-TOKEN_NAME = re.compile(r"csrf|xsrf|token|nonce", re.I)
+LIKELY_DOWNLOAD = re.compile(
+    r"download|export|statement|transaction|txn|\.csv|\.qfx|\.ofx", re.IGNORECASE
+)
+ASSET = re.compile(r"\.(js|css|png|gif|svg|woff2?|jpg)(\?|$)", re.IGNORECASE)
+TOKEN_NAME = re.compile(r"csrf|xsrf|token|nonce", re.IGNORECASE)
 STANDARD_HEADER = re.compile(
     r"accept.*|user-agent|referer|origin|host|connection|content-(length|type)|cache-control"
     r"|pragma|upgrade-insecure-requests|priority|cookie|dnt|sec-.*|:.*",
-    re.I,
+    re.IGNORECASE,
 )
 MIN_TRACED_LENGTH = 8  # shorter values match almost everything
 
@@ -123,36 +125,41 @@ def shape(value: str) -> str:
     return "opaque"
 
 
+def _print_origins(capture: Capture, request: dict, value: str) -> None:
+    earlier, stored = capture.sources(value, request["t"])
+    for when, label in earlier[:3]:
+        print(f"    <- {when}s {label}")
+    if len(earlier) > 3:
+        print(f"    ... {len(earlier)} places in all")
+    for label in stored[:3]:
+        print(f"    <- {label}")
+    if not earlier and not stored:
+        print("    <- not found: generated, or built by a script")
+
+
+def _print_request(capture: Capture, request: dict) -> None:
+    url = urlsplit(request["url"])
+    moment = round(request["t"] - capture.start)
+    print(f"\n=== {moment}s {request['method']} {request['type']} {url.netloc}{url.path}")
+    initiator = request.get("initiator") or {}
+    for frame in ((initiator.get("stack") or {}).get("callFrames") or [])[:5]:
+        print("  sent by", frame.get("functionName") or "(anonymous)", frame.get("url", "")[:90])
+    body = request.get("post")
+    if isinstance(body, dict):
+        print(f"  body redacted, {body['length']} characters")
+    for source, name, value in fields_of(capture, request):
+        secret = value.removeprefix("Bearer ")
+        kind = shape(secret)
+        print(f"  {source} {name}: {len(secret)} characters, {kind}")
+        if kind.startswith("word") or len(value) < MIN_TRACED_LENGTH:
+            continue
+        _print_origins(capture, request, value)
+
+
 def trace(capture: Capture, pattern: re.Pattern[str]) -> None:
     for request in capture.requests.values():
-        if not pattern.search(request["url"]):
-            continue
-        url = urlsplit(request["url"])
-        moment = round(request["t"] - capture.start)
-        print(f"\n=== {moment}s {request['method']} {request['type']} {url.netloc}{url.path}")
-        initiator = request.get("initiator") or {}
-        for frame in ((initiator.get("stack") or {}).get("callFrames") or [])[:5]:
-            print(
-                "  sent by", frame.get("functionName") or "(anonymous)", frame.get("url", "")[:90]
-            )
-        body = request.get("post")
-        if isinstance(body, dict):
-            print(f"  body redacted, {body['length']} characters")
-        for source, name, value in fields_of(capture, request):
-            value = value.removeprefix("Bearer ")
-            kind = shape(value)
-            print(f"  {source} {name}: {len(value)} characters, {kind}")
-            if kind.startswith("word") or len(value) < MIN_TRACED_LENGTH:
-                continue
-            earlier, stored = capture.sources(value, request["t"])
-            for when, label in earlier[:3]:
-                print(f"    <- {when}s {label}")
-            if len(earlier) > 3:
-                print(f"    ... {len(earlier)} places in all")
-            for label in stored[:3]:
-                print(f"    <- {label}")
-            if not earlier and not stored:
-                print("    <- not found: generated, or built by a script")
+        if pattern.search(request["url"]):
+            _print_request(capture, request)
 
 
 def overview(capture: Capture) -> None:

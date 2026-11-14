@@ -79,6 +79,7 @@ class BitwardenCLI:
                 text=True,
                 timeout=self._timeout,
                 input=input,
+                check=False,
             )
         except subprocess.TimeoutExpired:
             raise VaultError(f"Bitwarden CLI '{args[0]}' timed out") from None

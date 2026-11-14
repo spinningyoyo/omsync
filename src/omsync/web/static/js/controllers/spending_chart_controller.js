@@ -44,7 +44,7 @@ export default class extends Controller {
     const innerWidth = width - MARGIN.left - MARGIN.right;
     const innerHeight = height - MARGIN.top - MARGIN.bottom;
     const values = [0, ...current.map((p) => p.cents), ...previous.map((p) => p.cents)];
-    let low = Math.min(...values);
+    const low = Math.min(...values);
     let high = Math.max(...values);
     if (low === high) high = low + 100;
     const pad = (high - low) * 0.08;
@@ -168,18 +168,12 @@ export default class extends Controller {
       tooltip
         .append("span")
         .attr("class", "text-secondary")
-        .text(now ? now.label : before?.label ?? "");
+        .text(now ? now.label : (before?.label ?? ""));
       if (now) {
-        tooltip
-          .append("span")
-          .attr("class", "tabular-nums text-primary")
-          .text(`This period: ${now.text}`);
+        tooltip.append("span").attr("class", "tabular-nums text-primary").text(`This period: ${now.text}`);
       }
       if (before) {
-        tooltip
-          .append("span")
-          .attr("class", "tabular-nums text-secondary")
-          .text(`Previous: ${before.text}`);
+        tooltip.append("span").attr("class", "tabular-nums text-secondary").text(`Previous: ${before.text}`);
       }
       const tipWidth = tooltip.node().offsetWidth;
       const anchor = now ?? before;

@@ -30,9 +30,9 @@ from omsync.ledger.filters import (
 from omsync.ledger.preferences import get_pref, set_pref
 from omsync.ledger.register import RegisterRow, categories, list_transactions, open_review_count
 from omsync.ledger.sources import Account
+from omsync.web.formats import long_day
 
 MAX_FILTER_LENGTH = 8000
-DATE_FORMAT = "%b %-d, %Y"
 PAGE_SIZES = (25, 50, 100, 200)
 PAGE_SIZE_DEFAULT = 50
 PAGE_SIZE_PREF = "register_page_size"
@@ -247,8 +247,8 @@ def chip_text(
     field, op, value = condition.field, condition.op, condition.value
     if field == "date":
         if op == "between":
-            return f"Date between {_day(value[0])} and {_day(value[1])}"
-        return f"Date {_op_words(op)} {_day(value)}"
+            return f"Date between {long_day(value[0])} and {long_day(value[1])}"
+        return f"Date {_op_words(op)} {long_day(value)}"
     if field == "account":
         names = ", ".join(account_names.get(item, f"account {item}") for item in value)
         return f"Account {'is' if op == 'is' else 'is not'} {names}"
@@ -266,10 +266,6 @@ def chip_text(
     if field == "memo":
         return "Memo is empty" if op == "is_empty" else f"Memo contains “{value}”"
     return f"Origin is {value}"
-
-
-def _day(value: object) -> str:
-    return value.strftime(DATE_FORMAT)  # type: ignore[attr-defined]
 
 
 _OP_WORDS = {

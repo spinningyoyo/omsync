@@ -3,7 +3,6 @@
 import hashlib
 import io
 import json
-import os
 import re
 import shutil
 import sqlite3
@@ -130,7 +129,7 @@ def create_archive(settings: Settings, *, label: str = MANUAL) -> ArchiveInfo:
                 tar.addfile(member, io.BytesIO(body))
                 for name, path in entries:
                     tar.add(path, arcname=name, recursive=False)
-            os.replace(partial, target)
+            partial.replace(target)
         except BaseException:
             partial.unlink(missing_ok=True)
             raise
@@ -249,26 +248,12 @@ def _extract_verified(archive: Path, scratch: Path) -> _Extracted:
     root = scratch / "new"
     root.mkdir()
     try:
-        tar = tarfile.open(archive, "r:gz")
+        tar = tarfile.open(archive, "r:gz")  # noqa: SIM115 - the `with tar:` below closes it
     except (tarfile.TarError, OSError):
         raise RecoveryError(f"{archive.name} is not a readable omsync archive") from None
     with tar:
-        try:
-            members = tar.getmembers()
-        except tarfile.TarError:
-            raise RecoveryError("the archive is damaged and cannot be read") from None
-        by_name: dict[str, tarfile.TarInfo] = {}
-        for index, member in enumerate(members, start=1):
-            if not member.isreg():
-                raise RecoveryError(f"archive entry #{index} is not a plain file; nothing restored")
-            if member.name in by_name:
-                raise RecoveryError(f"archive entry #{index} appears twice; nothing restored")
-            if member.name != MANIFEST_NAME:
-                _check_member_name(member.name, index)
-            by_name[member.name] = member
-        if MANIFEST_NAME not in by_name:
-            raise RecoveryError("the archive has no manifest; nothing restored")
-        manifest = _parse_manifest(_read_member(tar, by_name[MANIFEST_NAME]))
+        by_name = _index_members(tar)
+        manifest = _verified_manifest(tar, by_name)
         entries = manifest["files"]
         listed = [entry["name"] for entry in entries]
         if len(set(listed)) != len(listed) or set(listed) != set(by_name) - {MANIFEST_NAME}:
@@ -291,6 +276,29 @@ def _extract_verified(archive: Path, scratch: Path) -> _Extracted:
         statement_files=sum(name.startswith(f"{DATA_PREFIX}statements/") for name in listed),
         receipt_files=sum(name.startswith(f"{DATA_PREFIX}receipts/") for name in listed),
     )
+
+
+def _index_members(tar: tarfile.TarFile) -> dict[str, tarfile.TarInfo]:
+    try:
+        members = tar.getmembers()
+    except tarfile.TarError:
+        raise RecoveryError("the archive is damaged and cannot be read") from None
+    by_name: dict[str, tarfile.TarInfo] = {}
+    for index, member in enumerate(members, start=1):
+        if not member.isreg():
+            raise RecoveryError(f"archive entry #{index} is not a plain file; nothing restored")
+        if member.name in by_name:
+            raise RecoveryError(f"archive entry #{index} appears twice; nothing restored")
+        if member.name != MANIFEST_NAME:
+            _check_member_name(member.name, index)
+        by_name[member.name] = member
+    return by_name
+
+
+def _verified_manifest(tar: tarfile.TarFile, by_name: dict[str, tarfile.TarInfo]) -> dict[str, Any]:
+    if MANIFEST_NAME not in by_name:
+        raise RecoveryError("the archive has no manifest; nothing restored")
+    return _parse_manifest(_read_member(tar, by_name[MANIFEST_NAME]))
 
 
 def _check_member_name(name: str, index: int) -> None:
@@ -396,19 +404,19 @@ def _swap(data: Path, scratch: Path, extracted: _Extracted) -> None:
         for name in REPLACED:
             source = data / name
             if source.exists() or source.is_symlink():
-                os.rename(source, previous / name)
+                source.rename(previous / name)
                 moved_aside.append(name)
         for name in RESTORED:
             staged = extracted.root / name
             if staged.exists():
-                os.rename(staged, data / name)
+                staged.rename(data / name)
                 moved_in.append(name)
-    except BaseException:
+    except BaseException:  # noqa: BLE001 - undo the moves on any failure, then re-raise
         try:
             for name in reversed(moved_in):
-                os.rename(data / name, extracted.root / name)
+                (data / name).rename(extracted.root / name)
             for name in moved_aside:
-                os.rename(previous / name, data / name)
+                (previous / name).rename(data / name)
         except OSError as exc:
             raise RecoveryError(
                 f"the restore failed and could not be undone ({type(exc).__name__}). The previous "
@@ -433,7 +441,7 @@ def _write_config(extracted: _Extracted, config_path: Path | None) -> str:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = config_path.with_name(f"{config_path.name}.restore")
         shutil.copyfile(extracted.config, temporary)
-        os.replace(temporary, config_path)
+        temporary.replace(config_path)
     except OSError:
         return "failed"
     return "written"

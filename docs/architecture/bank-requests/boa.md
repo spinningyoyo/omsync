@@ -2,18 +2,20 @@
 
 ## Purpose
 
-Bank of America downloads need no CSRF token. Each account has one key, `adx`, and the session
-cookies do the rest. Traced live on 2026-11-05 and 2026-11-07.
+Bank of America downloads need no CSRF token. Each account has one key, `adx`. The session cookies
+do the rest. Last validated live: 2026-11-07. Not tested live: a savings account, and more than
+one checking account or card.
 
-## Sign-in
+## Context
 
-- **Signed in:** the account overview request answers with the accounts.
-- **Signed out:** the same request answers `302` to the public home page. The browser refuses the
-  cross-site redirect, so the request fails.
-- The connector sends the overview request itself. Before 2026-11-07 it read the page's own
-  request from Chrome's log. That raced with page reloads.
+The sign-in signal is the account overview request. The connector sends it, not the page.
 
-## Requests
+| State | The overview request |
+|---|---|
+| Signed in | Answers with the accounts. |
+| Signed out | Answers `302` to the public home page. The browser refuses the cross-site redirect, so the request fails. |
+
+## Flow
 
 ```mermaid
 sequenceDiagram
@@ -32,18 +34,13 @@ sequenceDiagram
     end
 ```
 
-- **Cards offer statements, not date ranges.** The connector downloads each statement.
+## Design decisions
+
+- **Cards supply statements, not date ranges.** The connector downloads each statement.
 - **The overview masks account numbers.** The last four digits come from the end of the account
-  name. An account without digits in its name cannot match.
+  name. An account name without digits cannot match.
 
-## Tested
+## Terms
 
-| Test | Result |
-|---|---|
-| Checking, same settings as the click | Same transactions |
-| Checking, 60-day range | Rows inside the range |
-| Card statement, same as the click | Byte-identical |
-| Sync with the connector's own overview request | Passed |
-
-Not yet proven: a savings account; more than one checking account and one card; whether typing
-without a pause disturbs the bank's anti-bot check.
+- **adx:** the key of one account.
+- **stx:** the key of one card statement.

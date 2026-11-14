@@ -386,38 +386,14 @@ def undo_batch(
             else UNDO_CONFLICT_MESSAGE
         )
         return _fragment(request, "frag_toast", status_code=409, message=message)
-    if _is_categories_batch(batch.kind):
-        return _categories_undone(request, UNDONE_WITH_AUTOMATIC if automatic else "Undone")
-    if batch.kind.startswith(("bulk.", "saved_filter.")):
-        return _register_refresh_after_undo(request, db, account, f, saved, page)
-    if batch.kind == "review_resolve":
-        return _review_refresh_after_undo(request, db)
-    if batch.kind.startswith("reconcile.") or batch.kind == "receipts":
-        return reconcile_undo_reply(request, db, start, end)
-    if batch.kind.startswith("account_nickname."):
-        message = UNDONE_WITH_AUTOMATIC if automatic else "Undone"
-        return nicknames_undo_reply(request, db, account, message)
-    if batch.kind.startswith("contact."):
-        message = UNDONE_WITH_AUTOMATIC if automatic else "Undone"
-        if source == "reconcile":
-            return reconcile_undo_reply(request, db, start, end, automatic=True, message=message)
-        if source == "transaction":
-            return transaction_undo_reply(request, db, txn, message)
-        return contacts_undo_reply(request, db, contact, message)
-    if batch.kind.startswith("provider_") or (
-        batch.kind.startswith("account.") and source == "providers"
-    ):
-        return provider_undo_reply(request, db)
-    if batch.kind.startswith("account."):
-        account_id = (batch.summary or {}).get("account_id")
-        return account_undo_reply(request, db, account_id if isinstance(account_id, int) else None)
-    if batch.kind == "add_alias" and source == "account":
-        account_id = (batch.summary or {}).get("account_id")
-        return numbers_undo_reply(request, db, account_id if isinstance(account_id, int) else None)
-    if batch.kind.startswith("recurring_"):
-        return recurring_undo_reply(request, db)
-    if batch.kind.startswith(("budget_", "goal.")):
-        return plan_undo_reply(request, db, plan)
+    message = UNDONE_WITH_AUTOMATIC if automatic else "Undone"
+    reply = _register_undo_reply(request, db, batch, message, account, f, saved, page, start, end)
+    if reply is None:
+        reply = _other_page_undo_reply(
+            request, db, batch, message, account, plan, source, contact, txn, start, end
+        )
+    if reply is not None:
+        return reply
     txn_id = (batch.summary or {}).get("transaction_id")
     row = get_transaction_row(db, txn_id) if isinstance(txn_id, int) else None
     return _row_fragment(
@@ -429,6 +405,71 @@ def undo_batch(
         focus_field=_focus_for(batch),
         message="Undone",
     )
+
+
+def _register_undo_reply(
+    request: Request,
+    db: Session,
+    batch: Batch,
+    message: str,
+    account: int | None,
+    f: str | None,
+    saved: int | None,
+    page: int,
+    start: str | None,
+    end: str | None,
+) -> HTMLResponse | None:
+    """The reply for a batch made on the register, Categories, review, Reconcile, or the
+    nicknames card; None for any other batch."""
+    kind = batch.kind
+    if _is_categories_batch(kind):
+        return _categories_undone(request, message)
+    if kind.startswith(("bulk.", "saved_filter.")):
+        return _register_refresh_after_undo(request, db, account, f, saved, page)
+    if kind == "review_resolve":
+        return _review_refresh_after_undo(request, db)
+    if kind.startswith("reconcile.") or kind == "receipts":
+        return reconcile_undo_reply(request, db, start, end)
+    if kind.startswith("account_nickname."):
+        return nicknames_undo_reply(request, db, account, message)
+    return None
+
+
+def _other_page_undo_reply(
+    request: Request,
+    db: Session,
+    batch: Batch,
+    message: str,
+    account: int | None,
+    plan: str | None,
+    source: str | None,
+    contact: int | None,
+    txn: int | None,
+    start: str | None,
+    end: str | None,
+) -> HTMLResponse | None:
+    """The reply for a batch made on the Contacts, providers, account, recurring, or plan pages;
+    None for any other batch."""
+    kind = batch.kind
+    if kind.startswith("contact."):
+        if source == "reconcile":
+            return reconcile_undo_reply(request, db, start, end, automatic=True, message=message)
+        if source == "transaction":
+            return transaction_undo_reply(request, db, txn, message)
+        return contacts_undo_reply(request, db, contact, message)
+    if kind.startswith("provider_") or (kind.startswith("account.") and source == "providers"):
+        return provider_undo_reply(request, db)
+    account_id = (batch.summary or {}).get("account_id")
+    account_id = account_id if isinstance(account_id, int) else None
+    if kind.startswith("account."):
+        return account_undo_reply(request, db, account_id)
+    if kind == "add_alias" and source == "account":
+        return numbers_undo_reply(request, db, account_id)
+    if kind.startswith("recurring_"):
+        return recurring_undo_reply(request, db)
+    if kind.startswith(("budget_", "goal.")):
+        return plan_undo_reply(request, db, plan)
+    return None
 
 
 def _register_refresh_after_undo(

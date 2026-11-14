@@ -39,12 +39,7 @@ export default class extends Controller {
       .pie()
       .sortValues(null)
       .value((segment) => segment.cents);
-    const arc = d3
-      .arc()
-      .innerRadius(RING.inner)
-      .outerRadius(RING.outer)
-      .padAngle(RING.pad)
-      .cornerRadius(RING.corner);
+    const arc = d3.arc().innerRadius(RING.inner).outerRadius(RING.outer).padAngle(RING.pad).cornerRadius(RING.corner);
 
     const svg = d3
       .select(this.chartTarget)
@@ -61,7 +56,7 @@ export default class extends Controller {
       .style("fill", (arcDatum) => arcDatum.data.color)
       .style("cursor", "default")
       .style("transition", "opacity 150ms ease")
-      .on("mouseenter", (event, arcDatum) => this.show(arcDatum.index))
+      .on("mouseenter", (_event, arcDatum) => this.show(arcDatum.index))
       .on("mouseleave", () => this.reset());
   }
 

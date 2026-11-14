@@ -5,8 +5,8 @@ list behind it cannot disagree: import reviews by open_review_count, uncategoriz
 count_matching over UNCATEGORIZED (the filter the register opens with), reconciliation proposals
 by the run the Reconcile page makes for the same range (what waits for a decision, not the
 proposals applied on their own), missed occurrences by the Needs attention list of plan.recurring,
-which the Recurring Overview shows, and balance failures by the balance check. The web layer turns
-the plain data into links.
+which the Recurring Overview shows, and sync problems by each provider's newest run. The web layer
+turns the plain data into links.
 
 Everything here reads and writes nothing, and nothing here imports omsync.web.
 """
@@ -17,10 +17,10 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from omsync.ingest.balance_check import check_all
+from omsync.ingest.models import SyncRun, SyncStatus
 from omsync.ledger.bulk import count_matching
 from omsync.ledger.filters import Condition, FilterSpec
-from omsync.ledger.models import Account, Institution, Provider, SyncRun, SyncStatus
+from omsync.ledger.models import Institution, Provider
 from omsync.ledger.register import open_review_count
 from omsync.plan.recurring import needs_attention
 from omsync.reconcile.engine import run as run_reconciliation
@@ -30,16 +30,6 @@ from omsync.reconcile.engine import run as run_reconciliation
 # the same filter.
 UNCATEGORIZED = FilterSpec(conditions=(Condition("category", "is_empty"),))
 SYNC_PROBLEMS = (SyncStatus.failed, SyncStatus.needs_user_action)
-
-
-@dataclass(frozen=True)
-class AccountIssue:
-    """An open account whose balance check fails now."""
-
-    account_id: int
-    name: str
-    last4: str | None
-    issue_count: int
 
 
 @dataclass(frozen=True)
@@ -59,7 +49,6 @@ class Attention:
     open_reconciliation: int
     uncategorized: int
     recurring_attention: int
-    accounts: tuple[AccountIssue, ...]
     providers: tuple[ProviderIssue, ...]
 
 
@@ -77,7 +66,6 @@ def attention(session: Session, *, today: date, proposal_range: tuple[date, date
         ).needs_you,
         uncategorized=count_matching(session, UNCATEGORIZED),
         recurring_attention=recurring_attention_this_month(session, today=today),
-        accounts=failing_accounts(session),
         providers=problem_providers(session),
     )
 
@@ -86,20 +74,6 @@ def recurring_attention_this_month(session: Session, *, today: date) -> int:
     """The count of the Recurring Overview's Needs attention list: missed bills and open questions.
     Home and that list agree because both count the same items."""
     return len(needs_attention(session, today=today))
-
-
-def failing_accounts(session: Session) -> tuple[AccountIssue, ...]:
-    failing = {status.account_id: status for status in check_all(session) if not status.ok}
-    if not failing:
-        return ()
-    rows = session.execute(
-        select(Account.id, Account.name, Account.last4)
-        .where(Account.id.in_(failing))
-        .order_by(Account.name, Account.id)
-    ).all()
-    return tuple(
-        AccountIssue(row.id, row.name, row.last4, len(failing[row.id].issues)) for row in rows
-    )
 
 
 def problem_providers(session: Session) -> tuple[ProviderIssue, ...]:
@@ -121,11 +95,9 @@ def problem_providers(session: Session) -> tuple[ProviderIssue, ...]:
 __all__ = [
     "SYNC_PROBLEMS",
     "UNCATEGORIZED",
-    "AccountIssue",
     "Attention",
     "ProviderIssue",
     "attention",
-    "failing_accounts",
-    "recurring_attention_this_month",
     "problem_providers",
+    "recurring_attention_this_month",
 ]

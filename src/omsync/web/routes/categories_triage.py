@@ -29,6 +29,8 @@ from omsync.ledger.keyword_import import (
     parse_keyword_mapping,
     plan_keyword_import,
 )
+from omsync.ledger.receipt_vendors import RECEIPT_VENDOR_KEYS
+from omsync.receipts import triage as receipt_triage
 from omsync.reports.attention import UNCATEGORIZED
 from omsync.web.categories_replies import applied_toast, block, events, refused, whole_number
 from omsync.web.deps import get_db
@@ -203,10 +205,10 @@ def triage_context(request: Request, db: Session) -> dict[str, Any]:
         {
             "key": key,
             "label": key.capitalize(),
-            "unknown": admin.unknown_receipt_items(db, settings, key),
-            "has_files": admin.has_receipt_files(settings, key),
+            "unknown": receipt_triage.unknown_receipt_items(db, settings, key),
+            "has_files": receipt_triage.has_receipt_files(settings, key),
         }
-        for key in admin.receipt_vendor_keys()
+        for key in RECEIPT_VENDOR_KEYS
     ]
     return {
         # The count Home shows, over the filter its link and this one open in Transactions.

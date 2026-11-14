@@ -9,9 +9,8 @@ from logging.config import fileConfig
 
 from alembic import context
 
-# Importing the model modules registers every table on Base.metadata for autogenerate.
-import omsync.core.batch_models  # noqa: F401
-import omsync.ledger.models  # noqa: F401
+# Importing the models registers every table on Base.metadata for autogenerate.
+import omsync.models  # noqa: F401
 from omsync.core.db import Base, make_engine
 
 config = context.config

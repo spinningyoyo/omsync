@@ -1,5 +1,6 @@
 """The `omsync` command. Each module below registers its commands on an app from groups.py."""
 
+import omsync.models  # noqa: F401 -- every table on Base.metadata
 from omsync.cli import (  # noqa: F401 -- each module registers its commands
     accounts,
     backup,

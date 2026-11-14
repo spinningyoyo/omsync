@@ -38,7 +38,7 @@
 
 {% block frag_step_preview %}
 {% from "settings/parts.html" import preview_step %}
-{{ preview_step(state, view, balances, can_import, identity, notice) }}
+{{ preview_step(state, view, can_import, identity, notice) }}
 {% endblock %}
 
 {% block frag_step_imported %}

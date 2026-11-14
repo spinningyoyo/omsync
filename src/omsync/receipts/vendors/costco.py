@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from omsync.core import money
+from omsync.ledger.receipt_vendors import is_costco_payee
 from omsync.receipts.model import (
     Charge,
     ChargeResult,
@@ -56,7 +57,6 @@ NON_CARD_TENDERS = (
     "REWARD CERTIFICATE",
     "EXECUTIVE REBATE",
 )
-P2P_PAYEES = ("zelle", "venmo", "paypal", "cash app", "cashapp")
 TENDER_AMOUNT_KEYS = ("amountTender", "amount", "tenderAmount", "paymentAmount")
 _SLASH_LINK = re.compile(r"^/\s*(\d+)")
 _LAST_DIGITS = re.compile(r"\D")
@@ -90,11 +90,7 @@ class CostcoVendor(BaseVendor):
         return [parse_receipt(data, path.name)]
 
     def is_vendor_payee(self, payee: str) -> bool:
-        text = str(payee or "")
-        if any(keyword in text.lower() for keyword in P2P_PAYEES):
-            return False
-        normalized = " ".join(text.upper().replace("*", " ").split())
-        return "COSTCO" in normalized or "COST CO" in normalized
+        return is_costco_payee(payee)
 
     def charges(self, receipt: Receipt) -> ChargeResult:
         if not receipt.items:

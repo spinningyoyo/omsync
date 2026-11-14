@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from omsync.core.money import format_cents
 from omsync.core.months import shift_month_start
 from omsync.ledger.categories import DEFAULT_CATEGORY_ICON, TYPE_LABELS, UNBUDGETED_TYPES
-from omsync.ledger.models import BudgetKind, BudgetLine, Category, CategoryType
+from omsync.ledger.models import Category, CategoryType
 from omsync.ledger.preferences import joint_share_on
 from omsync.plan import budgets
 from omsync.plan.budgets import (
@@ -30,6 +30,7 @@ from omsync.plan.budgets import (
     ProgressState,
 )
 from omsync.plan.goals import goals_summary
+from omsync.plan.models import BudgetKind, BudgetLine
 from omsync.web.formats import money_input, month_key, month_title
 from omsync.web.joint_view import JointView, joint_view
 

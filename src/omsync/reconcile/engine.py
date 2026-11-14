@@ -15,6 +15,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from omsync.ledger.links import RejectedProposal
+from omsync.ledger.own_names import own_name_literals
+from omsync.ledger.patterns import build_patterns
 from omsync.ledger.sources import Account, Institution
 from omsync.reconcile.history import demoted_rules
 from omsync.reconcile.model import (
@@ -26,8 +28,6 @@ from omsync.reconcile.model import (
     pair_signature,
 )
 from omsync.reconcile.not_matched import assess
-from omsync.reconcile.own_names import own_name_literals
-from omsync.reconcile.patterns import build_patterns
 from omsync.reconcile.pool import Pool, load_pool
 from omsync.reconcile.rules.base import CONFIDENCE_BY_QUEUE, DESCRIPTIONS, Emitter
 from omsync.reconcile.rules.joint import BILL_WINDOW_DAYS, rule_joint_card_bill

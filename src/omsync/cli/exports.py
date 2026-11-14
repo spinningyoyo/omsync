@@ -12,10 +12,10 @@ from sqlalchemy import select
 
 from omsync.cli.common import fail, ready_session
 from omsync.cli.groups import export_app, rental_app
+from omsync.ledger import rental as rental_settings
 from omsync.ledger.models import Account, Category
 from omsync.ledger.sources import account_digits
 from omsync.reports import exports as workbooks
-from omsync.reports import rental as rental_settings
 
 _YEAR = {"min": 2000, "max": 2100}
 _NO_RENTAL = "no rental accounts are set. Add one with `omsync rental add ACCOUNT_ID LABEL` first."

@@ -13,7 +13,7 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse
 
 from omsync.core.batches import BatchError, StalePreview
-from omsync.core.money import to_cents
+from omsync.web.amounts import parse_cents
 
 FRAGMENTS = "plan/fragments.html"
 STALE_MESSAGE = "This changed elsewhere, reload."
@@ -23,10 +23,7 @@ CLOSE_DIALOGS = {"close-dialogs": True}
 
 def money_field(text: str, what: str) -> int:
     """An amount a form typed, in cents. Raises ValueError with a message the form can show."""
-    try:
-        return to_cents(text.strip())
-    except (TypeError, ValueError):
-        raise ValueError(f"Enter {what}, such as 250.00.") from None
+    return parse_cents(text, f"Enter {what}, such as 250.00.")
 
 
 def refused(exc: Exception) -> tuple[int, str]:

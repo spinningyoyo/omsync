@@ -29,7 +29,9 @@ export default class extends Controller {
 
   // The server asks for this after a successful write, so no dialog stays open over a result.
   closeDialogs() {
-    this.element.querySelectorAll("dialog[open]").forEach((dialog) => dialog.close());
+    this.element.querySelectorAll("dialog[open]").forEach((dialog) => {
+      dialog.close();
+    });
   }
 
   // Runs on a dialog's close event, however it closed.
@@ -43,9 +45,7 @@ export default class extends Controller {
   // After a swap, focus the field the server marks with data-autofocus.
   settled(event) {
     const target = event.target;
-    const field = target.matches?.("[data-autofocus]")
-      ? target
-      : target.querySelector?.("[data-autofocus]");
+    const field = target.matches?.("[data-autofocus]") ? target : target.querySelector?.("[data-autofocus]");
     field?.focus();
   }
 }

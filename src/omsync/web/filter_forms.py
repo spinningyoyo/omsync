@@ -4,8 +4,9 @@ omsync.ledger.filters."""
 
 from dataclasses import dataclass, field
 
-from omsync.core.money import format_cents, to_cents
+from omsync.core.money import to_cents
 from omsync.ledger.filters import FIELD_OPS, Condition, FilterError
+from omsync.web.formats import money_input
 
 FIELD_LABELS: dict[str, str] = {
     "date": "Date",
@@ -72,9 +73,9 @@ def values_for(condition: Condition, index: int) -> FormValues:
         values.category_ids = list(value or ())
     elif condition.field == "amount":
         if condition.op == "between":
-            values.amount, values.amount_to = _plain(value[0]), _plain(value[1])
+            values.amount, values.amount_to = money_input(value[0]), money_input(value[1])
         else:
-            values.amount = _plain(value)
+            values.amount = money_input(value)
     elif condition.field == "origin":
         values.origin = value
     elif value is not None:
@@ -93,13 +94,7 @@ def condition_from(values: FormValues) -> Condition:
     if field_name not in FIELD_OPS or op not in FIELD_OPS[field_name]:
         raise FilterError("Choose a field and an operation.")
     if field_name == "date":
-        if op == "between":
-            return Condition(
-                "date",
-                op,
-                [_required(values.value, "a date"), _required(values.value_to, "a second date")],
-            )
-        return Condition("date", op, _required(values.value, "a date"))
+        return _date_condition(values)
     if field_name == "account":
         return Condition("account", op, values.account_ids)
     if field_name == "category":
@@ -113,10 +108,24 @@ def condition_from(values: FormValues) -> Condition:
             return Condition("memo", op)
         return Condition("memo", op, _required(values.value, "some text"))
     if field_name == "amount":
-        if op == "between":
-            return Condition("amount", op, [_cents(values.amount), _cents(values.amount_to)])
-        return Condition("amount", op, _cents(values.amount))
+        return _amount_condition(values)
     return Condition("origin", "is", values.origin)
+
+
+def _date_condition(values: FormValues) -> Condition:
+    if values.op == "between":
+        return Condition(
+            "date",
+            values.op,
+            [_required(values.value, "a date"), _required(values.value_to, "a second date")],
+        )
+    return Condition("date", values.op, _required(values.value, "a date"))
+
+
+def _amount_condition(values: FormValues) -> Condition:
+    if values.op == "between":
+        return Condition("amount", values.op, [_cents(values.amount), _cents(values.amount_to)])
+    return Condition("amount", values.op, _cents(values.amount))
 
 
 def _required(text: str, what: str) -> str:
@@ -134,8 +143,3 @@ def _cents(text: str) -> int:
         return to_cents(cleaned)
     except (TypeError, ValueError):
         raise FilterError(f"{cleaned} is not an amount.") from None
-
-
-def _plain(cents: int) -> str:
-    """An amount as the form shows it: dollars and cents, with no symbol or grouping."""
-    return format_cents(cents, symbol="").replace(",", "")

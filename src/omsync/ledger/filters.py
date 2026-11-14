@@ -178,18 +178,29 @@ def _normal_value(field: str, op: str, value: Any) -> Any:
     if value is None:
         raise FilterError(f"{field} {op} needs a value.")
     if field == "date":
-        if op == "between":
-            return _ordered_pair(value, _as_date, "The first date is after the last date.")
-        return _as_date(value)
+        return _date_value(op, value)
     if field == "account" or (field == "category" and op in ("is", "is_not")):
         return _ids(value)
     if field == "payee" or (field == "memo" and op == "contains"):
         return _text(value)
     if field == "amount":
-        if op == "between":
-            return _ordered_pair(value, _as_cents, "The first amount is above the last amount.")
-        return _as_cents(value)
-    # origin
+        return _amount_value(op, value)
+    return _origin_value(value)
+
+
+def _date_value(op: str, value: Any) -> Any:
+    if op == "between":
+        return _ordered_pair(value, _as_date, "The first date is after the last date.")
+    return _as_date(value)
+
+
+def _amount_value(op: str, value: Any) -> Any:
+    if op == "between":
+        return _ordered_pair(value, _as_cents, "The first amount is above the last amount.")
+    return _as_cents(value)
+
+
+def _origin_value(value: Any) -> str:
     text = _text(value)
     if text not in ORIGINS:
         raise FilterError(f"{text!r} is not an origin. Use one of {', '.join(ORIGINS)}.")

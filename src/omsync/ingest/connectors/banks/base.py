@@ -158,7 +158,7 @@ class BankConnector(BrowserSession):
     @property
     def todate(self) -> datetime:
         """The end of the window, never later than now."""
-        return self._todate if self._todate < datetime.now() else datetime.now()
+        return min(datetime.now(), self._todate)
 
     @todate.setter
     def todate(self, value: datetime) -> None:
@@ -294,9 +294,7 @@ class BankConnector(BrowserSession):
                     asked_since = time.monotonic() if asked_since is None else asked_since
                     if time.monotonic() - asked_since >= self.mfa_settle:
                         # A page can look like a check while it is signed in, so the list decides.
-                        if self._accounts_listed():
-                            return False
-                        return True
+                        return not self._accounts_listed()
                 else:
                     asked_since = None
             except JavascriptException:

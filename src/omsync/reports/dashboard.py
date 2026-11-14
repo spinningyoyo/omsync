@@ -24,8 +24,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from omsync.ledger.preferences import get_pref, set_pref
+from omsync.ledger.spending import Period, ReportLine, by_category, ratio_bp, report_lines
 from omsync.plan.recurring import OccurrenceStatus, upcoming
-from omsync.reports.queries import Period, ReportLine, by_category, ratio_bp, report_lines
 
 # The default order. A section missing from a saved layout is inserted at its place in this order.
 SECTIONS: tuple[str, ...] = (
@@ -442,9 +442,10 @@ def _is_key(value: object) -> bool:
 
 __all__ = [
     "DEFAULT_HALF",
-    "HEIGHT_SECTIONS",
     "HEIGHTS",
+    "HEIGHT_SECTIONS",
     "SECTIONS",
+    "UPCOMING_DAYS",
     "Cashflow",
     "FlowLink",
     "FlowNode",
@@ -454,7 +455,6 @@ __all__ = [
     "Outflows",
     "SpendingTrend",
     "TrendDay",
-    "UPCOMING_DAYS",
     "Upcoming",
     "UpcomingItem",
     "cashflow",

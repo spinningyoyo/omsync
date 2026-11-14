@@ -16,9 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from omsync.core.money import format_cents
-from omsync.ledger.models import Account, Goal
+from omsync.ledger.models import Account
 from omsync.ledger.sources import account_digits
 from omsync.plan.goals import BASIS_POINTS, GoalProgress, GoalStatus, goal_progress, goals_summary
+from omsync.plan.models import Goal
 from omsync.web.formats import fmt_date, money_input
 
 DEFAULT_COLOR = "#2E90FA"

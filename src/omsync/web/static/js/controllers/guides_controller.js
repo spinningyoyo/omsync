@@ -87,6 +87,8 @@ export default class extends Controller {
       },
       { rootMargin: "0px 0px -65% 0px" },
     );
-    sections.forEach((section) => this.observer.observe(section));
+    sections.forEach((section) => {
+      this.observer.observe(section);
+    });
   }
 }

@@ -10,6 +10,7 @@ server by the process group it created, and removes the temporary directory. Rer
 demo or a guide's figures change; the images are committed, so the guides show them without a run.
 """
 
+import contextlib
 import os
 import shutil
 import signal
@@ -39,17 +40,6 @@ HIDE_SCROLLBARS = (
 )
 
 
-def undo_change(driver: WebDriver) -> None:
-    """Switch one keyword off, so the confirmation toast with its Undo button appears."""
-    switch = driver.find_element(By.CSS_SELECTOR, "[role='switch'][aria-label^='Keyword enabled']")
-    switch.click()
-    WebDriverWait(driver, 10).until(
-        lambda d: d.find_elements(
-            By.XPATH, "//div[@id='toast-region']//button[contains(., 'Undo')]"
-        )
-    )
-
-
 def open_year_to_date(driver: WebDriver) -> None:
     """Open the Reconcile page for the year so far, which lists the demo's Not matched row."""
     driver.find_element(By.LINK_TEXT, "Year to date").click()
@@ -76,20 +66,10 @@ class Shot:
 SHOTS = (
     Shot("tour-home", "/", None, accounts=True),
     Shot("statements-bank-sync", "/settings/providers", SETTINGS_CONTENT),
-    Shot("transactions-register", "/transactions", "main", height=900),
-    Shot("categorize-categories", "/settings/categories", SETTINGS_CONTENT, height=900),
     Shot("categorize-rules", "/settings/categories?tab=rules", SETTINGS_CONTENT, height=900),
-    Shot("contacts-list", "/settings/contacts", SETTINGS_CONTENT),
     Shot("reconcile-page", "/reconcile", "main", height=1250, before=open_year_to_date),
     Shot("plan-budget", "/plan/budget", "main", height=900),
-    Shot("plan-goals", "/plan/goals", "main"),
     Shot("recurring-page", "/recurring", "main", height=900),
-    Shot(
-        "safety-undo",
-        "/settings/categories?tab=keywords",
-        SETTINGS_CONTENT,
-        before=undo_change,
-    ),
 )
 
 
@@ -138,10 +118,8 @@ def wait_for_health(
 
 def stop_server(proc: subprocess.Popen) -> None:
     """Stop the process group that start_server created. Never matches other processes by name."""
-    try:
+    with contextlib.suppress(ProcessLookupError):
         os.killpg(proc.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
     try:
         proc.wait(timeout=20)
     except subprocess.TimeoutExpired:

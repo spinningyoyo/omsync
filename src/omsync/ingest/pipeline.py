@@ -15,7 +15,7 @@ and every sync share it. A sync of several providers links once per provider, si
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
@@ -24,8 +24,6 @@ from sqlalchemy.orm import Session
 
 from omsync.core.batches import BatchError, preview_digest
 from omsync.core.settings import Settings
-from omsync.ingest.accounts import AccountError, UnmappedAccount
-from omsync.ingest.balance_check import BalanceStatus, check_account
 from omsync.ingest.dropfolder import (
     PendingFile,
     destination_for,
@@ -37,6 +35,7 @@ from omsync.ingest.dropfolder import (
 from omsync.ingest.formats.base import FormatError, Statement, StatementFormat
 from omsync.ingest.formats.registry import format_for
 from omsync.ingest.importer import ImportPlan, apply_import, plan_import
+from omsync.ledger.accounts import AccountError, UnmappedAccount
 from omsync.ledger.models import Account, StatementFile
 from omsync.reconcile.auto import AutoReconcile, reconcile_after_import
 
@@ -67,23 +66,13 @@ class FileResult:
 
 
 @dataclass(frozen=True)
-class AccountCheck:
-    """The balance check for one account this import changed."""
-
-    account_last4: str | None
-    status: BalanceStatus
-    account_alias_last4: str | None = None
-
-
-@dataclass(frozen=True)
 class ImportReport:
     """The outcome of import_files. applied is False for a preview, which wrote nothing. auto is
     the links recorded after the import; it is empty for a preview or when no file was imported."""
 
     applied: bool
     files: tuple[FileResult, ...] = ()
-    checks: tuple[AccountCheck, ...] = ()
-    auto: AutoReconcile = AutoReconcile()
+    auto: AutoReconcile = field(default_factory=AutoReconcile)
 
     @property
     def failures(self) -> int:
@@ -166,7 +155,7 @@ class _Run:
         self.settings = settings
         self.apply = apply
         self.results: list[FileResult] = []
-        self.touched: dict[int, None] = {}  # accounts changed, in order
+        self.imported = False  # any file was imported
 
     def parse(self, files: list[PendingFile]) -> list[_Parsed]:
         """Read each file with its format. A file that cannot be read gets an error result."""
@@ -290,24 +279,17 @@ class _Run:
         except BatchError as exc:
             self.results.append(FileResult(name, error=f"{name}: {exc}"))
             return False
-        self.touched.setdefault(plan.account_id)
+        self.imported = True
         return True
 
     def report(self) -> ImportReport:
-        """The balance check for each account this run changed, and the automatic links after it."""
-        checks = tuple(
-            AccountCheck(
-                account_last4=_last4(account),
-                status=check_account(self.session, account_id),
-                account_alias_last4=None if account is None else account.alias_last4,
-            )
-            for account_id in self.touched
-            for account in [self.session.get(Account, account_id)]
-        )
+        """The file results, and the automatic links made after the import."""
         auto = (
-            reconcile_after_import(self.session) if self.apply and self.touched else AutoReconcile()
+            reconcile_after_import(self.session)
+            if self.apply and self.imported
+            else AutoReconcile()
         )
-        return ImportReport(applied=self.apply, files=tuple(self.results), checks=checks, auto=auto)
+        return ImportReport(applied=self.apply, files=tuple(self.results), auto=auto)
 
 
 def _preview_destination(

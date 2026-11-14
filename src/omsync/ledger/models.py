@@ -1,4 +1,4 @@
-"""Imports every table model so Base.metadata is complete for Alembic, and re-exports them.
+"""Imports the ledger and batch table models, and re-exports them.
 
 Batch tables are imported too: ledger foreign keys point at `batch`, so the metadata needs it.
 """
@@ -22,17 +22,6 @@ from omsync.ledger.contacts import (
     ContactRole,
 )
 from omsync.ledger.links import Link, LinkKind, RejectedProposal, RejectionReason
-from omsync.ledger.plan_models import (
-    BudgetKind,
-    BudgetLine,
-    Cadence,
-    Goal,
-    RecurringPaidElsewhere,
-    RecurringPrice,
-    RecurringRejection,
-    RecurringSeries,
-    SeriesStatus,
-)
 from omsync.ledger.preferences import Preference
 from omsync.ledger.sources import (
     Account,
@@ -43,7 +32,6 @@ from omsync.ledger.sources import (
     ProviderAccount,
 )
 from omsync.ledger.statements import BalanceKind, StatementBalance, StatementFile, StatementRow
-from omsync.ledger.sync_models import SyncRun, SyncStatus
 from omsync.ledger.transactions import (
     CategoryOrigin,
     ContactOrigin,
@@ -60,17 +48,14 @@ __all__ = [
     "AccountAlias",
     "AccountNickname",
     "AccountType",
+    "BalanceKind",
     "Batch",
     "BatchChange",
     "BatchState",
-    "BalanceKind",
-    "BudgetKind",
-    "BudgetLine",
-    "Cadence",
     "Category",
+    "CategoryOrigin",
     "CategoryRule",
     "CategoryType",
-    "CategoryOrigin",
     "Contact",
     "ContactAccount",
     "ContactKind",
@@ -79,7 +64,6 @@ __all__ = [
     "ContactPattern",
     "ContactRole",
     "DataRevision",
-    "Goal",
     "ImportReview",
     "Institution",
     "Keyword",
@@ -89,22 +73,15 @@ __all__ = [
     "Preference",
     "Provider",
     "ProviderAccount",
-    "RecurringPaidElsewhere",
-    "RecurringPrice",
-    "RecurringRejection",
-    "RecurringSeries",
     "RejectedProposal",
     "RejectionReason",
     "ReviewStatus",
     "RuleCounterparty",
     "SavedFilter",
-    "SeriesStatus",
     "Split",
     "StatementBalance",
     "StatementFile",
     "StatementRow",
-    "SyncRun",
-    "SyncStatus",
     "Transaction",
     "TransactionRow",
 ]

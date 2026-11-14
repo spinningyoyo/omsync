@@ -100,8 +100,10 @@ def parse_keyword_file(data: bytes, name: str) -> tuple[dict[str, list[str]], li
             repeated.append(category)
         mapping.setdefault(category, []).extend(patterns)
 
-    for category in dict.fromkeys(name.strip() for name in repeated):
-        warnings.append(f'category "{category}" appears more than once; its patterns are combined')
+    warnings.extend(
+        f'category "{category}" appears more than once; its patterns are combined'
+        for category in dict.fromkeys(name.strip() for name in repeated)
+    )
     return mapping, warnings
 
 
@@ -275,7 +277,8 @@ def _combining_object(repeated: list[str]) -> Callable[[list[tuple[str, Any]]], 
             if key in result:
                 repeated.append(key)
                 if isinstance(result[key], list) and isinstance(value, list):
-                    value = result[key] + value
+                    result[key] = result[key] + value
+                    continue
             result[key] = value
         return result
 

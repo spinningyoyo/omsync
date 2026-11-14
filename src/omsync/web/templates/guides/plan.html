@@ -1,83 +1,53 @@
 {% extends "layouts/guide.html" %}
-{% from "guides/parts.html" import section, subsection, figure, callout, steps, step, compare_table, try_it with context %}
+{% from "guides/parts.html" import section, figure, try_it, compare_table with context %}
 
 {% set sections = [
-  ("budget", "A monthly budget"),
-  ("modes", "Flex or category"),
-  ("flex", "How the flex number is worked out"),
-  ("rollover", "Rollover and copying"),
+  ("budget", "Budget"),
   ("goals", "Goals"),
-  ("recurring", "Recurring bills and paychecks"),
-  ("questions", "Questions omsync asks"),
+  ("recurring", "Recurring"),
 ] %}
 
 {% block guide_body %}
-{% call section("budget", "A monthly budget") %}
-<p><strong>Plan</strong> shows this month's budget and your goals. Open <strong>Budget</strong> to plan a month. The arrows move between months, and <strong>This month</strong> comes back to the current one. A budget line is a planned amount for one category in one month.</p>
-<p>Spending in a category with no budget line is shown as <em>unbudgeted</em>. It is not added to the budgeted totals, so the totals stay honest.</p>
-{{ figure("plan-budget", "The Budget page in flex mode: the flex number and a bar for each bucket, with spent and left.", "The budget for a month, with the flex number and the buckets.") }}
-{{ try_it("/plan/budget", "Open Budget", "The budget page shows the month you are in, with its mode and each category's line.") }}
-{% endcall %}
-
-{% call section("modes", "Flex or category") %}
-<p>The budget has two modes, chosen with the <strong>Flex</strong> and <strong>Category</strong> buttons. Both show what is still available as <strong>Left</strong>.</p>
+{% call section("budget", "Budget") %}
 {{ compare_table(
-  ["Mode", "How it works", "What is left"],
+  ["Mode", "You plan", "Left"],
   [
-    ["Flex", "One flexible number for day-to-day spending, worked out from your income and fixed plans", "The flex number less what you spent in the flexible bucket"],
-    ["Category", "Each category has its own monthly budget", "Its monthly budget, plus any carry, less what you spent in it"],
+    ["Flex", "Fixed and non-monthly categories. The rest is one amount.", "Flex number − flexible spending"],
+    ["Category", "Each category", "Budget + carry − spending"],
   ],
   "The two budget modes",
 ) }}
-<p>Switching modes keeps every line and setting you have made. Only the way the page presents them changes.</p>
-{% endcall %}
-
-{% call section("flex", "How the flex number is worked out") %}
-<p>In flex mode, the flex number is the money left for flexible spending:</p>
-<pre class="guide-code"><code>Flex number = expected income − fixed budgets − non-monthly budgets − active goal contributions</code></pre>
-<p>Expected income is the average of the three complete months before the month you are planning, including months with no income. You can set an income figure yourself, and the figure you set replaces the average. You can also set the flex number for one month, which replaces the calculated one for that month only.</p>
-<p>Progress bars show actual spending against what is available. Under half is good, from half to just under the whole is a warning, and the whole or more is over.</p>
-{% endcall %}
-
-{% call section("rollover", "Rollover and copying") %}
-<p><strong>Roll over</strong> is a switch on a line. For a non-monthly category, it carries what you did not spend into the next months, so a yearly cost is saved for rather than surprising you. Overspending carries as a negative amount. New non-monthly lines in flex mode start with rollover on, because irregular costs are funded across months.</p>
-<p>Two buttons save typing. <strong>Copy last month</strong> copies the previous month's lines, but only into a month with no lines yet, so it never overwrites work you have done. <strong>Quick fill with last budget</strong> adds last month's line to each fixed category that has none this month. It never changes a line that exists.</p>
+<ul class="guide-list">
+  <li><strong>Flex number</strong> = expected income − fixed − non-monthly − goal contributions.</li>
+  <li>Expected income is the average of the last three full months. You can set your own.</li>
+  <li>Switching modes keeps every line.</li>
+  <li><strong>Roll over</strong> carries what you did not spend into the next month. Overspending carries too.</li>
+  <li>Spending with no budget line shows as unbudgeted.</li>
+  <li><strong>Copy last month</strong> fills only a month with no lines.</li>
+</ul>
+{{ figure("plan-budget", "The Budget page in flex mode: the flex number and a bar for each bucket, with spent and left.", "A month in flex mode.") }}
+{{ try_it("/plan/budget", "Open Budget") }}
 {% endcall %}
 
 {% call section("goals", "Goals") %}
-<p>A goal is a target, such as an emergency fund or a trip. It has a name, a target amount, an optional target date, a linked account, and a monthly contribution. Its saved amount is the linked account's latest reported balance, so its progress is only as current as the last statement you imported.</p>
-<p>A goal's monthly contribution is a plan, not a transfer. It reduces the flex number, but it moves no money and creates no transaction. Several goals can point at the same account, and they do not each reserve part of it.</p>
-{{ figure("plan-goals", "The goals page: totals at the top, then each goal with its progress bar and its target.", "Each goal shows its progress toward its target.") }}
-{% call callout("demo", "In the demo") %}
-<p>The Emergency fund has a target of $15,000, is linked to the Emergency Fund account, and sets aside $600 a month. The Japan trip has a target of $6,000, a target date about eight months away, is linked to Travel Savings, and sets aside $300 a month.</p>
-{% endcall %}
-{{ try_it("/plan/goals", "Open Goals", "Add a goal, or open one to see its projection and linked account.") }}
-{% endcall %}
-
-{% call section("recurring", "Recurring bills and paychecks") %}
-<p>The <strong>Recurring</strong> page lists the things that repeat: bills, subscriptions, and paychecks. omsync finds likely ones by looking for a payee that charges on a steady schedule. It only suggests them. Nothing counts toward a total until you confirm it.</p>
-<p>Each suggestion waits with a note such as <em>N possible bills found. Not counted yet.</em> Opening Review shows one at a time, with its amount, cadence, and the last four charges as evidence. In the demo, two are waiting: APPLE.COM/BILL and CLIPPER SERVICE, left there so you can try the choices. Then you choose:</p>
-{% call steps() %}
-  {% call step("Add bill") %}
-  <p>Confirm it. The name and category are kept, and you can edit them afterwards.</p>
-  {% endcall %}
-  {% call step("Not recurring") %}
-  <p>Dismiss it, so it does not come back for later charges like it.</p>
-  {% endcall %}
-  {% call step("Skip") %}
-  <p>Leave it for this visit only. It will be suggested again later.</p>
-  {% endcall %}
-{% endcall %}
-<p>The Overview shows what is left to pay this month, what has been paid, and the income expected. A series that moves money between your own accounts, such as a card's autopay, is labelled <strong>Not in totals</strong>. Its payments are shown, but they are not counted twice, because the card's own purchases already count.</p>
-{{ figure("recurring-page", "The Recurring Overview: this month's totals, the Needs attention list, and the bills in date order.", "Recurring, with this month's totals and the bills in date order.") }}
-{{ try_it("/recurring", "Open Recurring", "Overview, Calendar, and All bills show the same series in three ways.") }}
+<ul class="guide-list">
+  <li>Saved = the linked account's balance on its last statement.</li>
+  <li>The monthly contribution lowers the flex number. It moves no money.</li>
+  <li>Goals that share an account each count its full balance.</li>
+</ul>
+{{ try_it("/plan/goals", "Open Goals") }}
 {% endcall %}
 
-{% call section("questions", "Questions omsync asks") %}
-<p>When a charge is outside a bill's usual amount but looks like the same bill at a new price, omsync flags it <strong>New amount?</strong>. It counts that payment as paid and does not mark it missed, and it does not change the amount by itself. You can accept the new amount, which takes effect from that charge onward, or choose <strong>Not this bill</strong> if the charge is something else.</p>
-<p>Two charges can seem to pay the same due date. Then omsync asks which one, in Needs attention, rather than picking one silently. A bill that you pay from an account omsync does not track can be marked <strong>Paid elsewhere</strong> for that due date.</p>
-{% call callout("demo", "In the demo") %}
-<p>Netflix charged $19.99 this month instead of its usual $15.49. Recurring lists it under <strong>Needs attention</strong>: “Netflix charged $19.99, expected $15.49.” Choose <strong>Use new amount</strong> and the series expects $19.99 from that charge onward, while the months before keep the old price.</p>
-{% endcall %}
+{% call section("recurring", "Recurring") %}
+<ul class="guide-list">
+  <li>omsync suggests the bills, subscriptions, and paychecks that repeat. Nothing counts until you confirm it.</li>
+  <li>A suggestion that you dismiss does not come back.</li>
+  <li>A new price shows as <strong>New amount?</strong>. Accept it, or mark the charge Not this bill. Earlier months keep the old price.</li>
+  <li>When two charges fit one due date, omsync asks which one.</li>
+  <li>A bill paid from an account that omsync does not track: mark it <strong>Paid elsewhere</strong>.</li>
+  <li>A card's autopay is <strong>Not in totals</strong>, so the card's purchases do not count twice.</li>
+</ul>
+{{ figure("recurring-page", "The Recurring Overview: this month's totals, the Needs attention list, and the bills in date order.", "This month's bills, in date order.") }}
+{{ try_it("/recurring", "Open Recurring") }}
 {% endcall %}
 {% endblock %}

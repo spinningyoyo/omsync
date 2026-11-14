@@ -12,11 +12,20 @@
 // Two things are remembered in the browser: the scene last picked, and how far each scene has
 // grown. The tip follows the stage: stage 0 shows the first tip, and any watering shows the tip
 // that teaches the hold. A first visit shows a random scene.
-import { Controller } from "/static/vendor/stimulus.js";
-import { COOLDOWN_MS, MAX_STAGE, Nursery, SCENES, WATER_MS, releaseMs, showMs } from "/static/vendor/nursery/nursery.js";
+
 import { clamp, iconSvg } from "/static/vendor/nursery/kit/pixel.js";
+import {
+  COOLDOWN_MS,
+  MAX_STAGE,
+  Nursery,
+  releaseMs,
+  SCENES,
+  showMs,
+  WATER_MS,
+} from "/static/vendor/nursery/nursery.js";
+import { Controller } from "/static/vendor/stimulus.js";
 import { ElephantWater } from "../elephant_water.js";
-import { applyTheme, chooseTheme, CLOCK_MS, currentChoice } from "../theme.js";
+import { applyTheme, CLOCK_MS, chooseTheme, currentChoice } from "../theme.js";
 
 const MASCOT_CELLS = 32; // the mascot's grid width; its trunk tip is at cell (2, 3)
 const SCENE_KEY = "omsync-scene";
@@ -289,7 +298,10 @@ export default class extends Controller {
   // Starts the scene on show over, as a new layout at stage 0, and forgets how far it had grown.
   reset() {
     const id = this.element.dataset.scene;
-    this.nursery.setScene(SCENES.find((s) => s.id === id), 0);
+    this.nursery.setScene(
+      SCENES.find((s) => s.id === id),
+      0,
+    );
     this.bloomTarget.style.opacity = "0";
     this.saveStage(0);
     this.readyAt = 0;

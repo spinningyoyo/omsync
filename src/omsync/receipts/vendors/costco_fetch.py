@@ -1,7 +1,6 @@
 """Costco warehouse receipt acquisition through an authenticated Chrome session."""
 
 import json
-import os
 import tempfile
 from datetime import date, timedelta
 from pathlib import Path
@@ -360,7 +359,7 @@ def _write_json(target: Path, receipt: dict[str, Any]) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(target.name + ".tmp")
     temporary.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
-    os.replace(temporary, target)
+    temporary.replace(target)
 
 
 def _text(value: Any) -> str:

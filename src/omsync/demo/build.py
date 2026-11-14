@@ -2,7 +2,7 @@
 
 Everything is written through the same service functions the app uses, each as a batch with an
 idempotency key, and the statement files go through the same import the drop folder uses. So the
-demo's categories, links, and balance checks are the app's own work, not rows put there by hand.
+demo's categories and links are the app's own work, not rows put there by hand.
 """
 
 from datetime import date, timedelta
@@ -16,9 +16,9 @@ from omsync.core.db import database_url, make_engine
 from omsync.core.schema import alembic_config
 from omsync.core.settings import Settings
 from omsync.demo import MARKER_NAME, statements
-from omsync.ingest.accounts import create_account
 from omsync.ingest.dropfolder import pending_files
 from omsync.ingest.pipeline import ImportReport, import_files
+from omsync.ledger.accounts import create_account
 from omsync.ledger.categories_admin import (
     RuleDraft,
     add_keyword,
@@ -29,10 +29,10 @@ from omsync.ledger.categories_admin import (
 from omsync.ledger.categorize import PAYEE_LIST
 from omsync.ledger.contacts import ContactKind, ContactRole, PersonName, create_contact
 from omsync.ledger.payment_methods import PaymentMethod
-from omsync.ledger.plan_models import BudgetKind, RecurringSeries, SeriesStatus
 from omsync.ledger.sources import Account
 from omsync.plan.budgets import set_line
 from omsync.plan.goals import create_goal
+from omsync.plan.models import BudgetKind, RecurringSeries, SeriesStatus
 from omsync.plan.recurring import confirm, detect, dismiss, update_series
 
 # Recurring suggestions by the start of their name, with the name the demo gives the confirmed
@@ -150,7 +150,7 @@ def build_demo(data_dir: Path, *, today: date) -> None:
     """Create the demo in data_dir, which must be new or empty, and import a year of statements.
 
     Raises ValueError for a directory that already holds files, and RuntimeError when an import
-    fails or a balance check does not agree, so a broken demo is never served.
+    fails, so a broken demo is never served.
     """
     if data_dir.exists() and any(data_dir.iterdir()):
         raise ValueError(f"{data_dir} is not empty; the demo needs a new or empty directory")
@@ -305,9 +305,6 @@ def _check_import(report: ImportReport) -> None:
     if report.failures:
         errors = "; ".join(result.error for result in report.files if result.error)
         raise RuntimeError(f"The demo statements did not all import: {errors}")
-    failed = [check for check in report.checks if not check.status.ok]
-    if failed:
-        raise RuntimeError(f"{len(failed)} demo account(s) failed the balance check")
 
 
 def _recurring(session: Session, today: date) -> None:

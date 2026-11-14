@@ -27,13 +27,19 @@ flowchart LR
 
 ### Code layers
 
-Dependencies point down. A domain package never imports the web or CLI layer.
+Each package imports only the packages below it. The import check enforces this.
 
 ```mermaid
 flowchart TD
-    Web[web: FastAPI, Jinja, htmx] --> Domain
-    CLI[cli: Typer] --> Domain
-    Domain[ingest, ledger, reconcile, receipts, plan, reports] --> Core[core: database, settings, vault]
+    Web[web: FastAPI, Jinja, htmx] --> Demo
+    CLI[cli: Typer] --> Demo
+    Demo[demo] --> Reports[reports]
+    Reports --> Plan[plan]
+    Plan --> Receipts[receipts]
+    Receipts --> Ingest[ingest]
+    Ingest --> Reconcile[reconcile]
+    Reconcile --> Ledger[ledger]
+    Ledger --> Core[core: database, settings, vault]
 ```
 
 ### Server start
@@ -49,16 +55,13 @@ flowchart LR
 
 ## Design decisions
 
-- **Trust before convenience.** Import keeps the evidence. Automation never replaces your
-  decisions. A change is clear before it applies. An uncertain match stays uncertain.
-- **Local only.** The server listens only on `127.0.0.1`. No setting changes that.
-- **Local still needs sign-in.** A website in your browser can reach a local server. Sign-in,
-  origin checks, and strict cookies stop that.
-- **Statements are the source.** You do not type transactions in. Each format is one bank's
-  format, not a general CSV mapper.
-- **The server owns the rules.** JavaScript improves the page. It never repeats a financial rule.
-- **One currency, integer cents.** omsync tracks money movement, not investments or net worth.
-- **Your data stays out of the repository.** Tests and the demo use made-up data.
+- **The server listens on 127.0.0.1 only.** Sign-in is still necessary, because a website in your
+  browser can send requests to the server. See [access](access.md).
+- **Transactions come only from statement files.** Each format reads the files of one bank. There is
+  no manual entry and no general CSV mapper.
+- **Financial rules run only on the server.** JavaScript moves focus, opens dialogs, and draws
+  charts.
+- **omsync records money movement in one currency.** It does not track investments or net worth.
 
 ## Terms
 

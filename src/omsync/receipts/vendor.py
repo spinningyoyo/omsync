@@ -1,4 +1,4 @@
-"""The protocol a receipt vendor implements, the registry that finds vendors, and the defaults.
+"""The protocol a receipt vendor implements, and the defaults.
 
 A vendor reads its own files and says which charges its receipts paid. The engine in match.py
 and apply.py does the rest, the same way for every vendor.
@@ -60,26 +60,3 @@ class BaseVendor:
 
     def infer_charges(self, receipt: Receipt, candidates: list[CandidateTxn]) -> ChargeResult:
         return ChargeResult("insufficient", reason=NOT_ENOUGH_DATA)
-
-
-_VENDORS: dict[str, ReceiptVendor] = {}
-
-
-def register(vendor: ReceiptVendor) -> None:
-    """Make a vendor findable by its key. A key may be registered only once."""
-    if vendor.key in _VENDORS:
-        raise ValueError(f"receipt vendor {vendor.key!r} is already registered")
-    _VENDORS[vendor.key] = vendor
-
-
-def vendor_keys() -> list[str]:
-    """The keys of every registered vendor, sorted."""
-    return sorted(_VENDORS)
-
-
-def get_vendor(key: str) -> ReceiptVendor:
-    """Return the vendor registered under key. Raises KeyError if there is none."""
-    try:
-        return _VENDORS[key]
-    except KeyError:
-        raise KeyError(f"no receipt vendor named {key!r}") from None

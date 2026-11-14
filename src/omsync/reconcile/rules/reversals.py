@@ -3,10 +3,11 @@
 import re
 from collections import Counter, defaultdict
 
+from omsync.ledger.account_mentions import account_mentions
 from omsync.ledger.links import LinkKind
 from omsync.reconcile.model import Queue, TxnView
 from omsync.reconcile.pool import Pool
-from omsync.reconcile.rules.base import Emitter, account_mentions, claim, days_gap
+from omsync.reconcile.rules.base import Emitter, claim, days_gap
 from omsync.reconcile.rules.transfers import is_own_inflow, is_transfer_like
 
 REVERSAL_WINDOW_DAYS = 10

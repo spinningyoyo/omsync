@@ -18,10 +18,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from omsync.core.settings import Settings
-from omsync.ingest.accounts import find_account, last4_of
 from omsync.ingest.dropfolder import pending_files
 from omsync.ingest.formats.base import FormatError, Statement
 from omsync.ingest.formats.registry import format_for
+from omsync.ledger.accounts import find_account, last4_of
 from omsync.ledger.models import Account, AccountAlias, Institution
 
 _LONG_DIGITS = re.compile(r"\d{5,}")

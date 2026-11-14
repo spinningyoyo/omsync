@@ -4,12 +4,13 @@ A sync runs one at a time on this machine. It holds an exclusive lock on <data_d
 its whole length, the import included, and a second sync raises SyncBusy instead of waiting.
 sync_all holds the lock across all its providers.
 
-Each sync writes one SyncRun (ledger/sync_models.py): running when it starts, then succeeded,
+Each sync writes one SyncRun (ingest/models.py): running when it starts, then succeeded,
 failed, needs_user_action, or cancelled. A connector's exceptions become that status and never
 escape. A sync always imports the files it fetched, each as its own batch, then categorizes the
 provider's accounts with the keywords. A sync cancelled while it fetches imports nothing.
 """
 
+import logging
 import re
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -25,7 +26,6 @@ from omsync.core.batches import BatchError
 from omsync.core.locks import SYNC_LOCK_NAME, LockBusy, exclusive_lock
 from omsync.core.settings import Settings
 from omsync.core.vault import Vault, VaultError, VaultLocked
-from omsync.ingest.accounts import AccountError, add_alias
 from omsync.ingest.connectors.base import (
     Connector,
     ConnectorAccount,
@@ -40,8 +40,10 @@ from omsync.ingest.connectors.config import enabled_provider_keys
 from omsync.ingest.connectors.registry import get_connector
 from omsync.ingest.discovery import scan_statement_files, suggested_account
 from omsync.ingest.dropfolder import PendingFile, location_of
+from omsync.ingest.models import SyncRun, SyncStatus
 from omsync.ingest.pipeline import ImportReport, import_files
 from omsync.ingest.timing import timed
+from omsync.ledger.accounts import AccountError, add_alias
 from omsync.ledger.categorize import InvalidKeyword, apply_categorize, plan_categorize
 from omsync.ledger.counterparty import apply_counterparty, plan_counterparty
 from omsync.ledger.models import (
@@ -51,11 +53,11 @@ from omsync.ledger.models import (
     Institution,
     Provider,
     ProviderAccount,
-    SyncRun,
-    SyncStatus,
     Transaction,
 )
 from omsync.ledger.sources import current_alias_id
+
+logger = logging.getLogger(__name__)
 
 LOOKBACK = timedelta(days=45)
 MESSAGE_LIMIT = 200
@@ -203,6 +205,7 @@ def _sync_one(
         return ProviderSync(key, None, str(exc))
     except Exception as exc:  # one provider's crash must not stop the rest
         session.rollback()
+        logger.exception("Sync of provider %s failed unexpectedly", key)
         return ProviderSync(key, None, f"unexpected error ({type(exc).__name__})")
     return ProviderSync(key, result, None)
 
@@ -266,6 +269,8 @@ def _run(
         fetched, partial = exc.files, exc
     except Exception as exc:  # a connector must never crash the caller; its error is the status
         status, message = _fetch_failure(exc)
+        if not isinstance(exc, ConnectorError | VaultError):
+            logger.exception("Fetch for provider %s failed unexpectedly", plan.provider_key)
         return _finish(session, run, status, 0, message, window)
 
     try:
@@ -279,6 +284,7 @@ def _run(
             report = import_files(session, settings, pending, apply=True)
     except BaseException as exc:
         session.rollback()
+        logger.exception("Import for provider %s stopped unexpectedly", plan.provider_key)
         _finish(
             session,
             run,

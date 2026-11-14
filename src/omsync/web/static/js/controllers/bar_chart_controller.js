@@ -60,11 +60,7 @@ export default class extends Controller {
       .domain(data.map((d) => d.label))
       .range([0, innerWidth])
       .padding(0.3);
-    const within = d3
-      .scaleBand()
-      .domain(["income", "expense"])
-      .range([0, x.bandwidth()])
-      .padding(0.15);
+    const within = d3.scaleBand().domain(["income", "expense"]).range([0, x.bandwidth()]).padding(0.15);
 
     const svg = d3
       .select(this.element)
@@ -161,15 +157,15 @@ export default class extends Controller {
         ["Expenses", datum.expense_text],
         ["Net", datum.net_text],
       ]) {
-        tooltip
-          .append("span")
-          .attr("class", "tabular-nums text-primary")
-          .text(`${name}: ${text}`);
+        tooltip.append("span").attr("class", "tabular-nums text-primary").text(`${name}: ${text}`);
       }
       const [px] = d3.pointer(event, this.element);
       const tipWidth = tooltip.node().offsetWidth;
       const left = px + 12 + tipWidth > width ? px - tipWidth - 12 : px + 12;
-      tooltip.style("left", `${Math.max(0, left)}px`).style("top", "0px").style("opacity", 1);
+      tooltip
+        .style("left", `${Math.max(0, left)}px`)
+        .style("top", "0px")
+        .style("opacity", 1);
     };
     const hide = () => tooltip.style("opacity", 0);
 

@@ -4,9 +4,10 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from omsync.ledger.account_mentions import DIRECTIONAL_REF, account_mentions
 from omsync.ledger.links import LinkKind
+from omsync.ledger.patterns import DEFAULT_PATTERNS, Patterns
 from omsync.reconcile.model import AccountRef, Draft, Queue, TxnView, pair_signature
-from omsync.reconcile.patterns import DEFAULT_PATTERNS, Patterns
 from omsync.reconcile.pool import Pool
 
 DESCRIPTIONS: dict[str, str] = {
@@ -36,20 +37,6 @@ CONFIDENCE_BY_QUEUE: dict[Queue, float] = {
     Queue.review: 0.90,
     Queue.manual: 0.5,
 }
-
-# Ways a description names an account by its last four digits. A reference needs a marker, so a
-# year or a store number is not one: a mask ("########4321", "CHK ...1111"), an account word
-# ("ACCT# 2222", "CHK 3333", "account ending in 1234"), or "to"/"from" followed by up to three
-# words ("to BOA EXAMPLE 4321"). Only the last form says which way the money went.
-_MASKED_REF = re.compile(r"(?:[#*]{3,}|X{3,}|\.{3})\s*(\d{4})(?!\d)", re.IGNORECASE)
-_LABELED_REF = re.compile(
-    r"\b(?:ACCT|ACCOUNT|CHK|CHECKING|SAV|SAVINGS|CARD)\b\s*#?\s*(?:ENDING(?:\s+IN)?\s*)?(\d{4})(?!\d)",
-    re.IGNORECASE,
-)
-_DIRECTIONAL_REF = re.compile(
-    r"\b(to|from)\s+(?:[A-Za-z][\w&'.-]*\s+){0,3}?(?:[#*X.]{3,}\s*)?(\d{4})(?!\d)",
-    re.IGNORECASE,
-)
 
 
 class Emitter:
@@ -295,22 +282,12 @@ def account_refs(out: TxnView, inn: TxnView) -> dict[str, Any]:
     }
 
 
-def account_mentions(text: str) -> frozenset[str]:
-    """Return the last-four digit groups a description uses to name an account."""
-    return frozenset(
-        match.group(match.lastindex)
-        for pattern in (_MASKED_REF, _LABELED_REF, _DIRECTIONAL_REF)
-        for match in pattern.finditer(text or "")
-        if match.lastindex
-    )
-
-
 def _words(text: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", (text or "").lower()))
 
 
 def _directional_ref(text: str) -> tuple[str, str] | None:
-    match = _DIRECTIONAL_REF.search(text or "")
+    match = DIRECTIONAL_REF.search(text or "")
     if match is None:
         return None
     return match.group(1).lower(), match.group(2)

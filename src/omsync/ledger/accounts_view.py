@@ -8,15 +8,14 @@ four digits to the account. This module never imports omsync.web.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
 from omsync.core.batches import Change, applied_batch_for_key, apply, make_preview, snapshot
-from omsync.ingest.accounts import add_alias, find_account
-from omsync.ingest.balance_check import BalanceStatus, check_account
+from omsync.ledger.accounts import add_alias, find_account
 from omsync.ledger.models import (
     Account,
     AccountAlias,
@@ -27,14 +26,11 @@ from omsync.ledger.models import (
     StatementBalance,
     StatementFile,
     StatementRow,
-    SyncRun,
-    SyncStatus,
     Transaction,
 )
 from omsync.ledger.sources import current_alias_id
 
 TREND_DAYS = 30
-RECENT_SYNCS = 5
 NAME_MAX = 60
 LAST4_LENGTH = 4
 TYPE_ORDER: tuple[AccountType, ...] = (
@@ -74,7 +70,6 @@ class AccountSummary:
     closed: bool
     latest: BalancePoint | None
     recent: tuple[BalancePoint, ...]
-    status: BalanceStatus
 
 
 @dataclass(frozen=True)
@@ -84,18 +79,6 @@ class TypeTotal:
     type: AccountType
     total_cents: int | None
     count: int
-
-
-@dataclass(frozen=True)
-class RecentSync:
-    """One SyncRun, as the account page's sync card shows it. message is already safe to show."""
-
-    id: int
-    status: SyncStatus
-    started_at: datetime  # naive UTC, as SyncRun stores it; the web layer converts it for display
-    finished_at: datetime | None
-    files_fetched: int
-    message: str | None
 
 
 @dataclass(frozen=True)
@@ -118,7 +101,6 @@ class AccountDetail:
     points: tuple[BalancePoint, ...]  # every ledger balance point, oldest first
     connector_key: str | None  # the institution's first provider's connector; None without one
     connector_enabled: bool
-    recent_syncs: tuple[RecentSync, ...]  # the last RECENT_SYNCS runs, newest first
     transaction_count: int
     first_posted: date | None
     last_posted: date | None
@@ -197,12 +179,6 @@ def account_detail(session: Session, account_id: int) -> AccountDetail:
     provider = session.scalars(
         select(Provider).where(Provider.institution_id == institution.id).order_by(Provider.id)
     ).first()
-    runs = session.scalars(
-        select(SyncRun)
-        .where(SyncRun.institution_key == institution.key)
-        .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
-        .limit(RECENT_SYNCS)
-    ).all()
     count, first, last = session.execute(
         select(
             func.count(Transaction.id),
@@ -217,17 +193,6 @@ def account_detail(session: Session, account_id: int) -> AccountDetail:
         points=tuple(_balance_points(session, [account_id]).get(account_id, [])),
         connector_key=None if provider is None else provider.connector_key,
         connector_enabled=bool(provider is not None and provider.enabled),
-        recent_syncs=tuple(
-            RecentSync(
-                id=run.id,
-                status=run.status,
-                started_at=run.started_at,
-                finished_at=run.finished_at,
-                files_fetched=run.files_fetched,
-                message=run.message,
-            )
-            for run in runs
-        ),
         transaction_count=int(count),
         first_posted=first,
         last_posted=last,
@@ -399,7 +364,6 @@ def _summary(
         closed=bool(account.closed),
         latest=points[-1] if points else None,
         recent=_trend(points),
-        status=check_account(session, account.id),
     )
 
 

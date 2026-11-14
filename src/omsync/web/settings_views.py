@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from datetime import date
 from uuid import uuid4
 
-from omsync.ingest.balance_check import BalanceStatus
 from omsync.ingest.discovery import DiscoveredAccount, mask_account_numbers
 from omsync.ingest.institutions import AccountLine, InstitutionGroup, ProviderLine
 from omsync.ingest.pipeline import ImportReport
@@ -17,6 +16,7 @@ from omsync.ledger.models import AccountType
 from omsync.ledger.sources import account_digits
 from omsync.web.account_page import SyncView, sync_views
 from omsync.web.accounts_panel import TYPE_LABELS
+from omsync.web.formats import long_day
 
 
 @dataclass(frozen=True)
@@ -76,12 +76,8 @@ def span_text(start: date | None, end: date | None) -> str:
     if not days:
         return "no dates in the files"
     if len(days) == 1 or days[0] == days[-1]:
-        return _day(days[0])
-    return f"{_day(days[0])} to {_day(days[-1])}"
-
-
-def _day(day: date) -> str:
-    return day.strftime("%b %-d, %Y")
+        return long_day(days[0])
+    return f"{long_day(days[0])} to {long_day(days[-1])}"
 
 
 def type_text(account_type: AccountType) -> str:
@@ -273,13 +269,6 @@ class FileRowView:
     error: str | None
 
 
-@dataclass(frozen=True)
-class CheckRowView:
-    account: str
-    ok: bool
-    text: str
-
-
 FILE_COLUMNS: tuple[dict[str, object], ...] = (
     {"header": "File", "numeric": False},
     {"header": "Account", "numeric": False},
@@ -294,7 +283,6 @@ FILE_COLUMNS: tuple[dict[str, object], ...] = (
 class ImportView:
     applied: bool
     files: list[FileRowView]
-    checks: list[CheckRowView]
     planned: int
     failures: int
     review: int
@@ -328,20 +316,6 @@ def _file_status(file: FileRowView) -> str:
     return "Imported" if file.created or file.joined or file.review else "Nothing to import"
 
 
-def balance_row(account: str, status: BalanceStatus) -> CheckRowView:
-    """One account's balance check as a line of text. The counts come from ingest.balance_check."""
-    if status.ok:
-        text = (
-            f"Balances agree through {_day(status.checked_through)}"
-            if status.checked_through
-            else "Nothing to check yet"
-        )
-    else:
-        count = len(status.issues)
-        text = f"{count} balance {'issue' if count == 1 else 'issues'} to review"
-    return CheckRowView(account=account, ok=status.ok, text=text)
-
-
 def import_view(report: ImportReport) -> ImportView:
     files = [
         FileRowView(
@@ -359,19 +333,9 @@ def import_view(report: ImportReport) -> ImportView:
         )
         for result in report.files
     ]
-    checks = [
-        balance_row(
-            last4_text(check.account_last4, check.account_alias_last4)
-            if check.account_last4
-            else "account",
-            check.status,
-        )
-        for check in report.checks
-    ]
     return ImportView(
         applied=report.applied,
         files=files,
-        checks=checks,
         planned=report.planned,
         failures=report.failures,
         review=report.review,

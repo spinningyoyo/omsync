@@ -9,6 +9,7 @@ description = "A local, single-user personal finance tracker."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "AGPL-3.0-only"
+authors = [{ name = "spinningyoyo" }]
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
@@ -22,8 +23,13 @@ dependencies = [
     "ofxparse>=0.21",
     "selenium>=4.20",
     "openpyxl>=3.1.5",
-    "omsync-nursery>=0.1.1,<0.2",
+    "omsync-nursery>=0.2,<0.3",
 ]
+
+[project.urls]
+Repository = "https://github.com/spinningyoyo/omsync"
+Issues = "https://github.com/spinningyoyo/omsync/issues"
+Changelog = "https://github.com/spinningyoyo/omsync/blob/main/CHANGELOG.md"
 
 [project.scripts]
 omsync = "omsync.cli:app"
@@ -42,14 +48,80 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "TID251"]
+select = [
+    "E", "F", "I", "B", "UP",  # the base: pycodestyle, pyflakes, import order, bugbear, modern syntax
+    "SIM",   # simpler control flow (nested ifs, try/except/pass, needless bools)
+    "C4",    # comprehensions over list()/dict() calls
+    "RUF",   # ruff's own checks: ambiguous characters, mutable class defaults, unused noqa
+    "PIE",   # needless pass, duplicate class members
+    "PERF",  # loops that should be comprehensions or extend()
+    "PTH",   # pathlib instead of os.path, so paths work the same everywhere
+    "N",     # PEP 8 names
+    "C90",   # McCabe complexity, limit set below
+    "S",     # bandit: subprocess, urlopen, assert, hard-coded secrets
+    "T20",   # no print() in library code; the command modules allow it below
+    "A",     # no shadowing of builtins
+    "RET",   # consistent returns
+    "BLE",   # no bare "except Exception" that hides bugs
+    "ERA",   # no commented-out code
+    "DTZ",   # no naive datetimes
+    "PLE",   # pylint errors
+    "PLW",   # pylint warnings: global, subprocess without check, open() without encoding
+    "FURB",  # modern idioms (re flag names, pathlib helpers)
+    "LOG", "G",  # logging calls that work as written
+    "TID251",  # banned APIs, listed below
+]
+ignore = [
+    # Dates are calendar days in the user's own time zone: bank statements, due dates and the
+    # "today" of a single-user app that runs on one machine. No instant crosses a time zone.
+    "DTZ005", "DTZ007", "DTZ011",
+    # SQLAlchemy reads `__table_args__` as a plain class attribute; it is never mutated.
+    "RUF012",
+    # The domain exceptions are named for the condition, not with an Error suffix. Renaming each
+    # touches every caller for no gain.
+    "N818",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10  # ruff's default; split a function that grows past it, do not raise this
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "sqlalchemy.Column".msg = "Map columns with Mapped[...] and mapped_column."
 "sqlalchemy.orm.declarative_base".msg = "Subclass omsync.core.db.Base."
 
 [tool.ruff.lint.per-file-ignores]
-"src/omsync/migrations/**" = ["TID251"]
+# Migrations never change once run: they keep their banned APIs and their f-string SQL, which
+# interpolates only fixed table and column names (S608).
+"src/omsync/migrations/**" = ["TID251", "S608"]
+# The command modules and one-off scripts print to the user's terminal on purpose (T201).
+"scripts/*.py" = ["T201", "S101"]
+# The scripts drive a real browser and local tools with fixed argument lists and no shell.
+"scripts/bank_record.py" = ["S603"]
+"scripts/guide-screenshots.py" = ["S310", "S607"]
+"src/omsync/demo/statements.py" = ["S311", "A001"]  # S311: seeded random numbers for fake data; A001: `credits` is the domain word
+"src/omsync/reconcile/rules/transfers.py" = ["A001"]
+"tests/e2e/test_cli_sync.py" = ["A002"]  # `input` is the CliRunner argument
+# The end-to-end tests assert (S101), build SQL from fixed test strings (S608), use fake secrets
+# (S105), draw fake data (S311), bind a test port (S104), and run the built wheel (S310, S603).
+"tests/**" = ["S101", "S105", "S608", "S311", "S104", "S310", "S603", "S607"]
+# The bank connectors name form fields ("password_id") and URLs ("TOKEN_URL"), not secrets (S105).
+"src/omsync/ingest/connectors/banks/*.py" = ["S105"]
+# The Bitwarden CLI runs with a fixed argument list and no shell (S603); `input` is the stdin
+# argument of subprocess.run (A002); the entry names and the env variable are not secrets (S105).
+"src/omsync/core/vault.py" = ["S105", "S603", "A002"]
+"src/omsync/ingest/connectors/banks/browser.py" = ["S603", "N812"]  # Chrome with fixed arguments; EC is selenium's own alias
+"src/omsync/reconcile/rules/base.py" = ["A002"]  # `credits` is the domain word, not site.credits (A001 in transfers.py)
+"src/omsync/core/logs.py" = ["N802"]  # overrides logging.Formatter.formatException
+# Markup wraps text this module escaped or built itself, so it is safe (S704).
+"src/omsync/web/amounts.py" = ["S704"]
+"src/omsync/web/brand.py" = ["S704"]
+"src/omsync/web/icons.py" = ["S704"]
+# These asserts narrow a type for the checker and carry the reason in their comment (S101).
+"src/omsync/cli/accounts.py" = ["S101"]
+"src/omsync/core/money.py" = ["S101"]
+"src/omsync/ingest/formats/boa_csv.py" = ["S101"]
+"src/omsync/ingest/pipeline.py" = ["S101"]
+"src/omsync/ledger/accounts_view.py" = ["S101"]
 
 [tool.importlinter]
 root_package = "omsync"
@@ -69,6 +141,21 @@ source_modules = [
 forbidden_modules = ["omsync.web", "omsync.cli"]
 
 [[tool.importlinter.contracts]]
+name = "Only entry points import the table hub"
+type = "forbidden"
+source_modules = [
+    "omsync.core",
+    "omsync.demo",
+    "omsync.ingest",
+    "omsync.ledger",
+    "omsync.plan",
+    "omsync.receipts",
+    "omsync.reconcile",
+    "omsync.reports",
+]
+forbidden_modules = ["omsync.models"]
+
+[[tool.importlinter.contracts]]
 name = "core imports no other omsync package"
 type = "forbidden"
 source_modules = ["omsync.core"]
@@ -83,11 +170,27 @@ forbidden_modules = [
     "omsync.reports",
 ]
 
+[[tool.importlinter.contracts]]
+name = "Domain packages import only lower ones"
+type = "layers"
+layers = [
+    "omsync.demo",
+    "omsync.reports",
+    "omsync.plan",
+    "omsync.receipts",
+    "omsync.ingest",
+    "omsync.reconcile",
+    "omsync.ledger",
+    "omsync.core",
+]
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests/e2e"]
+# The default run is fast: it skips browser and slow tests. CI runs everything with `-m ""`.
+addopts = "-m 'not browser and not slow'"
 markers = [
-    "e2e: drives the running app in Chromium through Playwright; run `playwright install chromium` first",
-    "slow: builds the wheel and installs it into a fresh venv; skip with `uv run pytest -m \"not slow\"`",
+    "browser: drives the app in Chromium through Playwright. Run `uv run playwright install chromium` once, then `uv run pytest -m browser`",
+    "slow: builds the wheel and installs it into a fresh venv. Run `uv run pytest -m slow`; run every test with `uv run pytest -m \"\"`",
 ]
 
 [tool.uv.sources]

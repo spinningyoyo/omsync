@@ -85,39 +85,6 @@
 </section>
 {%- endmacro %}
 
-{# The balance check: agreement through a date, or each issue with its interval, its amounts, and a
-   link to the transactions in that interval. #}
-{% macro balance_card(status, issues) -%}
-<section class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="balance-check-title">
-  <div class="flex items-center justify-between gap-2">
-    <h2 id="balance-check-title" class="text-sm font-medium text-primary">Balance check</h2>
-    {%- if status.ok %}{{ pill("OK", tone="green") }}{% else %}{{ pill(issues|length ~ " to review", tone="amber") }}{% endif %}
-  </div>
-  {%- if status.ok and status.checked_through %}
-  <p class="text-sm text-primary">Balances agree through {{ status.checked_through.strftime("%b %-d, %Y") }}</p>
-  {%- elif status.ok %}
-  <p class="text-sm text-secondary">Nothing to check yet. Two statements are needed to compare balances.</p>
-  {%- else %}
-  <p class="text-sm text-secondary">Balances don't add up: a transaction may be missing or duplicated.</p>
-  <ul class="flex flex-col gap-3">
-    {%- for issue in issues %}
-    <li class="flex flex-col gap-2 rounded-lg border border-divider p-3">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <span class="text-sm font-medium text-primary">{{ issue.span }}</span>
-        <a href="{{ issue.href }}" class="text-sm text-link underline-offset-2 hover:underline focus-ring rounded-sm">Show transactions</a>
-      </div>
-      <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
-        <dt class="text-secondary">Expected</dt><dd class="tabular-nums text-primary">{{ issue.expected|sensitive }}</dd>
-        <dt class="text-secondary">Computed</dt><dd class="tabular-nums text-primary">{{ issue.computed|sensitive }}</dd>
-        <dt class="text-secondary">Difference</dt><dd class="tabular-nums text-primary">{{ issue.difference|sensitive }}</dd>
-      </dl>
-    </li>
-    {%- endfor %}
-  </ul>
-  {%- endif %}
-</section>
-{%- endmacro %}
-
 {# The numbers card: the last four digits the bank and its statements know this account by, the current
    one first, with the date its statements reach, and a form to add a reissued card's new digits. A
    write re-renders the card in place, and an undo re-renders it out of band (oob). #}

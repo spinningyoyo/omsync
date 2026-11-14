@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from omsync.cli.common import fail, ready_session
 from omsync.cli.groups import accounts_app
-from omsync.ingest.accounts import AccountError, add_alias, create_account, find_account, last4_of
+from omsync.ledger.accounts import AccountError, add_alias, create_account, find_account, last4_of
 from omsync.ledger.models import Account, AccountType, Institution
 from omsync.ledger.sources import account_digits
 

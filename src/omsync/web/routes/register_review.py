@@ -8,8 +8,8 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from omsync.core.batches import BatchError, StalePreview
-from omsync.ingest.accounts import AccountError
 from omsync.ingest.importer import resolve_review
+from omsync.ledger.accounts import AccountError
 from omsync.ledger.models import Transaction
 from omsync.ledger.register import open_review_count, open_reviews
 from omsync.web.deps import get_db

@@ -24,6 +24,7 @@ from omsync.core import backups
 from omsync.core.db import database_url, make_engine
 from omsync.core.doctor import run_checks
 from omsync.core.locks import SERVE_LOCK_NAME, LockBusy, exclusive_lock
+from omsync.core.logs import setup_logging
 from omsync.core.schema import alembic_config, head_revision
 from omsync.core.settings import Settings, load_settings
 from omsync.demo import is_demo_dir
@@ -34,6 +35,19 @@ from omsync.reconcile.auto import reconcile_after_import
 from omsync.web.app import create_app
 
 log = logging.getLogger(__name__)
+
+
+@app.callback()
+def start(ctx: typer.Context) -> None:
+    """Log to the data directory when it exists. `serve` does its own, because the demo has none."""
+    if ctx.invoked_subcommand == "serve":
+        return
+    try:
+        settings = load_settings()
+    except ValueError:
+        return  # each command reports a bad config in its own way
+    if settings.data_dir.is_dir():
+        setup_logging(settings.data_dir)
 
 
 @app.command()
@@ -82,6 +96,7 @@ def serve(
             )
         _serve_demo(settings)
         return
+    setup_logging(settings.data_dir)
     try:
         with exclusive_lock(settings.data_dir / SERVE_LOCK_NAME):
             upgrade_database(settings)
@@ -106,6 +121,7 @@ def _serve_demo(settings: Settings) -> None:
         demo_settings = dataclasses.replace(settings, data_dir=root / "data", email=None)
         if not is_demo_dir(demo_settings.data_dir):
             fail("the demo copy is not a demo directory; refusing to serve it")
+        setup_logging(demo_settings.data_dir)
         site = DemoSite(pristine=pristine)
         uvicorn.run(
             create_app(demo_settings, vault=DemoVault(), demo=site),

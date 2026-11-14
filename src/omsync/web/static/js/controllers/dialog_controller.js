@@ -24,9 +24,7 @@ export default class extends Controller {
   // trigger inside a menu is hidden by then, since the menu closes as the item is chosen, so focus
   // goes to the menu's button instead.
   restoreFocus() {
-    const menuButton = this.opener
-      ?.closest("[data-controller~='menu']")
-      ?.querySelector("[data-menu-target='button']");
+    const menuButton = this.opener?.closest("[data-controller~='menu']")?.querySelector("[data-menu-target='button']");
     const target = menuButton ?? this.opener;
     if (target?.isConnected) target.focus();
     this.opener = null;

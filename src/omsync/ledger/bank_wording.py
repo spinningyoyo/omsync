@@ -82,7 +82,7 @@ PACKS: list[Pack] = [
                 Rx(
                     r"(?:VIR(?:EMENT)?)(?:\s+(?:SEPA|INST(?:ANTANE)?|RECU|EMIS|PERMANENT))*(?:\s+(?:DE|POUR|EN\s+FAVEUR\s+DE))?\b"
                 )
-            ],  # noqa: E501
+            ],
             # GAB is the Quebec spelling of DAB and reaches French-language
             # Canadian labels that no English pack covers.
             "withdrawal": [Rx(r"(?:RETRAIT)(?:\s+(?:DAB|GAB|CARTE|ESPECES))?\b")],

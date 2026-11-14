@@ -133,11 +133,22 @@
 }
 
 /* Semantic Colors */
-.tufte-income { color: var(--color-green-700); }
-.tufte-expense { color: var(--color-red-700); }
-.tufte-muted { color: var(--color-gray-500); font-size: 10px; }
-.tufte-up { color: var(--color-green-700); }
-.tufte-down { color: var(--color-red-700); }
+.tufte-income {
+  color: var(--color-green-700);
+}
+.tufte-expense {
+  color: var(--color-red-700);
+}
+.tufte-muted {
+  color: var(--color-gray-500);
+  font-size: 10px;
+}
+.tufte-up {
+  color: var(--color-green-700);
+}
+.tufte-down {
+  color: var(--color-red-700);
+}
 
 /* Two Column Layout */
 .tufte-two-col {
@@ -287,10 +298,18 @@
   }
 
   /* Force colors in print */
-  .tufte-income { color: var(--color-green-700) !important; }
-  .tufte-expense { color: var(--color-red-700) !important; }
-  .tufte-up { color: var(--color-green-700) !important; }
-  .tufte-down { color: var(--color-red-700) !important; }
+  .tufte-income {
+    color: var(--color-green-700) !important;
+  }
+  .tufte-expense {
+    color: var(--color-red-700) !important;
+  }
+  .tufte-up {
+    color: var(--color-green-700) !important;
+  }
+  .tufte-down {
+    color: var(--color-red-700) !important;
+  }
 
   .tufte-footer {
     page-break-before: avoid;

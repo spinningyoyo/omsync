@@ -35,8 +35,8 @@ from omsync.receipts.apply import (
 )
 from omsync.receipts.match import MatchOutcome, MatchReport, MatchStatus, match_receipts
 from omsync.receipts.model import Charge, Receipt
-from omsync.receipts.vendor import ReceiptVendor, get_vendor
-from omsync.receipts.vendors import BUILT_IN_VENDORS, ensure_registered
+from omsync.receipts.vendor import ReceiptVendor
+from omsync.receipts.vendors import BUILT_IN_VENDORS, get_vendor
 
 REVIEW_STATUSES = (
     MatchStatus.ambiguous,
@@ -104,7 +104,6 @@ def run_vendor(
         raise ValueError("give start and end together, or neither")
     if start is not None and end is not None and start > end:
         raise ValueError("start is after end")
-    ensure_registered()
     vendor = get_vendor(vendor_key)
     folder = vendor_folder(settings, vendor_key)
     files = vendor.discover(folder) if folder.is_dir() else []
@@ -118,7 +117,7 @@ def run_vendor(
         files_read=len(files),
         receipts_read=len(receipts),
         counts=_counts(report, plan, outside),
-        review=tuple([*parse_errors, *_review_lines(session, report, plan)]),
+        review=(*parse_errors, *_review_lines(session, report, plan)),
         plan=plan,
         start=start,
         end=end,

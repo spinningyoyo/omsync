@@ -27,9 +27,12 @@ export default class extends Controller {
   // Show the value inputs for the chosen operation, and hide the rest.
   opChanged(event) {
     const op = event.target.value;
-    event.target.closest("form").querySelectorAll("[data-ops]").forEach((el) => {
-      el.hidden = !el.dataset.ops.split(" ").includes(op);
-    });
+    event.target
+      .closest("form")
+      .querySelectorAll("[data-ops]")
+      .forEach((el) => {
+        el.hidden = !el.dataset.ops.split(" ").includes(op);
+      });
   }
 
   // Closes the form in a slot, and gives focus back to the trigger that opened it.

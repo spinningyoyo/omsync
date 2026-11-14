@@ -2,8 +2,9 @@
 
 ## Purpose
 
-A connector sends the request that a bank's download button sends. A direct request does not
-break when a page layout changes. This page shows how to find that request and prove it works.
+A connector sends the request that the bank's download button sends. A direct request survives a
+page redesign. This page shows how to find that request and prove that it works. Each bank page
+gives the date of its last live test.
 
 ## Context
 
@@ -26,33 +27,35 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    Record[Record one real download] --> Find[Find the request that returned the file]
-    Find --> Sort{What is each value?}
-    Sort -->|Constant, date, or new UUID| Rule[Note how to make it]
-    Sort -->|Long and opaque| Search[Search earlier traffic for the exact value]
-    Search -->|Found| Source[Note the first source]
-    Search -->|Not found| Script[Read the script that sent it]
-    Script --> Source
-    Rule --> Replay[Rebuild and replay from a signed-in tab]
+    subgraph Find ["1. Find the request"]
+        Record[Record one real download] --> Request[Find the request that returned the file]
+        Request --> Sort{What is each value?}
+        Sort -->|Constant, date, or new UUID| Rule[Note how to make it]
+        Sort -->|Long and opaque| Search[Search earlier traffic for the exact value]
+        Search -->|Not found| Script[Read the script that sent it]
+        Search -->|Found| Source[Note the first source]
+        Script --> Source
+    end
+    subgraph Prove ["2. Prove it"]
+        Replay[Rebuild and replay from a signed-in tab] --> Same{Same bytes as the clicked file?}
+        Same -->|Yes| Vary[Change one input at a time]
+    end
+    Rule --> Replay
     Source --> Replay
-    Replay --> Same{Same bytes as the clicked file?}
-    Same -->|Yes| Vary[Change one input at a time]
-    Same -->|No| Find
+    Same -->|No| Request
     Vary --> Write[Write the finding on the bank page]
 ```
 
 ## Design decisions
 
-- **Ask what the server needs, not where the CSRF token is.** Three of the four banks need no
-  CSRF token.
-- **Trace by value, not by name.** Names lie. Bank of America has a `getCSRFToken` endpoint that
-  downloads do not use. Chase's `x-jpmc-csrf-token` header holds the word `NONE`.
-- **A success status proves little.** A bank can answer an error with `200`. Compare the bytes.
-- **Count only a test that could fail.** A narrow date range must return fewer rows.
-- **Record each account type.** Checking and card downloads often differ.
-- **Keep secrets out.** Use a temporary browser profile. Do not save sign-in or MFA bodies. Print
-  names and lengths, never values. Delete the capture after use.
-- **Keep replays few.** Repeated failures can start a bank's fraud checks.
+- **Find a value by its content, not its name.** Names can be wrong. Bank of America has a
+  `getCSRFToken` endpoint that downloads do not use. Chase's `x-jpmc-csrf-token` header contains
+  `NONE`.
+- **A success status is not proof.** A bank can send an error with status 200. Compare the bytes.
+- **Use only a test that can fail.** A narrow date range must return fewer rows.
+- **Keep secrets out of captures.** Use a temporary browser profile. Do not save sign-in or MFA
+  bodies. Print names and lengths, not values. Delete the capture after use. Send few replays,
+  because repeated failures can start the bank's fraud checks.
 
 ## Terms
 

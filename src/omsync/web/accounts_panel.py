@@ -1,8 +1,8 @@
 """The accounts panel's view: open accounts grouped by type or by institution. Type groups carry a
-subtotal, its latest balance, a sparkline, a joint badge, and a warning when its balance check has
-issues. Institution groups carry no subtotal, because netting a card's debt against a checking
-balance means nothing. Closed accounts follow in a last, collapsed group with only their names, as
-YNAB and Actual Budget keep them, so a closed account can be found and reopened from its page.
+subtotal, its latest balance, a sparkline, and a joint badge. Institution groups carry no subtotal,
+because netting a card's debt against a checking balance means nothing. Closed accounts follow in a
+last, collapsed group with only their names, as YNAB and Actual Budget keep them, so a closed
+account can be found and reopened from its page.
 
 The sparkline is an inline SVG polyline computed here, so the panel needs no JavaScript. It and the
 percent beside it cover the 30 days up to each account's latest balance, as Sure's sidebar shows a
@@ -15,7 +15,6 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
-from omsync.core.money import format_cents
 from omsync.ledger.accounts_view import (
     TREND_DAYS,
     AccountSummary,
@@ -27,6 +26,7 @@ from omsync.ledger.accounts_view import (
 from omsync.ledger.models import AccountType
 from omsync.ledger.preferences import get_pref, set_pref
 from omsync.ledger.sources import Account, account_digits
+from omsync.web.formats import money_or_dash
 
 TYPE_LABELS: dict[AccountType, str] = {
     AccountType.checking: "Checking",
@@ -41,7 +41,6 @@ GROUPINGS = (GROUP_BY_TYPE, GROUP_BY_INSTITUTION)
 GROUPING_PREF = "accounts_panel_grouping"
 SPARK_WIDTH = 56
 SPARK_HEIGHT = 20
-EM_DASH = "—"
 
 
 @dataclass(frozen=True)
@@ -56,7 +55,6 @@ class PanelRow:
     spark_color: str  # a design token, from the direction of the sparkline
     change: str | None  # the balance's change over the trend as a percent, or None without one
     change_label: str  # what change measures, for the tooltip and screen readers
-    warning: bool  # the balance check has issues
     active: bool  # this is the account whose page is open
 
 
@@ -103,7 +101,7 @@ def _by_type(summaries: list[AccountSummary], active_id: int | None) -> list[Pan
                 key=total.type.value,
                 label=TYPE_LABELS[total.type],
                 institution_key=None,
-                total=_money(total.total_cents),
+                total=money_or_dash(total.total_cents),
                 rows=[_row(summary, active_id) for summary in members],
             )
         )
@@ -153,11 +151,8 @@ def sparkline_points(
     points: list[str] = []
     for value, position in zip(values, positions, strict=True):
         x = position * width
-        if span == 0:
-            y = height / 2
-        else:
-            # One pixel of padding top and bottom, so the stroke is not clipped.
-            y = 1 + (high - value) / span * (height - 2)
+        # One pixel of padding top and bottom, so the stroke is not clipped.
+        y = height / 2 if span == 0 else 1 + (high - value) / span * (height - 2)
         points.append(f"{x:.1f},{y:.1f}")
     return " ".join(points)
 
@@ -199,12 +194,11 @@ def _row(summary: AccountSummary, active_id: int | None) -> PanelRow:
         digits=_current_digits(summary.last4, summary.alias_last4),
         digits_all=_all_digits(summary.last4, summary.alias_last4),
         joint=summary.joint,
-        balance=_money(None if summary.latest is None else summary.latest.cents),
+        balance=money_or_dash(None if summary.latest is None else summary.latest.cents),
         spark=sparkline_points(values, positions=_positions(summary.recent)) if values else None,
         spark_color=spark_color(values),
         change=trend_change(values),
         change_label=f"Change since {since:%b} {since.day}" if since else "",
-        warning=not summary.status.ok,
         active=summary.id == active_id,
     )
 
@@ -221,7 +215,6 @@ def _closed_row(account: Account, active_id: int | None) -> PanelRow:
         spark_color="",
         change=None,
         change_label="",
-        warning=False,
         active=account.id == active_id,
     )
 
@@ -236,8 +229,3 @@ def _all_digits(last4: str | None, alias_last4: str | None) -> str:
     """Both numbers, for the hover, when the current one differs from the account's own."""
     full = account_digits(last4, alias_last4)
     return full if full != _current_digits(last4, alias_last4) else ""
-
-
-def _money(cents: int | None) -> str:
-    """An amount, or an em dash when there is none. Privacy mode blurs the figures in CSS."""
-    return EM_DASH if cents is None else format_cents(cents)

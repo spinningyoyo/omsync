@@ -118,12 +118,7 @@ export default class extends Controller {
       .attr("stroke-width", (link) => Math.max(1, link.width))
       .attr("stroke", (_link, index) => `url(#${this.gradientPrefix}-${index})`);
 
-    const nodeGroups = svg
-      .append("g")
-      .selectAll("g")
-      .data(graph.nodes)
-      .join("g")
-      .attr("class", "sankey-node");
+    const nodeGroups = svg.append("g").selectAll("g").data(graph.nodes).join("g").attr("class", "sankey-node");
 
     // A node with a link is wrapped in a real anchor, so it can be opened in a new tab. The anchor
     // is out of the tab order: the chart is hidden from assistive technology, and the Outflows list
@@ -222,9 +217,7 @@ export default class extends Controller {
     // The first drawing fades in; later ones, from resizing, do not replay it.
     if (!this.drawn && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       svg.style("opacity", 0);
-      requestAnimationFrame(() =>
-        svg.style("transition", `opacity ${FADE_MS}ms ease-out`).style("opacity", 1),
-      );
+      requestAnimationFrame(() => svg.style("transition", `opacity ${FADE_MS}ms ease-out`).style("opacity", 1));
     }
     this.drawn = true;
   }
@@ -250,11 +243,7 @@ function linkTarget(node) {
 function asLink(selection, node) {
   const href = linkTarget(node);
   if (!href) return selection;
-  return selection
-    .append("a")
-    .attr("href", href)
-    .attr("tabindex", -1)
-    .style("cursor", "pointer");
+  return selection.append("a").attr("href", href).attr("tabindex", -1).style("cursor", "pointer");
 }
 
 // Each label sits beside its box, centred on it: right of a box in the left half, left of one in the
@@ -281,8 +270,7 @@ function drawLabels(svg, nodes, width, height) {
     const x = left ? node.x1 + LABEL_OFFSET : node.x0 - LABEL_OFFSET;
     // The name's baseline, so the two lines together are centred on the box.
     const y = (node.y0 + node.y1) / 2 - LABEL_LINE / 2 + 4;
-    const name =
-      node.name.length > LABEL_MAX_CHARS ? `${node.name.slice(0, LABEL_MAX_CHARS - 1)}…` : node.name;
+    const name = node.name.length > LABEL_MAX_CHARS ? `${node.name.slice(0, LABEL_MAX_CHARS - 1)}…` : node.name;
 
     const text = asLink(group, node)
       .append("text")

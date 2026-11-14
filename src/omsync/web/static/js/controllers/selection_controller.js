@@ -9,16 +9,7 @@
 import { Controller } from "/static/vendor/stimulus.js";
 
 export default class extends Controller {
-  static targets = [
-    "toolbar",
-    "bar",
-    "count",
-    "selectAllWrap",
-    "selectAllInput",
-    "actionInput",
-    "dialog",
-    "all",
-  ];
+  static targets = ["toolbar", "bar", "count", "selectAllWrap", "selectAllInput", "actionInput", "dialog", "all"];
 
   connect() {
     this.selected = new Set();
@@ -161,9 +152,7 @@ export default class extends Controller {
     if (this.hasBarTarget) this.barTarget.hidden = !selecting;
     if (this.hasToolbarTarget) this.toolbarTarget.hidden = selecting;
     if (this.hasCountTarget) {
-      this.countTarget.textContent = this.selectAll
-        ? `All ${total} matching selected`
-        : `${checked} selected`;
+      this.countTarget.textContent = this.selectAll ? `All ${total} matching selected` : `${checked} selected`;
     }
     if (this.hasSelectAllInputTarget) this.selectAllInputTarget.value = this.selectAll ? "1" : "0";
     const every = boxes.length > 0 && checked === boxes.length;

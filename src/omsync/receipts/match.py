@@ -412,7 +412,8 @@ def _one_claim_per_transaction(outcomes: list[MatchOutcome]) -> list[MatchOutcom
         if outcome.status is MatchStatus.matched and outcome.transaction_id is not None:
             claims[outcome.transaction_id] = claims.get(outcome.transaction_id, 0) + 1
     resolved: list[MatchOutcome] = []
-    for outcome in outcomes:
+    for original in outcomes:
+        outcome = original
         tx_id = outcome.transaction_id
         if outcome.status is MatchStatus.matched and tx_id is not None and claims[tx_id] > 1:
             outcome = replace(

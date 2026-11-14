@@ -6,7 +6,6 @@ and the problem, never the contents of a row.
 """
 
 import hashlib
-import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -87,36 +86,6 @@ def fingerprint(
     """
     key = f"{account_key}|{posted_on.isoformat()}|{amount_cents}|{normalize_payee(payee_raw)}"
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
-
-
-# Chase cuts NAME at this many characters and continues the description in MEMO.
-NAME_CUT_LENGTH = 32
-# A cut NAME ending in one of these words ended between words: "Online Transfer 12345678901 from".
-_NAME_ENDS_WORD = re.compile(r"\s(?:from|to)$")
-# A MEMO starting with one of these starts a new word: a transfer's "transaction#", or a Zelle
-# confirmation ("BACab12cd34e", "JPM99ab12cd3").
-_MEMO_STARTS_WORD = re.compile(r"transaction#|(?:BAC|JPM)[a-z0-9]{7,}")
-
-
-def join_name_and_memo(name: str, memo: str | None) -> str:
-    """The whole description of a row whose MEMO continues its NAME.
-
-    A NAME of exactly NAME_CUT_LENGTH characters was cut at the limit, usually inside a word, so
-    the MEMO follows with no space. When the cut visibly fell between words, because the NAME ends
-    in "from" or "to" or the MEMO starts with a transaction# or a Zelle confirmation, one space
-    separates them, as it does after a shorter NAME, which ended where the bank wrote it. The MEMO
-    is left out when the NAME already contains it.
-    """
-    text = name.strip()
-    note = (memo or "").strip()
-    if not note or note.lower() in text.lower():
-        return text
-    cut_inside_word = (
-        len(name) == NAME_CUT_LENGTH
-        and not _NAME_ENDS_WORD.search(name)
-        and not _MEMO_STARTS_WORD.match(note)
-    )
-    return f"{text}{'' if cut_inside_word else ' '}{note}"
 
 
 def sha256_of(data: bytes) -> str:

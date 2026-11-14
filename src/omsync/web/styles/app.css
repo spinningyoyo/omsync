@@ -13,7 +13,7 @@
 @source inline("bg-pink-500 bg-cyan-500 bg-orange-500");
 
 /* Dark mode follows the data-theme attribute on <html> (light or dark), as in Sure. */
-@custom-variant theme-dark (&:where([data-theme=dark], [data-theme=dark] *));
+@custom-variant theme-dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 @custom-variant pointer-coarse (@media (pointer: coarse));
 
 @import "./fonts.css";

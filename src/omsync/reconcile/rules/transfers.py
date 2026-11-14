@@ -31,7 +31,7 @@ _LONG_ID_RE = re.compile(r"(?<!\d)(\d{10,20})(?!\d)")
 # "suffix" and "numeric" tokens are compared by their last five digits, so a masked and an
 # unmasked form of one transfer still match.
 CONF_EXTRACTORS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"Conf(?:irmation)?#\s*([a-z0-9]{7,})", re.I), "full"),
+    (re.compile(r"Conf(?:irmation)?#\s*([a-z0-9]{7,})", re.IGNORECASE), "full"),
     (re.compile(r"Confirmation#\s*X{3,}(\d{5,})"), "suffix"),
     (re.compile(r"transaction\s*#?:\s*(\d{9,})"), "numeric"),
     (re.compile(r"ID:X{3,}(\d{5,})"), "suffix"),
@@ -146,22 +146,26 @@ def rule_transfer_same_confirmation(pool: Pool, emit: Emitter) -> None:
                     conf_number=key,
                 )
         elif len(txns) > 2:
-            by_day_and_amount: dict[tuple[date, int], list[TxnView]] = defaultdict(list)
-            for txn in txns:
-                by_day_and_amount[(txn.posted_on, abs(txn.amount_cents))].append(txn)
-            for group in by_day_and_amount.values():
-                if len(group) == 2 and group[0].amount_cents + group[1].amount_cents == 0:
-                    claim(
-                        pool,
-                        emit,
-                        rule="transfer_same_confirmation",
-                        kind=LinkKind.transfer,
-                        first=group[0],
-                        second=group[1],
-                        queue=Queue.auto_approve,
-                        conf_number=key,
-                        notes="suffix_collision_resolved",
-                    )
+            _claim_resolved_collisions(pool, emit, key, txns)
+
+
+def _claim_resolved_collisions(pool: Pool, emit: Emitter, key: str, txns: list[TxnView]) -> None:
+    by_day_and_amount: dict[tuple[date, int], list[TxnView]] = defaultdict(list)
+    for txn in txns:
+        by_day_and_amount[(txn.posted_on, abs(txn.amount_cents))].append(txn)
+    for group in by_day_and_amount.values():
+        if len(group) == 2 and group[0].amount_cents + group[1].amount_cents == 0:
+            claim(
+                pool,
+                emit,
+                rule="transfer_same_confirmation",
+                kind=LinkKind.transfer,
+                first=group[0],
+                second=group[1],
+                queue=Queue.auto_approve,
+                conf_number=key,
+                notes="suffix_collision_resolved",
+            )
 
 
 def rule_zelle_same_confirmation(pool: Pool, emit: Emitter) -> None:

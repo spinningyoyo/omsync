@@ -54,7 +54,7 @@ def bulk_preview(
 ) -> HTMLResponse:
     """Count what the change would do. Writes nothing. Apply sends back the revision counted at."""
     try:
-        _, txn_ids, plan = _plan(db, action, value, ids, select_all, f, account, saved)
+        _, _txn_ids, plan = _plan(db, action, value, ids, select_all, f, account, saved)
     except (ValueError, LookupError, FilterError) as exc:
         return fragment(request, "frag_bulk_error", status_code=422, message=str(exc))
     return fragment(
@@ -135,10 +135,7 @@ def _plan(
         raise ValueError("Choose what to change.")
     spec: FilterSpec = decode_filter(f)
     state = build_state(db, account_id=account, spec=spec, saved_id=saved)
-    if select_all == "1":
-        txn_ids = ids_matching(db, spec, account_id=account)
-    else:
-        txn_ids = list(ids or [])
+    txn_ids = ids_matching(db, spec, account_id=account) if select_all == "1" else list(ids or [])
     if action == "set_category":
         category_id = category_id_from(value)
         if category_id is None:

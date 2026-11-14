@@ -1,12 +1,12 @@
 # Back up and restore
 
-Use a full archive to recover the database together with statement and receipt evidence.
-[Changes, undo, and backups](../architecture/changes.md) defines what is included and how
-replacement is protected. Commands use `uv run` from a checkout; omit it for an installed
+Use a full archive to recover the database together with the statement and receipt evidence.
+[Changes, undo, and backups](../architecture/changes.md) defines what an archive holds, what it
+leaves out, and which locks apply. Commands use `uv run` from a checkout. Omit it for an installed
 application.
 
-Archives contain readable financial data. Store them on encrypted storage and keep a copy
-outside this Mac. Checksums detect damage, not provenance: restore only archives you trust.
+An archive holds readable financial data. Store it on encrypted storage. Keep a copy outside this
+Mac. Checksums detect damage, not origin. Restore only archives that you trust.
 
 ## Create and list archives
 
@@ -15,37 +15,29 @@ uv run omsync backup create
 uv run omsync backup list
 ```
 
-Create prints the archive path and database revision. It includes the database, statements,
-receipts, and active config file, not keychain entries, vault state, browser sessions,
-exports, or existing backups. A concurrent sync or Costco download causes refusal; retry
-when it finishes. Back up after financial work and before a risky change. Full archives are
-not automatically pruned.
+Create prints the archive path and the database revision. If a sync or receipt download is
+running, create refuses. Retry when it finishes. Back up after financial work and before a risky
+change. omsync never prunes full archives.
 
-`uv run omsync db backup` makes a database-only copy. It is useful for database recovery,
-but it is not a full archive and cannot be read by `omsync backup restore`.
-
-To inspect or experiment on your data without touching it, copy the database into a new data
-directory. The copy is migrated to the current schema; the original is left as it was:
-
-```sh
-uv run omsync db snapshot /path/to/empty-dir
-OMSYNC_DATA_DIR=/path/to/empty-dir uv run omsync categorize
-```
+`uv run omsync db backup` makes a copy of the database only. It helps with database recovery. It
+is not a full archive, and `omsync backup restore` cannot read it.
 
 ## Verify before restoring
 
-Stop `omsync serve` and wait for any sync or receipt download to finish. Select an archive
-path from `backup list`, then check it without replacement:
+Restore refuses while `omsync serve`, a sync, or a receipt download runs. Stop the server and wait
+for the rest to finish. Pick an archive path from `backup list`. Then check the archive without
+replacing anything:
 
 ```sh
 uv run omsync backup restore /path/to/omsync-backup-STAMP.tar.gz
 ```
 
-A file name alone also works for an archive in the configured `backups/` directory. The
-command verifies paths, file checksums, and database revision, and describes replacement.
-It does not replace current financial data. If verification fails, use an intact trusted
-archive. If the database revision is unrecognized, use an omsync installation that can
-read it before attempting restore.
+For an archive in the configured `backups/` directory, the file name alone works. The command
+checks the paths, the file checksums, and the database revision. It describes what a restore
+replaces. It does not change your data.
+
+- **The check fails:** use an intact archive that you trust.
+- **The database revision is unknown:** use an omsync version that can read it. Then restore.
 
 ## Replace current data
 
@@ -54,24 +46,27 @@ uv run omsync backup restore /path/to/omsync-backup-STAMP.tar.gz --yes
 ```
 
 This replaces the database, statements, and receipts as a whole. It does not merge later
-transactions into the archived state. Existing data is saved first in a pre-restore archive;
-files added after the selected backup are recoverable from that safety archive.
+transactions into the archived state. omsync first saves your current data in a pre-restore
+archive. Files that you added after the selected backup stay in that safety archive.
 
-An existing config file is kept. If none exists, the archived config can be written; check
-its paths before the next launch. The restored database is upgraded to the application's
-schema when needed. After success, start the app and inspect accounts and source files.
+An existing config file stays. If none exists, omsync writes the archived config. Check its paths
+before the next launch. The restored database moves to the current schema when needed. After
+success, start the app and check your accounts and source files.
 
-A file-replacement failure rolls the previous data back. If the process was interrupted,
-keep any `.restore-*` directory under the data directory and the pre-restore archive until
-you have recovered. The moved-aside data is under `previous/`; do not delete it to dismiss
-an error. If a subsequent schema upgrade fails, preserve the safety archive and diagnose
-the failure before resuming financial work.
+If a file replacement fails, omsync puts the previous data back. If the process stops part way,
+keep these until you recover:
+
+- any `.restore-*` directory under the data directory;
+- the pre-restore archive.
+
+The moved-aside data is in `previous/`. Do not delete it to clear an error. If the later schema
+upgrade fails, keep the safety archive and find the cause before you resume financial work.
 
 ## Rehearse recovery safely
 
-A restore drill uses a scratch data directory and config. It still contains private data,
-so use protected storage and never put it in the repository. Do this in a separate shell
-so the temporary environment cannot redirect later normal commands:
+A restore drill uses a scratch data directory and config. The scratch directory still holds
+private data. Use protected storage, and never put it in the repository. Run the drill in a
+separate shell, so the temporary environment cannot redirect later commands:
 
 ```sh
 (
@@ -84,22 +79,25 @@ so the temporary environment cannot redirect later normal commands:
 )
 ```
 
-Replace the archive path before running. Confirm accounts and expected statement/receipt
-files are present. The displayed scratch directory remains for inspection; remove that
-specific directory when finished. Never substitute the real data directory in the cleanup.
-An empty destination needs no pre-restore archive because it has no financial state to save.
+Replace the archive path before you run it. Confirm that the accounts and the expected statement
+and receipt files are present. The scratch directory stays for inspection. Remove that one
+directory when you finish. Never use the real data directory in the cleanup. An empty destination
+needs no pre-restore archive, because it holds no financial data to save.
 
 ## Restore onto another Mac
 
-Install omsync and restore the archive into the intended data directory. Keep or create
-machine config with that destination rather than assuming archived paths suit the new Mac.
-Run `uv run omsync doctor` and restore API credentials through secret prompts:
+1. Install omsync.
+2. Restore the archive into the data directory that you want.
+3. Keep or create the machine config for that destination. Do not assume the archived paths suit
+   the new Mac.
+4. Run `uv run omsync doctor`.
+5. Enter the API credentials at the secret prompts:
 
 ```sh
 uv run keyring set omsync bitwarden-client-id
 uv run keyring set omsync bitwarden-client-secret
 ```
 
-Unlock the vault when requested, and sign in to institution and Costco websites again in
-the dedicated browser profile. Those sessions are deliberately not transported in the
-financial archive. Your master password is never part of a backup.
+Unlock the vault when omsync asks. Sign in to the institution and Costco websites again in the
+dedicated browser profile. The archive does not carry those sessions. A backup never holds your
+master password.

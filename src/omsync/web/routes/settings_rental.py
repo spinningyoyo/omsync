@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from omsync.ledger.models import Account, Category
-from omsync.reports.rental import (
+from omsync.ledger.rental import (
     get_rental_accounts,
     get_rental_categories,
     remove_rental_account,

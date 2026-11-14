@@ -1,7 +1,7 @@
 """View data for the reports page and its print layout: the period selection, the summary cards, the
 trend chart and its table, the spending breakdown, and the links that drill down into the register.
 
-The numbers come from omsync.reports.queries. This module formats them and builds links, as
+The numbers come from omsync.ledger.spending. This module formats them and builds links, as
 account_page.py does for the account page. Rates arrive in basis points, so every percentage is
 formatted here with integer arithmetic.
 """
@@ -17,7 +17,7 @@ from omsync.core.months import parse_day
 from omsync.ledger.categories import TYPE_LABELS
 from omsync.ledger.filters import Condition, FilterSpec
 from omsync.ledger.preferences import joint_share_on
-from omsync.reports.queries import (
+from omsync.ledger.spending import (
     PRESETS,
     TREND_MONTHS,
     CategoryLine,
@@ -36,6 +36,7 @@ from omsync.reports.queries import (
 from omsync.web.accounts_panel import sparkline_points
 from omsync.web.amounts import money_html
 from omsync.web.budget_view import BudgetCard, budget_card
+from omsync.web.formats import long_day
 from omsync.web.register_state import encode_filter
 
 CUSTOM = "custom"
@@ -234,7 +235,7 @@ def _signed(bp: int, text: str) -> str:
 
 
 def _range(period: Period) -> str:
-    return f"{period.start.strftime('%b %-d, %Y')} to {period.end.strftime('%b %-d, %Y')}"
+    return f"{long_day(period.start)} to {long_day(period.end)}"
 
 
 def _preset_links(selection: Selection) -> list[PresetLink]:

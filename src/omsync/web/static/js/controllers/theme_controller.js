@@ -2,7 +2,7 @@
 // and app/views/layouts/_dark_mode_check.html.erb. Changes: a three-way choice (light, dark, auto
 // by the clock, the same as the sign-in page's; see ../theme.js), and no server-side preference.
 import { Controller } from "/static/vendor/stimulus.js";
-import { applyTheme, chooseTheme, CLOCK_MS, currentChoice } from "../theme.js";
+import { applyTheme, CLOCK_MS, chooseTheme, currentChoice } from "../theme.js";
 
 // Three-way switch, the same icon buttons as the sign-in page's. Each option carries
 // data-theme-choice and data-theme-target="option". The controller sits on the shell, so the

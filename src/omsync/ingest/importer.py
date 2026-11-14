@@ -40,7 +40,6 @@ from omsync.core.batches import (
     next_primary_key,
     snapshot,
 )
-from omsync.ingest.accounts import AccountError, UnmappedAccount, find_account, last4_of
 from omsync.ingest.formats.base import (
     MatchEvidence,
     ParsedRow,
@@ -48,7 +47,7 @@ from omsync.ingest.formats.base import (
     StatementFormat,
     fingerprint,
 )
-from omsync.ingest.formats.registry import statement_description
+from omsync.ledger.accounts import AccountError, UnmappedAccount, find_account, last4_of
 from omsync.ledger.models import (
     Account,
     CategoryOrigin,
@@ -62,6 +61,7 @@ from omsync.ledger.models import (
     Transaction,
     TransactionRow,
 )
+from omsync.ledger.statements import statement_description
 
 DATE_WINDOW = timedelta(days=3)
 
@@ -588,62 +588,94 @@ def _import_changes(
     review_base = next_primary_key(session, ImportReview.__table__)
     row_ids = {row.position: row_base + index for index, row in enumerate(statement.rows)}
 
-    changes: list[Change] = [
+    return [
+        _file_change(statement, file_id, account_id, stored_path, original_name),
+        *_row_changes(statement, file_id, row_ids, evidence),
+        *_balance_changes(statement, file_id, account_id, balance_base),
+        *_created_transaction_changes(statement, account_id, decisions, institution_key),
+        *_link_changes(statement, row_ids, decisions),
+        *_review_changes(statement, review_base, row_ids, decisions),
+    ]
+
+
+def _file_change(
+    statement: Statement, file_id: int, account_id: int, stored_path: str, original_name: str
+) -> Change:
+    return Change(
+        "statement_file",
+        str(file_id),
+        None,
+        {
+            "id": file_id,
+            "sha256": statement.sha256,
+            "format_key": statement.format_key,
+            "original_name": original_name,
+            "stored_path": stored_path,
+            "statement_account_id": statement.statement_account_id,
+            "account_id": account_id,
+            "period_start": statement.period_start,
+            "period_end": statement.period_end,
+        },
+    )
+
+
+def _row_changes(
+    statement: Statement,
+    file_id: int,
+    row_ids: dict[int, int],
+    evidence: dict[int, MatchEvidence],
+) -> list[Change]:
+    return [
         Change(
-            "statement_file",
-            str(file_id),
+            "statement_row",
+            str(row_ids[row.position]),
             None,
             {
-                "id": file_id,
-                "sha256": statement.sha256,
-                "format_key": statement.format_key,
-                "original_name": original_name,
-                "stored_path": stored_path,
-                "statement_account_id": statement.statement_account_id,
-                "account_id": account_id,
-                "period_start": statement.period_start,
-                "period_end": statement.period_end,
+                "id": row_ids[row.position],
+                "statement_file_id": file_id,
+                "position": row.position,
+                "posted_on": row.posted_on,
+                "amount_cents": row.amount_cents,
+                "payee_raw": row.payee_raw,
+                "memo_raw": row.memo_raw,
+                "fitid": row.fitid,
+                "fitid_trusted": _trusted_fitid(evidence[row.position]) is not None,
+                "fingerprint": evidence[row.position].fingerprint,
+                "raw": dict(row.raw),
             },
         )
+        for row in statement.rows
     ]
-    for row in statement.rows:
-        changes.append(
-            Change(
-                "statement_row",
-                str(row_ids[row.position]),
-                None,
-                {
-                    "id": row_ids[row.position],
-                    "statement_file_id": file_id,
-                    "position": row.position,
-                    "posted_on": row.posted_on,
-                    "amount_cents": row.amount_cents,
-                    "payee_raw": row.payee_raw,
-                    "memo_raw": row.memo_raw,
-                    "fitid": row.fitid,
-                    "fitid_trusted": _trusted_fitid(evidence[row.position]) is not None,
-                    "fingerprint": evidence[row.position].fingerprint,
-                    "raw": dict(row.raw),
-                },
-            )
-        )
-    for index, balance in enumerate(statement.balances):
-        changes.append(
-            Change(
-                "statement_balance",
-                str(balance_base + index),
-                None,
-                {
-                    "id": balance_base + index,
-                    "account_id": account_id,
-                    "statement_file_id": file_id,
-                    "as_of": balance.as_of,
-                    "balance_cents": balance.balance_cents,
-                    "kind": balance.kind,
-                },
-            )
-        )
 
+
+def _balance_changes(
+    statement: Statement, file_id: int, account_id: int, balance_base: int
+) -> list[Change]:
+    return [
+        Change(
+            "statement_balance",
+            str(balance_base + index),
+            None,
+            {
+                "id": balance_base + index,
+                "account_id": account_id,
+                "statement_file_id": file_id,
+                "as_of": balance.as_of,
+                "balance_cents": balance.balance_cents,
+                "kind": balance.kind,
+            },
+        )
+        for index, balance in enumerate(statement.balances)
+    ]
+
+
+def _created_transaction_changes(
+    statement: Statement,
+    account_id: int,
+    decisions: dict[int, _Decision],
+    institution_key: str,
+) -> list[Change]:
+    changes: list[Change] = []
     for row in statement.rows:
         decision = decisions[row.position]
         if isinstance(decision, _Create):
@@ -658,15 +690,19 @@ def _import_changes(
                     ),
                 )
             )
+    return changes
 
+
+def _link_changes(
+    statement: Statement, row_ids: dict[int, int], decisions: dict[int, _Decision]
+) -> list[Change]:
+    changes: list[Change] = []
     for row in statement.rows:
         decision = decisions[row.position]
         if isinstance(decision, _Join):
             match_kind = decision.match_kind
-            transaction_id = decision.transaction_id
         elif isinstance(decision, _Create):
             match_kind = MatchKind.created
-            transaction_id = decision.transaction_id
         else:
             continue
         changes.append(
@@ -676,35 +712,41 @@ def _import_changes(
                 None,
                 {
                     "statement_row_id": row_ids[row.position],
-                    "transaction_id": transaction_id,
+                    "transaction_id": decision.transaction_id,
                     "match_kind": match_kind.value,
                 },
             )
         )
+    return changes
 
+
+def _review_changes(
+    statement: Statement,
+    review_base: int,
+    row_ids: dict[int, int],
+    decisions: dict[int, _Decision],
+) -> list[Change]:
     reviews: list[tuple[ParsedRow, _Review]] = []
     for row in statement.rows:
         decision = decisions[row.position]
         if isinstance(decision, _Review):
             reviews.append((row, decision))
-    for offset, (row, decision) in enumerate(reviews):
-        review_id = review_base + offset
-        changes.append(
-            Change(
-                "import_review",
-                str(review_id),
-                None,
-                {
-                    "id": review_id,
-                    "statement_row_id": row_ids[row.position],
-                    "reason": decision.reason,
-                    "candidate_transaction_ids": list(decision.candidates),
-                    "status": ReviewStatus.open.value,
-                    "resolved_transaction_id": None,
-                },
-            )
+    return [
+        Change(
+            "import_review",
+            str(review_base + offset),
+            None,
+            {
+                "id": review_base + offset,
+                "statement_row_id": row_ids[row.position],
+                "reason": decision.reason,
+                "candidate_transaction_ids": list(decision.candidates),
+                "status": ReviewStatus.open.value,
+                "resolved_transaction_id": None,
+            },
         )
-    return changes
+        for offset, (row, decision) in enumerate(reviews)
+    ]
 
 
 def _transaction_change(

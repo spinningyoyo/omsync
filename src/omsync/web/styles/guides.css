@@ -566,7 +566,11 @@
 }
 
 .guide-try--demo {
-  background: color-mix(in oklab, light-dark(var(--color-violet-600), var(--color-violet-400)) 8%, var(--color-container));
+  background: color-mix(
+    in oklab,
+    light-dark(var(--color-violet-600), var(--color-violet-400)) 8%,
+    var(--color-container)
+  );
 }
 
 .guide-try__text {

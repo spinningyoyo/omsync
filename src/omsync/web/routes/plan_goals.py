@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session
 from omsync.core.batch_models import Batch
 from omsync.core.batches import BatchError
 from omsync.core.months import parse_day
-from omsync.ledger.models import Goal
 from omsync.plan import goals
+from omsync.plan.models import Goal
 from omsync.web import goals_view
 from omsync.web.deps import get_db
 from omsync.web.plan_replies import CLOSE_DIALOGS, fragment, money_field, refused
