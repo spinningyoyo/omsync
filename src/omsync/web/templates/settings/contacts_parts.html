@@ -7,6 +7,8 @@
 {% from "components/button.html" import button, link_button %}
 {% from "components/toast.html" import toast as base_toast, toast_region as base_toast_region with context %}
 {% from "components/pill.html" import pill with context %}
+{% from "components/dialog.html" import dialog with context %}
+{% from "layouts/shell_parts.html" import page_header %}
 
 {% macro contacts_region(error="", oob=false) -%}
 <div id="contacts-region" class="flex flex-col gap-6" hx-target="#contacts-region" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
@@ -16,6 +18,11 @@
   {%- if view == "detail" %}
   {{ detail_view(detail) }}
   {%- else %}
+  {% call page_header("Contacts", rows|length ~ " contact" ~ ("" if rows|length == 1 else "s") ~ ". Who your money moves with, and what's owed.") %}
+    {% call dialog(id="add-contact", title="Add contact", trigger="Add contact", trigger_variant="primary", subtitle="Leave the name parts blank to use the name as written.", width="md") %}
+      {{ add_contact_form() }}
+    {% endcall %}
+  {% endcall %}
   {%- if not has_owner %}{{ owner_card() }}{% endif %}
   {{ contacts_section() }}
   {%- endif %}
@@ -205,40 +212,43 @@
 </section>
 {%- endmacro %}
 
+{# The Add contact dialog's form. It posts to the region, which swaps itself, so the dialog closes. #}
+{% macro add_contact_form() -%}
+<form class="flex flex-col gap-3" hx-post="/settings/contacts">
+  <input type="hidden" name="idempotency_key" value="{{ create_key }}">
+  <label class="form-field">
+    <span class="form-field__label">Name</span>
+    <input type="text" name="name" maxlength="80" required class="form-field__input" placeholder="Sam Friend" data-autofocus>
+  </label>
+  <label class="form-field">
+    <span class="form-field__label">Kind</span>
+    <select name="kind" class="form-field__input">
+      <option value="person">Person</option>
+      <option value="business">Business</option>
+    </select>
+  </label>
+  <label class="form-field">
+    <span class="form-field__label">Given name (optional)</span>
+    <input type="text" name="given" maxlength="80" class="form-field__input">
+  </label>
+  <label class="form-field">
+    <span class="form-field__label">Middle (optional)</span>
+    <input type="text" name="middle" maxlength="80" class="form-field__input">
+  </label>
+  <label class="form-field">
+    <span class="form-field__label">Family (optional)</span>
+    <input type="text" name="family" maxlength="80" class="form-field__input">
+  </label>
+  <div class="flex justify-end gap-2">
+    {{ button("Cancel", variant="outline", attrs={"data-action": "dialog#close"}) }}
+    {{ button("Add contact", variant="primary", type="submit") }}
+  </div>
+</form>
+{%- endmacro %}
+
 {% macro contacts_section() -%}
 <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="contacts-title">
-  <div>
-    <h2 id="contacts-title" class="font-medium text-primary">Contacts <span class="text-sm text-secondary">({{ rows|length }})</span></h2>
-    <p class="text-sm text-secondary">What you and each contact owe, largest first.</p>
-  </div>
-  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts">
-    <input type="hidden" name="idempotency_key" value="{{ create_key }}">
-    <label class="form-field w-auto min-w-[12rem]">
-      <span class="form-field__label">Name</span>
-      <input type="text" name="name" maxlength="80" required class="form-field__input" placeholder="Sam Friend">
-    </label>
-    <label class="form-field w-auto min-w-[9rem]">
-      <span class="form-field__label">Kind</span>
-      <select name="kind" class="form-field__input">
-        <option value="person">Person</option>
-        <option value="business">Business</option>
-      </select>
-    </label>
-    <label class="form-field w-auto min-w-[8rem]">
-      <span class="form-field__label">Given name (optional)</span>
-      <input type="text" name="given" maxlength="80" class="form-field__input">
-    </label>
-    <label class="form-field w-auto min-w-[8rem]">
-      <span class="form-field__label">Middle (optional)</span>
-      <input type="text" name="middle" maxlength="80" class="form-field__input">
-    </label>
-    <label class="form-field w-auto min-w-[8rem]">
-      <span class="form-field__label">Family (optional)</span>
-      <input type="text" name="family" maxlength="80" class="form-field__input">
-    </label>
-    {{ button("Add contact", variant="primary", type="submit") }}
-  </form>
-  <p class="text-sm text-secondary">Leave blank to use the name as written.</p>
+  <h2 id="contacts-title" class="sr-only">Contacts</h2>
   {%- if rows %}
   <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Contacts">
     <table class="data-table">
@@ -278,11 +288,8 @@
 {# A contact's page #}
 
 {% macro detail_view(d) -%}
-<div class="flex flex-col gap-2">
-  {{ link_button("Contacts", href="/settings/contacts", variant="ghost", size="sm", icon="chevron-left") }}
-  <h2 class="text-xl font-medium text-primary">{{ d.editor.name }}
-    <span class="ml-1 align-middle">{{ pill(d.kind, tone="gray", style="outline") }}{% if d.role %} {{ pill(d.role, tone="indigo", style="soft") }}{% endif %}</span></h2>
-</div>
+<div>{{ link_button("Contacts", href="/settings/contacts", variant="ghost", size="sm", icon="chevron-left") }}</div>
+{{ page_header(d.editor.name, d.kind ~ (" · " ~ d.role if d.role else "")) }}
 
 {%- if d.is_owner %}
 <section class="rounded-xl bg-container p-5 shadow-border-xs">

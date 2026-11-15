@@ -6,20 +6,18 @@
 {% from "components/dialog.html" import dialog with context %}
 {% from "components/institution_logo.html" import institution_logo with context %}
 {% from "components/pill.html" import pill with context %}
-{% from "layouts/shell_parts.html" import empty_state %}
 {% from "settings/parts.html" import step_error, vault_results %}
 {% from "settings/sync_parts.html" import sync_button %}
 
-{# The providers, as one row of cards that scrolls sideways, so the page does not grow longer with
-   each bank: a card for each provider, then a Not synced card for an institution with open accounts
-   that no provider fetches. The card past the right edge is cut off, which shows there are more.
+{# The providers, as cards that wrap into rows, so every bank is in view: a card for each provider,
+   then a Not synced card for an institution with open accounts that no provider fetches.
    oob=true swaps it in place after a change or an undo. #}
 {% macro provider_list(groups, oob=false) -%}
 <div id="providers-list" class="flex flex-col gap-4"{% if oob %} hx-swap-oob="true"{% endif %}>
   {%- if not (groups | selectattr("providers") | list) %}
-  {{ empty_state("No providers yet", "Each provider signs in to one bank and fetches the accounts you pick.") }}
+  <p class="text-sm text-secondary">No providers yet. Add one to sign in to a bank and fetch the accounts you pick.</p>
   {%- endif %}
-  <div class="-m-1 flex snap-x snap-proximity items-stretch gap-4 overflow-x-auto p-1 pb-3" role="list" aria-label="Providers">
+  <div class="grid items-start gap-4 md:grid-cols-2 2xl:grid-cols-3" role="list" aria-label="Providers">
     {%- for group in groups %}
     {%- for card in group.providers %}
     {{ provider_card(card, group) }}
@@ -43,8 +41,8 @@
 </div>
 {%- endmacro %}
 
-{# The classes every card in the row shares: 320 pixels wide, so three or four fit across a laptop. #}
-{% set CARD = "flex w-80 shrink-0 snap-start flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" %}
+{# The classes every card shares. The grid sets their width. #}
+{% set CARD = "flex min-w-0 flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" %}
 
 {# An institution's open accounts that no provider fetches. #}
 {% macro not_synced_card(group) -%}
@@ -121,7 +119,13 @@
     </dd>
   </dl>
   {%- if card.accounts %}
-  {{ account_list(card.accounts, "Accounts fetched by " ~ card.key) }}
+  {{ account_list(card.open_accounts, "Accounts fetched by " ~ card.key) }}
+  {%- if card.closed_accounts %}
+  <details class="text-sm">
+    <summary class="cursor-pointer text-secondary">Closed ({{ card.closed_accounts|length }})</summary>
+    {{ account_list(card.closed_accounts, "Closed accounts of " ~ card.key) }}
+  </details>
+  {%- endif %}
   {%- else %}
   <p class="text-sm text-secondary">Fetches no accounts yet. Edit the provider to choose them.</p>
   {%- endif %}

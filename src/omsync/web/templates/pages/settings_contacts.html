@@ -1,9 +1,7 @@
 {% extends "layouts/settings.html" %}
-{% from "layouts/shell_parts.html" import page_header %}
 {% from "settings/contacts_parts.html" import contacts_region with context %}
 
 {% block settings_page %}
-{{ page_header(page_title, "Who your money moves with, and what's owed.") }}
 <div id="toast-region" aria-live="polite"></div>
 {{ contacts_region() }}
 {% endblock %}

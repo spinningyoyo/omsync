@@ -25,6 +25,7 @@ from omsync.web.settings_views import (
     ProviderCardView,
     institution_group_view,
     provider_card_view,
+    providers_summary,
 )
 from omsync.web.sync_runner import ALL, JobPhase, SyncRefused
 from omsync.web.sync_views import sync_status_view
@@ -47,11 +48,13 @@ UNLOCKED_POLLS = 3  # the sync polls that keep "Vault unlocked" in view, about s
 @router.get("/settings/providers", response_class=HTMLResponse)
 def providers_page(request: Request, db: DbSession) -> HTMLResponse:
     context = shell_context(request, db, active="", title="Bank sync")
+    groups = _group_views(request, db)
     context.update(
         nav=SETTINGS_NAV,
         active_href=PATH,
         page_title="Bank sync",
-        groups=_group_views(request, db),
+        summary=providers_summary(groups),
+        groups=groups,
         sync=sync_status_view(request.app.state.sync_runner.view()),
         vault_status=vault_status_view(request.app.state.vault),
     )

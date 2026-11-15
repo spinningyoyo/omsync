@@ -45,6 +45,7 @@ class ProviderLineView:
 
 @dataclass(frozen=True)
 class SyncStatusView:
+    idle: bool  # no job has run since omsync started, so there is nothing to report
     running: bool
     cancelling: bool
     headline: str
@@ -57,6 +58,7 @@ class SyncStatusView:
 def sync_status_view(view: JobView) -> SyncStatusView:
     shown = view.question or view.notice
     return SyncStatusView(
+        idle=view.phase is JobPhase.idle,
         running=view.phase is JobPhase.running,
         cancelling=view.cancelling,
         headline=_headline(view),

@@ -5,7 +5,7 @@ names and messages pass through mask_account_numbers before they are shown.
 """
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from uuid import uuid4
 
 from omsync.ingest.discovery import DiscoveredAccount, mask_account_numbers
@@ -14,7 +14,7 @@ from omsync.ingest.pipeline import ImportReport
 from omsync.ingest.providers import connector_label
 from omsync.ledger.models import AccountType
 from omsync.ledger.sources import account_digits
-from omsync.web.account_page import SyncView, sync_views
+from omsync.web.account_page import SyncView, local_time, sync_views
 from omsync.web.accounts_panel import TYPE_LABELS
 from omsync.web.formats import long_day
 
@@ -130,6 +130,15 @@ class ProviderCardView:
     choices: list[AccountChoiceView]
     edit_key: str
     delete_key: str
+    synced_at: datetime | None = None  # when its last sync started, for the page's summary
+
+    @property
+    def open_accounts(self) -> list[AccountRowView]:
+        return [account for account in self.accounts if not account.closed]
+
+    @property
+    def closed_accounts(self) -> list[AccountRowView]:
+        return [account for account in self.accounts if account.closed]
 
 
 @dataclass(frozen=True)
@@ -180,7 +189,19 @@ def provider_card_view(
         ],
         edit_key=uuid4().hex,
         delete_key=uuid4().hex,
+        synced_at=provider.last_sync.started_at if provider.last_sync is not None else None,
     )
+
+
+def providers_summary(groups: list[InstitutionGroupView]) -> str:
+    """The page's line under its title: how many providers, and when the latest sync ran."""
+    cards = [card for group in groups for card in group.providers]
+    if not cards:
+        return "Banks omsync syncs, and the accounts each one fetches."
+    count = f"{len(cards)} provider" + ("" if len(cards) == 1 else "s")
+    synced = [card.synced_at for card in cards if card.synced_at is not None]
+    when = f"last sync {local_time(max(synced))}" if synced else "no sync yet"
+    return f"{count} · {when}"
 
 
 def _choice_view(provider: ProviderLine, account: AccountLine) -> AccountChoiceView:

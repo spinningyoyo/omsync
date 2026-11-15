@@ -5,7 +5,6 @@
    web/sync_runner.py. #}
 {% from "components/button.html" import button %}
 {% from "components/icon.html" import icon %}
-{% from "components/vault_status.html" import vault_status as vault_status_line, VAULT_STATUS_PAGE %}
 {% from "components/password_field.html" import password_field %}
 {% from "settings/parts.html" import step_error %}
 
@@ -21,16 +20,17 @@
 {{ button(variant="icon", size="sm", icon="rotate-ccw", aria_label="Sync", disabled=busy, class_="icon-tip", attrs={"data-tip": "Sync", "hx-post": "/settings/providers/" ~ key ~ "/sync", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
 {%- endmacro %}
 
-{# The status region, with the vault's status beside its title. It polls its own state every two
-   seconds while a job runs, and stops once the job has finished. shown names the question or notice the page already shows, so the poll can
-   tell whether the slot must be sent again. #}
+{# The status region. It is empty until a sync has something to say: while a job runs, after it
+   ends, or when the vault must be unlocked first. It polls its own state every two seconds while a
+   job runs, and stops once the job has finished. shown names the question or notice the page
+   already shows, so the poll can tell whether the slot must be sent again. #}
 {% macro sync_region(status, vault, notice="", unlock_scope=none, unlock_message="", unlocked=0) -%}
+{%- if status.idle and not notice and unlock_scope is none and not unlocked %}
+<section id="sync-status" aria-live="polite" class="hidden"></section>
+{%- else %}
 <section id="sync-status" aria-live="polite" aria-labelledby="sync-status-title" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs"{% if status.running %} hx-get="/settings/providers/sync/status?shown={{ status.shown_number }}{% if unlocked %}&amp;unlocked={{ unlocked }}{% endif %}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   <div class="flex flex-wrap items-center justify-between gap-2">
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <h2 id="sync-status-title" class="text-base font-medium text-primary">Sync status</h2>
-      {{ vault_status_line(vault, VAULT_STATUS_PAGE, poll=true) }}
-    </div>
+    <h2 id="sync-status-title" class="text-base font-medium text-primary">Sync</h2>
     {%- if status.running %}
     {{ button("Cancelling…" if status.cancelling else "Cancel sync", variant="outline", size="sm", icon="x", disabled=status.cancelling, attrs={"hx-post": "/settings/providers/sync/cancel", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
     {%- endif %}
@@ -58,6 +58,7 @@
   </ul>
   {%- endif %}
 </section>
+{%- endif %}
 {%- endmacro %}
 
 {# The unlock form shown in place of a sync that needs the vault. The scope is "all" or a provider
