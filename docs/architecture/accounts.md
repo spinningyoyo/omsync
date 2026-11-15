@@ -36,10 +36,8 @@ flowchart TD
   two gave only false warnings, so omsync makes none.
 - **The current card number comes from the statements.** It is the number on the latest statement.
   omsync does not store it.
-- **A number that the bank does not show is marked when you add it.** A phone wallet or a second
-  card can pay with a number that only receipts show. Before a statement comes, omsync cannot tell
-  it from a reissued card. Sync looks for a reissued card's number, so it must not look for this
-  number.
+- **You mark a number that only receipts show.** omsync cannot tell it from a reissued card, and
+  sync must not look for it.
 
 ## Terms
 

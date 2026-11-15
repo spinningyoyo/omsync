@@ -21,6 +21,7 @@ import time
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 from selenium import webdriver
@@ -38,12 +39,6 @@ HIDE_SCROLLBARS = (
     "*{scrollbar-width:none!important}';"
     "document.head.appendChild(style);"
 )
-
-
-def open_year_to_date(driver: WebDriver) -> None:
-    """Open the Reconcile page for the year so far, which lists the demo's Not matched row."""
-    driver.find_element(By.LINK_TEXT, "Year to date").click()
-    wait_ready(driver)
 
 
 SETTINGS_CONTENT = 'nav[aria-label="Settings"] + div'
@@ -67,7 +62,12 @@ SHOTS = (
     Shot("tour-home", "/", None, accounts=True),
     Shot("statements-bank-sync", "/settings/providers", SETTINGS_CONTENT),
     Shot("categorize-rules", "/settings/categories?tab=rules", SETTINGS_CONTENT, height=900),
-    Shot("reconcile-page", "/reconcile", "main", height=1250, before=open_year_to_date),
+    Shot(
+        "reconcile-page",
+        f"/reconcile?start={date.today().year}-01-01&end={date.today()}",
+        "main",
+        height=600,
+    ),
     Shot("plan-budget", "/plan/budget", "main", height=900),
     Shot("recurring-page", "/recurring", "main", height=900),
 )

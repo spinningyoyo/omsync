@@ -29,9 +29,6 @@ flowchart LR
 
 - **Only category, memo, counterparty, and splits are editable.** Date, account, and amount come
   from the statement.
-- **A row shows its links, read only.** A link icon opens what reconciliation or a receipt tied
-  the transaction to: both transactions of a pair together, or the receipt. Links change on
-  Reconcile, not in the register.
 
 ## Terms
 

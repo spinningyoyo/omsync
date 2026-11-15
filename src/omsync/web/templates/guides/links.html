@@ -13,21 +13,23 @@
   <li>A link pairs two transactions that explain each other: a transfer, a card payment, a refund, or money back from a person.</li>
   <li>A linked transfer is not spending or income.</li>
   <li>A link never changes an amount.</li>
+  <li>Exact pairs link by themselves after each import.</li>
 </ul>
 {{ compare_table(
-  ["List", "Holds", "You"],
+  ["Tab", "Holds", "You"],
   [
-    ["Auto", "Exact matches. They link after each import.", "Do nothing. Undo removes them all."],
-    ["Review", "Likely matches", "Approve or reject"],
-    ["Manual", "Transactions with no clear partner", "Link them yourself"],
+    ["To review", "Likely pairs", "Approve or reject"],
+    ["Not matched", "Transfers with no partner", "Set who it was with, or link it yourself"],
+    ["Amazon, Costco", "Receipts that need you", "Do what each one says"],
+    ["Linked", "The pairs of the period", "Unlink a wrong one"],
   ],
-  "The lists on Reconcile",
+  "The tabs on Reconcile",
 ) }}
 <ul class="guide-list">
   <li>Equal amounts alone never make a link.</li>
   <li>omsync never suggests a pair again after you reject or unlink it.</li>
 </ul>
-{{ figure("reconcile-page", "The Reconcile page for the year so far: the date range at the top, a note that no proposals are in it, then the Not matched row for a Zelle payment from KUNCHORN OMSIN.", "Reconcile, with one transaction under Not matched.") }}
+{{ figure("reconcile-page", "The Reconcile page for the year so far: the Not matched and Linked tabs, and under Not matched one Zelle payment from KUNCHORN OMSIN.", "Reconcile, with one transaction under Not matched.") }}
 {{ try_it("/reconcile", "Open Reconcile") }}
 {% endcall %}
 

@@ -46,9 +46,6 @@ stateDiagram-v2
 
 ## Design decisions
 
-- **The Overview shows this month and next month side by side.** You compare what is left now with
-  what comes next, so both stay in view, and each list scrolls on its own. Possible bills wait
-  behind Review, at the top of every view, because they count only after you confirm them.
 - **Detection only suggests a series. You confirm it.** An uncertain charge, such as a new price,
   becomes a question, not a Missed state.
 - **omsync stores only your decisions.** It calculates everything else from the ledger at each
