@@ -76,6 +76,6 @@ Give `--start` and `--end` together. Without them, the apply covers all history.
 what omsync applies. It does not limit the history that omsync uses to judge an unclear match.
 Reconcile also previews and applies receipts for its selected range.
 
-Apply prints the batch ID for undo. After item triage, run the apply again to finish a partial
-apply. omsync does not duplicate charges that it already applied. To reverse the operation, run
+Apply prints the batch ID for undo. A keyword that you add in Triage applies the receipts at once.
+After you add keywords another way, run the apply again to finish a partial apply. omsync does not duplicate charges that it already applied. To reverse the operation, run
 `uv run omsync batches undo BATCH_ID`. Later work can block the undo.

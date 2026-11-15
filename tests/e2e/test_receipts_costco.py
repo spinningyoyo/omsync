@@ -256,3 +256,60 @@ def test_a_return_without_card_digits_waits_and_an_even_exchange_is_no_receipt(
     assert "unknown payer: 1" in applied.output
     assert "Nothing to apply." in applied.output
     assert categories(ledger, 1080) == [(None, 1080)]
+
+
+def test_triage_lists_only_items_that_hold_up_a_charge_and_its_keyword_applies_them(
+    ledger: Ledger, tmp_path: Path
+) -> None:
+    ready(ledger, tmp_path, [(D1, -2000)])
+    lines = [line(101, "SOAP", 1000), line(104, "PEARS", 1000)]
+    write_receipt(ledger.data_dir, "R14", D1, lines, 0)
+    # Another person's card paid this one, so its item is not triage work.
+    write_receipt(ledger.data_dir, "R15", D2, [line(105, "WATER FILTER", 900)], 0, card="9999")
+    client = web_client(ledger.data_dir)
+
+    triage = client.get("/categories/triage", params={"source": "costco"})
+
+    assert triage.status_code == 200, triage.text
+    assert "PEARS" in triage.text
+    assert "WATER FILTER" not in triage.text
+    assert "R14" in triage.text
+    assert "Open in Transactions" in triage.text
+
+    [(groceries,)] = ledger.query("SELECT id FROM category WHERE name = 'Groceries'")
+    added = client.post(
+        "/categories/triage/keywords",
+        data={"kind": "receipt", "list_key": "costco", "text": "PEARS", "slot": "receipt-1-1",
+              "pattern": "PEARS", "category_id": str(groceries)},
+    )  # fmt: skip
+
+    assert "Applied 1 receipt charge." in added.text, added.text
+    assert categories(ledger, -2000) == [("Household", -1000), ("Groceries", -1000)]
+    undo = re.search(r"/batches/(\d+)/undo", added.text)
+    assert undo is not None
+    assert client.post(f"/batches/{undo.group(1)}/undo").status_code == 200
+    assert categories(ledger, -2000) == [(None, -2000)]
+    assert ledger.query("SELECT COUNT(*) FROM keyword WHERE pattern = 'PEARS'") == [(0,)]
+
+
+def test_keep_category_takes_a_one_off_item_out_of_triage(ledger: Ledger, tmp_path: Path) -> None:
+    ready(ledger, tmp_path, [(D1, 8659)])
+    payee_keywords = tmp_path / "payee-keywords.json"
+    payee_keywords.write_text('{"Household": ["COSTCO WHSE"]}', encoding="utf-8")
+    ledger.cli("keywords", "import", payee_keywords, "--list", "payee", "--apply")
+    ledger.cli("categorize", "--apply")
+    write_receipt(ledger.data_dir, "R16", D1, [line(0, "Dept Ring || 21", -7999, "Y")], -660)
+    client = web_client(ledger.data_dir)
+    assert categories(ledger, 8659) == [("Household", 8659)]
+    assert "Keep category" in client.get("/categories/triage", params={"source": "costco"}).text
+    [(txn_id,)] = ledger.query('SELECT id FROM "transaction" WHERE amount_cents = 8659')
+
+    kept = client.post("/categories/triage/keep", data={"transaction_id": str(txn_id)})
+
+    assert kept.status_code == 200, kept.text
+    assert "Dept Ring" not in client.get("/categories/triage", params={"source": "costco"}).text
+    assert ledger.query('SELECT category_origin FROM "transaction"') == [("manual",)]
+    undo = re.search(r"/batches/(\d+)/undo", kept.text)
+    assert undo is not None
+    assert client.post(f"/batches/{undo.group(1)}/undo").status_code == 200
+    assert "Dept Ring" in client.get("/categories/triage", params={"source": "costco"}).text

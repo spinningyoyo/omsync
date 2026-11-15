@@ -1,10 +1,11 @@
 // Adapted from Sure (we-promise/sure), AGPL-3.0: app/components/DS/tabs_controller.js
-// Changes: the active tab is the controller's value, with no session or URL persistence.
+// Changes: the active tab is the controller's value, with no session or URL persistence. An
+// optional field target holds the active id for a request that reloads the tabs.
 import { Controller } from "/static/vendor/stimulus.js";
 
 // WAI-ARIA tabs with manual activation: arrow keys move focus, Enter or Space selects.
 export default class extends Controller {
-  static targets = ["tab", "panel"];
+  static targets = ["tab", "panel", "field"];
   static values = { active: String };
   static classes = ["active", "inactive"];
 
@@ -48,6 +49,7 @@ export default class extends Controller {
   }
 
   render() {
+    if (this.hasFieldTarget) this.fieldTarget.value = this.activeValue;
     this.tabTargets.forEach((tab) => {
       const selected = tab.dataset.id === this.activeValue;
       tab.setAttribute("aria-selected", String(selected));

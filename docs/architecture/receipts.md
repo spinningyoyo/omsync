@@ -72,6 +72,12 @@ flowchart TD
   receipts. You choose the category on the Costco keyword list. A keyword always wins over the mark,
   so a food item can still go to another category. Only food is marked, so other items need
   keywords.
+- **Triage lists only items that hold up a match.** An item on a receipt that is paid elsewhere, or
+  that matches no transaction, gets no keyword there, because the keyword cannot apply it. A
+  keyword added in Triage applies the receipts at once, as one batch that undo removes with it.
+- **A one-off line gets no keyword.** A keyword says that a text is always one category. A line
+  such as a service-desk ring is not. You keep or set the category of its transaction instead, and
+  receipts never change a category that you chose.
 - **Costco uses your signed-in browser.** omsync does not use a vault login for Costco.
 
 ## Terms

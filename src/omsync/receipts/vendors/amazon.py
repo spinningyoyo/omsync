@@ -40,6 +40,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, fields
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlencode
 
 from omsync.core import money
 from omsync.ledger.receipt_vendors import is_amazon_payee
@@ -58,6 +59,7 @@ VENDOR_KEY = "amazon"
 ORDER_FILE = "Order History.csv"
 ORDERS_FOLDER = "Your Amazon Orders"
 REFUND_FILE = "Refund Details.csv"
+ORDER_PAGE = "https://www.amazon.com/gp/your-account/order-details"
 
 # Observed single-shipment charges: from 3 days before the order to 30 days after.
 OBSERVED_BEFORE_DAYS = 3
@@ -128,6 +130,10 @@ class AmazonVendor(BaseVendor):
 
     def is_vendor_payee(self, payee: str) -> bool:
         return is_amazon_payee(payee)
+
+    def receipt_url(self, receipt: Receipt) -> str | None:
+        order_id = receipt.refund_of or receipt.receipt_id
+        return f"{ORDER_PAGE}?{urlencode({'orderID': order_id})}"
 
     def charges(self, receipt: Receipt) -> ChargeResult:
         if receipt.is_refund:

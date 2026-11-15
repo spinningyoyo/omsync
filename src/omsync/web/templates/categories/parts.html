@@ -10,6 +10,7 @@
 {% from "components/icon.html" import category_icon, icon %}
 {% from "components/pill.html" import pill %}
 {% from "components/segmented_control.html" import segmented_control %}
+{% from "components/tabs.html" import tabs %}
 {% from "components/toggle.html" import toggle %}
 {% from "transactions/parts.html" import toast_region %}
 
@@ -710,71 +711,116 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 {%- endmacro %}
 
 {# The triage panel: how many transactions have no category, with a link to them in Transactions for
-   fixing by hand, then uncategorized payees, then unknown receipt items for each vendor. Home's
-   Uncategorized transactions row opens this tab, and the count here is the one Home shows. #}
-{% macro triage_panel(payees, vendors, choices, uncategorized, uncategorized_href) -%}
-<div id="triage-panel" class="flex flex-col gap-6" hx-get="/categories/triage" hx-trigger="categories-changed from:body" hx-target="#triage-panel" hx-swap="outerHTML">
+   fixing by hand, then one tab for payees and one for each receipt vendor with items waiting. Home's
+   Uncategorized transactions row opens this tab, and the count here is the one Home shows. The panel
+   reloads with the open tab, which the tabs keep in a hidden field. #}
+{% macro triage_panel(payees, vendors, choices, uncategorized, uncategorized_href, source="payees") -%}
+<div id="triage-panel" class="flex flex-col gap-4" hx-get="/categories/triage" hx-include="#triage-source-active" hx-trigger="categories-changed from:body" hx-target="#triage-panel" hx-swap="outerHTML">
   <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-container-inset px-3 py-2">
     <p class="text-sm text-primary">{% if uncategorized %}<span class="font-medium tabular-nums">{{ uncategorized }}</span> {{ "transaction has" if uncategorized == 1 else "transactions have" }} no category.{% else %}Every transaction has a category.{% endif %}</p>
     {%- if uncategorized %}
     <a href="{{ uncategorized_href }}" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-primary focus-ring hover:bg-container-inset-hover">Open in Transactions</a>
     {%- endif %}
   </div>
-  <section aria-labelledby="triage-payees" class="flex flex-col gap-2">
-    <h3 id="triage-payees" class="font-medium text-primary">Uncategorized payees</h3>
-    <p class="text-sm text-secondary">Uncategorized payees, most frequent first. Add a keyword to fix them.</p>
-    {%- if payees %}
-    <ul class="flex flex-col" aria-label="Uncategorized payees">
-      {%- for payee, count, total in payees %}
-      {%- set slot = "payee-" ~ loop.index %}
-      <li class="flex flex-col gap-1 border-t border-subdued py-2">
-        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span class="break-all font-medium text-primary">{{ payee or "(no payee text)" }}</span>
-          <span class="text-sm text-secondary">{{ count }} {{ "transaction" if count == 1 else "transactions" }}</span>
-          <span class="text-sm tabular-nums text-primary">{{ total|money }}</span>
-          {{ add_keyword_button("payee", payee, slot) }}
-        </div>
-        <div id="slot-{{ slot }}" data-slot></div>
-      </li>
-      {%- endfor %}
-    </ul>
-    {%- else %}
-    <p class="text-sm text-secondary">No payee is left without a category.</p>
-    {%- endif %}
-  </section>
-  <section aria-labelledby="triage-receipts" class="flex flex-col gap-3">
-    <h3 id="triage-receipts" class="font-medium text-primary">Unknown receipt items</h3>
-    <p class="text-sm text-secondary">Receipt items with no keyword. After adding one, re-apply receipts on Reconcile.</p>
-    {%- if not vendors %}
-    <p class="text-sm text-secondary">No receipt vendors set up.</p>
-    {%- endif %}
-    {%- for vendor in vendors %}
-    {%- set vendor_index = loop.index %}
-    <div class="flex flex-col gap-1" aria-labelledby="triage-vendor-{{ vendor.key }}">
-      <h4 id="triage-vendor-{{ vendor.key }}" class="text-sm font-medium text-primary">{{ vendor.label }}</h4>
-      {%- if not vendor.has_files %}
-      <p class="text-sm text-secondary">No {{ vendor.label }} receipts yet. Put them under receipts/{{ vendor.key | upper }}/.</p>
-      {%- elif not vendor.unknown %}
-      <p class="text-sm text-secondary">Every item on these receipts matches a keyword.</p>
-      {%- else %}
-      <ul class="flex flex-col" aria-label="Unknown {{ vendor.label }} items">
-        {%- for text, count in vendor.unknown %}
-        {%- set slot = "receipt-" ~ vendor_index ~ "-" ~ loop.index %}
-        <li class="flex flex-col gap-1 border-t border-subdued py-2">
-          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span class="break-all text-primary">{{ text }}</span>
-            <span class="text-sm text-secondary">{{ count }} {{ "item" if count == 1 else "items" }}</span>
-            {{ add_keyword_button("receipt", text, slot, vendor.key) }}
-          </div>
-          <div id="slot-{{ slot }}" data-slot></div>
-        </li>
-        {%- endfor %}
-      </ul>
-      {%- endif %}
-    </div>
-    {%- endfor %}
-  </section>
+  {%- set payees_body %}{{ triage_payees(payees) }}{% endset %}
+  {%- set items = [{"id": "payees", "label": "Payees " ~ payees|length, "body": payees_body}] %}
+  {%- for vendor in vendors %}
+  {%- set vendor_body %}{{ triage_vendor(vendor, loop.index) }}{% endset %}
+  {%- set _ = items.append({"id": vendor.key, "label": vendor.label ~ " " ~ vendor["items"]|length, "body": vendor_body}) %}
+  {%- endfor %}
+  {{ tabs("triage-source", items, source, "Triage sources", field="source") }}
 </div>
+{%- endmacro %}
+
+{% macro triage_payees(payees) -%}
+<section aria-label="Uncategorized payees" class="flex flex-col gap-2">
+  <p class="text-sm text-secondary">Uncategorized payees, most frequent first. Add a keyword to fix them.</p>
+  {%- if payees %}
+  <ul class="flex flex-col" aria-label="Uncategorized payees">
+    {%- for payee, count, total in payees %}
+    {%- set slot = "payee-" ~ loop.index %}
+    <li class="flex flex-col gap-1 border-t border-subdued py-2">
+      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span class="break-all font-medium text-primary">{{ payee or "(no payee text)" }}</span>
+        <span class="text-sm text-secondary">{{ count }} {{ "transaction" if count == 1 else "transactions" }}</span>
+        <span class="text-sm tabular-nums text-primary">{{ total|money }}</span>
+        {{ add_keyword_button("payee", payee, slot) }}
+      </div>
+      <div id="slot-{{ slot }}" data-slot></div>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="text-sm text-secondary">No payee is left without a category.</p>
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{# One vendor's items that hold up a matched charge. Each row opens the receipts it is on: their
+   other lines and categories, and the transaction each matched. #}
+{% macro triage_vendor(vendor, vendor_index) -%}
+<section aria-label="Waiting {{ vendor.label }} items" class="flex flex-col gap-2">
+  <p class="text-sm text-secondary">Items with no keyword, on receipts that match your transactions. Adding a keyword applies them.</p>
+  {%- if not vendor.has_files %}
+  <p class="text-sm text-secondary">No {{ vendor.label }} receipts yet. Put them under receipts/{{ vendor.key | upper }}/.</p>
+  {%- elif not vendor["items"] %}
+  <p class="text-sm text-secondary">No {{ vendor.label }} item is waiting for a keyword.</p>
+  {%- else %}
+  <ul class="flex flex-col" aria-label="Waiting {{ vendor.label }} items">
+    {%- for item in vendor["items"] %}
+    {%- set slot = "receipt-" ~ vendor_index ~ "-" ~ loop.index %}
+    {%- set count = item.sources|length %}
+    <li class="flex flex-col gap-1 border-t border-subdued py-2">
+      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span class="break-all text-primary">{{ item.text }}</span>
+        {{ add_keyword_button("receipt", item.text, slot, vendor.key) }}
+      </div>
+      <details class="text-sm">
+        <summary class="cursor-pointer rounded-sm text-secondary focus-ring">{{ count }} {{ "receipt" if count == 1 else "receipts" }}</summary>
+        <ul class="mt-2 flex flex-col gap-3" aria-label="Receipts with {{ item.text }}">
+          {%- for entry in item.sources %}
+          {{ triage_source(entry.source, entry.href, item.text, vendor.key) }}
+          {%- endfor %}
+        </ul>
+      </details>
+      <div id="slot-{{ slot }}" data-slot></div>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{% macro triage_source(source, href, text, vendor_key) -%}
+<li class="flex flex-col gap-2 rounded-lg bg-container-inset p-3">
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <span class="font-medium text-primary tabular-nums">{{ source.purchased_on.isoformat() }}</span>
+    <span class="text-secondary">{{ "Refund" if source.is_refund else "Purchase" }}{% if source.vendor_login|lower != vendor_key %} · {{ source.vendor_login }}{% endif %} · <span class="break-all">{{ source.receipt_id }}</span></span>
+    {%- if source.url %}
+    <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer" class="rounded-sm font-medium text-primary underline-offset-2 hover:underline focus-ring">Order page</a>
+    {%- endif %}
+  </div>
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <span class="text-secondary">Matched <span class="tabular-nums text-primary">{{ source.amount_cents|money }}</span> on {{ source.account_name }}, {{ source.posted_on.isoformat() }}{% if source.category %} · <span class="text-primary">{{ source.category }}</span>{% endif %}</span>
+    {%- if source.can_keep %}
+    {{ button("Keep category", variant="outline", size="sm", attrs={"hx-post": "/categories/triage/keep", "hx-vals": '{"transaction_id": "' ~ source.transaction_id ~ '"}', "hx-target": "#toast-region", "hx-swap": "none"}) }}
+    {%- endif %}
+    <a href="{{ href }}" class="rounded-sm font-medium text-primary underline-offset-2 hover:underline focus-ring">Open in Transactions</a>
+  </div>
+  <table class="w-full text-left">
+    <caption class="sr-only">Lines of receipt {{ source.receipt_id }}</caption>
+    <tbody>
+      {%- for line in source.lines %}
+      {%- set this = line.description.split()|join(" ")|lower == text|lower %}
+      <tr class="border-t border-subdued">
+        <td class="py-1 pr-2 break-all {{ 'font-medium text-primary' if this else 'text-secondary' }}">{{ line.description }}</td>
+        <td class="py-1 pr-2 whitespace-nowrap">{% if line.category %}<span class="text-secondary">{{ line.category }}</span>{% else %}{{ pill("No keyword", tone="warning") }}{% endif %}</td>
+        <td class="py-1 text-right whitespace-nowrap tabular-nums text-primary">{{ line.amount_cents|money }}</td>
+      </tr>
+      {%- endfor %}
+    </tbody>
+  </table>
+</li>
 {%- endmacro %}
 
 {# The keyword form that opens in a triage row, under the text it is for, which the row already shows.

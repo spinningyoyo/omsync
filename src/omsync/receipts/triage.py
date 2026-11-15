@@ -1,13 +1,62 @@
-"""Triage's view of receipt files: which vendor items no keyword list covers yet."""
+"""Triage's view of receipts: the items that hold up a charge of yours, and where they come from.
 
-from collections import Counter
+Only matched charges count. A receipt paid elsewhere, or one that matches no transaction, would
+not apply with a keyword either, so its items are not listed.
+"""
 
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import date
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from omsync.core.settings import Settings
-from omsync.ledger.categorize import load_keywords, match_receipt_item
-from omsync.ledger.receipt_vendors import code_categories
+from omsync.ledger.models import Account, Category, CategoryOrigin, Split, Transaction
+from omsync.receipts.apply import keyword_categories
+from omsync.receipts.match import MatchOutcome
+from omsync.receipts.model import ReceiptItem
+from omsync.receipts.service import run_vendor
 from omsync.receipts.vendors import get_vendor
+
+CategoryName = Callable[[ReceiptItem], str | None]
+
+
+@dataclass(frozen=True)
+class SourceLine:
+    """One line of a receipt: an item, or another payment such as a reward. category is the name
+    the keywords give it now. None means it waits for a keyword."""
+
+    description: str
+    amount_cents: int
+    category: str | None
+
+
+@dataclass(frozen=True)
+class ItemSource:
+    """A receipt that a waiting item is on, and the transaction its charge matched."""
+
+    receipt_id: str
+    vendor_login: str
+    purchased_on: date
+    is_refund: bool
+    url: str | None
+    lines: tuple[SourceLine, ...]
+    transaction_id: int
+    account_id: int
+    account_name: str
+    posted_on: date
+    amount_cents: int
+    category: str | None
+    can_keep: bool  # a whole category that a keyword or a rule gave it
+
+
+@dataclass(frozen=True)
+class WaitingItem:
+    """Text that no keyword matches, and the receipts it holds up."""
+
+    text: str
+    sources: tuple[ItemSource, ...]
 
 
 def has_receipt_files(settings: Settings, vendor_key: str) -> bool:
@@ -16,42 +65,89 @@ def has_receipt_files(settings: Settings, vendor_key: str) -> bool:
     return bool(vendor.discover(settings.receipts_dir / vendor_key.upper()))
 
 
-def unknown_receipt_items(
-    session: Session, settings: Settings, vendor_key: str, limit: int = 100
-) -> list[tuple[str, int]]:
-    """Receipt items that no keyword in the vendor's list matches, and whose vendor code has no
-    category either, with the receipts' other payments, such as a reward, that no keyword
-    matches: (text, count).
-
-    The vendor discovers and parses every file under <data_dir>/receipts/<vendor_key>/. A file
-    that cannot be read is skipped, so a bad receipt never blocks triage. Items are grouped by
-    their text, ignoring case and extra spaces, and the most frequent comes first.
-    """
+def waiting_items(
+    session: Session, settings: Settings, vendor_key: str, *, today: date
+) -> list[WaitingItem]:
+    """The items and other payments that hold up a matched charge because nothing gives them a
+    category, grouped by their text, ignoring case and extra spaces. The item on the most receipts
+    comes first."""
+    report = run_vendor(session, settings, vendor_key, today=today)
+    if report.match is None:
+        return []
     vendor = get_vendor(vendor_key)
-    keywords = load_keywords(session)
-    by_code = code_categories(session, vendor_key)
-    counts: Counter[str] = Counter()
+    category_for = _category_names(session, vendor_key)
+    outcomes = {outcome.receipt_key: outcome for outcome in report.match.outcomes}
+    grouped: dict[str, list[ItemSource]] = {}
     display: dict[str, str] = {}
-    for path in vendor.discover(settings.receipts_dir / vendor_key.upper()):
-        try:
-            receipts = vendor.parse(path)
-        except (OSError, ValueError):
+    for skip in report.plan.skipped:
+        if not (skip.item_positions or skip.offset_names):
             continue
-        for receipt in receipts:
-            offsets = [
-                offset.description
-                for charge in vendor.charges(receipt).charges
-                for offset in charge.offsets
-            ]
-            texts = [(item.description, item.code) for item in receipt.items]
-            for description, code in [*texts, *((name, None) for name in offsets)]:
-                text = " ".join(description.split())
-                if not text or match_receipt_item(vendor_key, text, keywords) is not None:
-                    continue
-                if code is not None and code in by_code:
-                    continue
-                key = text.casefold()
-                display.setdefault(key, text)
-                counts[key] += 1
-    ranked = sorted(counts.items(), key=lambda pair: (-pair[1], display[pair[0]].casefold()))
-    return [(display[key], count) for key, count in ranked[:limit]]
+        outcome = outcomes[skip.receipt_key]
+        source = _source(session, vendor.receipt_url(outcome.receipt), outcome, category_for)
+        if source is None:
+            continue
+        names = [
+            item.description
+            for item in outcome.receipt.items
+            if item.position in skip.item_positions
+        ] + list(skip.offset_names)
+        for name in names:
+            text = " ".join(name.split())
+            key = text.casefold()
+            display.setdefault(key, text)
+            group = grouped.setdefault(key, [])
+            if source not in group:
+                group.append(source)
+    ranked = sorted(grouped, key=lambda key: (-len(grouped[key]), display[key].casefold()))
+    return [WaitingItem(display[key], tuple(grouped[key])) for key in ranked]
+
+
+def _category_names(session: Session, vendor_key: str) -> CategoryName:
+    category_id_for = keyword_categories(session, vendor_key)
+    names = dict(session.execute(select(Category.id, Category.name)).tuples().all())
+
+    def name_for(item: ReceiptItem) -> str | None:
+        category_id = category_id_for(item)
+        return None if category_id is None else names.get(category_id)
+
+    return name_for
+
+
+def _source(
+    session: Session, url: str | None, outcome: MatchOutcome, category_for: CategoryName
+) -> ItemSource | None:
+    charge = outcome.charge
+    txn = (
+        None if outcome.transaction_id is None else session.get(Transaction, outcome.transaction_id)
+    )
+    if txn is None or charge is None:
+        return None
+    account = session.get(Account, txn.account_id)
+    category = None if txn.category_id is None else session.get(Category, txn.category_id)
+    split = session.scalar(select(Split.id).where(Split.transaction_id == txn.id).limit(1))
+    receipt = outcome.receipt
+    others = [
+        ReceiptItem(0, offset.description, offset.amount_cents, taxable=False)
+        for offset in charge.offsets
+    ]
+    lines = tuple(
+        SourceLine(item.description, item.amount_cents, category_for(item))
+        for item in [*receipt.items, *others]
+    )
+    return ItemSource(
+        receipt_id=receipt.receipt_id,
+        vendor_login=receipt.vendor_login,
+        purchased_on=receipt.purchased_on,
+        is_refund=receipt.is_refund,
+        url=url,
+        lines=lines,
+        transaction_id=txn.id,
+        account_id=txn.account_id,
+        account_name=account.name if account is not None else "",
+        posted_on=txn.posted_on,
+        amount_cents=txn.amount_cents,
+        category=None if category is None else category.name,
+        can_keep=category is not None
+        and split is None
+        and txn.category_origin != CategoryOrigin.manual.value,
+    )

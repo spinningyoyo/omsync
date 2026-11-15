@@ -28,7 +28,7 @@
     {{ rule_panel(rules.rows, rules.choices, rules.contacts, rules.accounts, rules.form) }}
     {% endset %}
     {% set triage_body %}
-    {{ triage_panel(triage.payees, triage.vendors, triage.choices, triage.uncategorized, triage.uncategorized_href) }}
+    {{ triage_panel(triage.payees, triage.vendors, triage.choices, triage.uncategorized, triage.uncategorized_href, triage.source) }}
     {% endset %}
     <section class="fill-chain flex min-w-0 flex-col" aria-label="Triage, keywords, and rules">
       {{ tabs("categories", [

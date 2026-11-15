@@ -301,6 +301,38 @@ def set_category(
     )
 
 
+def keep_category(session: Session, txn_id: int, *, idempotency_key: str) -> Batch:
+    """Make the category a keyword or a rule gave the transaction your own choice, as if you had
+    picked it. Nothing automatic changes it after that.
+
+    Raises ValueError for a split transaction, one with no category, and one whose category you
+    already chose.
+    """
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    current = _transaction_values(session, txn_id)
+    if _split_count(session, txn_id):
+        raise ValueError("This transaction is split. Change its split lines instead.")
+    category_id = current["category_id"]
+    if category_id is None:
+        raise ValueError("This transaction has no category to keep.")
+    if current["category_origin"] == CategoryOrigin.manual.value:
+        raise ValueError("You already chose this category.")
+    name = _usable_category(session, int(category_id))
+    before = {"category_id": category_id, "category_origin": current["category_origin"]}
+    after = {"category_id": category_id, "category_origin": CategoryOrigin.manual.value}
+    return _write(
+        session,
+        kind="register.category",
+        txn_id=txn_id,
+        field="category",
+        label=f"Kept {name} for {current['payee']}",
+        changes=_field_changes(txn_id, before, after),
+        idempotency_key=idempotency_key,
+    )
+
+
 def set_splits(
     session: Session,
     txn_id: int,

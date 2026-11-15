@@ -59,6 +59,7 @@ flowchart TD
 - **Payment method:** how money moved: transfer, check, cash, PayPal, Square, and others.
 - **Rule:** an ordered condition on payment method, amount, counterparty, or account that sets a
   category.
-- **Triage:** uncategorized payees and receipt items, grouped so one choice covers many.
+- **Triage:** uncategorized payees and receipt items, grouped so one choice covers many. It has one
+  tab for payees and one for each receipt vendor.
 - **Type:** fixed, flexible, non-monthly, unassigned, income, excluded, or owed. Excluded and
   owed money are not in reports.

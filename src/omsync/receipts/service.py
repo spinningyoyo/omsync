@@ -37,6 +37,7 @@ from omsync.receipts.match import MatchOutcome, MatchReport, MatchStatus, match_
 from omsync.receipts.model import Charge, Receipt
 from omsync.receipts.vendor import ReceiptVendor
 from omsync.receipts.vendors import BUILT_IN_VENDORS, get_vendor
+from omsync.reconcile.auto import TRIGGER_KEY
 
 REVIEW_STATUSES = (
     MatchStatus.ambiguous,
@@ -64,6 +65,7 @@ class ServiceReport:
     counts: dict[str, int]
     review: tuple[ReviewLine, ...]
     plan: ApplyPlan
+    match: MatchReport | None = None  # every outcome, over all history
     start: date | None = None  # the period the plan is limited to, or None for all history
     end: date | None = None
 
@@ -119,6 +121,7 @@ def run_vendor(
         counts=_counts(report, plan, outside),
         review=(*parse_errors, *_review_lines(session, report, plan)),
         plan=plan,
+        match=report,
         start=start,
         end=end,
     )
@@ -146,6 +149,23 @@ def apply_report(session: Session, report: ServiceReport, *, idempotency_key: st
     if report.plan.preview is None:
         return None
     return apply_receipts(session, report.plan, idempotency_key=idempotency_key)
+
+
+def apply_after_keyword(
+    session: Session, settings: Settings, vendor_key: str, *, today: date, triggered_by: int
+) -> Batch | None:
+    """Apply the vendor's receipts after a keyword was added to its list, so the charges the
+    keyword completes apply at once. Returns None when nothing would change.
+
+    The batch names the keyword's batch as its trigger, so undoing the keyword undoes it too.
+    """
+    report = run_vendor(session, settings, vendor_key, today=today)
+    preview = report.plan.preview
+    if preview is None:
+        return None
+    tagged = replace(preview, summary={**preview.summary, TRIGGER_KEY: triggered_by})
+    plan = replace(report.plan, preview=tagged)
+    return apply_receipts(session, plan, idempotency_key=f"receipts-after-keyword:{triggered_by}")
 
 
 def _read_receipts(

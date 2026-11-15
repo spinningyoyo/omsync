@@ -118,7 +118,7 @@
 
 {% block frag_triage %}
 {% from "categories/parts.html" import triage_panel %}
-{{ triage_panel(payees, vendors, choices, uncategorized, uncategorized_href) }}
+{{ triage_panel(payees, vendors, choices, uncategorized, uncategorized_href, source) }}
 {% endblock %}
 
 {% block frag_triage_form %}
