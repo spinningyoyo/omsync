@@ -50,7 +50,7 @@
 {%- else %}
 <p class="text-sm text-primary">{{ count }} {{ "transaction" if count == 1 else "transactions" }} would change{% if count > moves|length %}. The first {{ moves|length }} are listed{% endif %}.</p>
 <div class="table-scroll max-h-96 overflow-y-auto shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Transactions this would change">
-  <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+  <table class="data-table">
     <thead class="sticky top-0 bg-container">
       <tr>
         <th scope="col" class="px-2 py-2 text-left text-xs font-medium uppercase text-secondary">Date</th>
@@ -627,7 +627,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 {% macro rule_table(rows) -%}
 {%- if rows %}
 <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Rules, in the order they are tried">
-  <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+  <table class="data-table">
     <thead>
       <tr>
         <th scope="col" class="px-2 py-2 text-left text-xs font-medium uppercase text-secondary">Rule</th>

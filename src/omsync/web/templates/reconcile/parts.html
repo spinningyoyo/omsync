@@ -4,6 +4,7 @@
    outerHTML; each button carries its own idempotency key from routes/reconcile.py. #}
 {% from "components/alert.html" import alert with context %}
 {% from "components/button.html" import button, link_button %}
+{% from "components/toast.html" import toast as base_toast, toast_region as base_toast_region with context %}
 {% from "components/pill.html" import pill with context %}
 {% from "layouts/shell_parts.html" import empty_state %}
 
@@ -80,35 +81,33 @@
     }) }}
   {% endcall %}
   <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Proposals">
-    <table class="w-full border-separate border-spacing-0 bg-container text-sm text-primary">
+    <table class="data-table">
       <thead>
         <tr>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left"><span class="sr-only">Select</span></th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Kind</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Money out</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Money in</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Evidence</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left"><span class="sr-only">Actions</span></th>
+          <th scope="col"><span class="sr-only">Select</span></th>
+          <th scope="col">Kind</th>
+          <th scope="col">Money out</th>
+          <th scope="col">Money in</th>
+          <th scope="col">Evidence</th>
+          <th scope="col"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody>
         {%- for group in groups %}
-        {%- set outer = loop %}
         {%- for row in group.rows %}
-        {%- set line = "" if (outer.first and loop.first) else " border-t border-subdued" %}
         <tr>
-          <td class="px-3 py-3 align-top{{ line }}">
+          <td class="px-3 py-3 align-top">
             <input type="checkbox" class="checkbox" name="signature" value="{{ row.signature }}" data-pick aria-label="Select this proposal">
           </td>
-          <td class="px-3 py-3 align-top{{ line }}">
+          <td class="px-3 py-3 align-top">
             <div class="flex flex-col items-start gap-1">
               <span class="whitespace-nowrap">{{ group.title }}</span>
               {{ pill(row.queue_label ~ " · " ~ row.confidence, tone=row.queue_tone, style="soft") }}
             </div>
           </td>
-          <td class="px-3 py-3 align-top{{ line }}">{{ side_cell(row.money_out) }}</td>
-          <td class="px-3 py-3 align-top{{ line }}">{{ side_cell(row.money_in) }}</td>
-          <td class="px-3 py-3 align-top{{ line }}">
+          <td class="px-3 py-3 align-top">{{ side_cell(row.money_out) }}</td>
+          <td class="px-3 py-3 align-top">{{ side_cell(row.money_in) }}</td>
+          <td class="px-3 py-3 align-top">
             <div class="flex max-w-md flex-wrap gap-1">
               {%- for chip in row.chips %}{{ pill(chip, tone="gray", style="outline") }}{% endfor %}
             </div>
@@ -116,7 +115,7 @@
             <p class="mt-1 text-xs text-secondary">{{ note }}</p>
             {%- endfor %}
           </td>
-          <td class="px-3 py-3 align-top{{ line }}">
+          <td class="px-3 py-3 align-top">
             <div class="flex justify-end gap-2">
               {{ button("Reject", variant="outline", size="sm", attrs={
                 "hx-post": "/reconcile/reject",
@@ -170,25 +169,24 @@
       <p class="text-sm text-secondary">Each receipt says what to do. It leaves this list when it is done.</p>
     </div>
     <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="{{ vendor.title }} receipts that need you">
-      <table class="w-full border-separate border-spacing-0 bg-container text-sm text-primary">
+      <table class="data-table">
         <thead>
           <tr>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Receipt</th>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">What to do</th>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left"><span class="sr-only">Actions</span></th>
+            <th scope="col">Date</th>
+            <th scope="col" class="num">Amount</th>
+            <th scope="col">Receipt</th>
+            <th scope="col">What to do</th>
+            <th scope="col"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
           {%- for row in needs %}
-          {%- set line = "" if loop.first else " border-t border-subdued" %}
           <tr>
-            <td class="px-3 py-3 align-top whitespace-nowrap tabular-nums{{ line }}">{{ row.on }}</td>
-            <td class="px-3 py-3 align-top whitespace-nowrap text-right tabular-nums{{ line }}">{{ row.amount }}</td>
-            <td class="px-3 py-3 align-top{{ line }}">{{ receipt_link(row) }}</td>
-            <td class="px-3 py-3 align-top text-primary{{ line }}">{{ row.advice }}</td>
-            <td class="px-3 py-3 align-top{{ line }}">
+            <td class="px-3 py-3 align-top whitespace-nowrap tabular-nums">{{ row.on }}</td>
+            <td class="px-3 py-3 align-top whitespace-nowrap text-right tabular-nums">{{ row.amount }}</td>
+            <td class="px-3 py-3 align-top">{{ receipt_link(row) }}</td>
+            <td class="px-3 py-3 align-top text-primary">{{ row.advice }}</td>
+            <td class="px-3 py-3 align-top">
               <div class="flex justify-end gap-2">
                 {%- if row.action == "keyword" %}
                 {{ link_button("Add a keyword", href=row.keyword_href, variant="primary", size="sm") }}
@@ -276,32 +274,32 @@
     <div id="counterparty-error" class="basis-full" aria-live="assertive"></div>
   </form>
   <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Not matched transactions">
-    <table class="w-full border-separate border-spacing-0 bg-container text-sm text-primary">
+    <table class="data-table">
       <thead>
         <tr>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Select</span></th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Account</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Description</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Category</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Actions</span></th>
+          <th scope="col"><span class="sr-only">Select</span></th>
+          <th scope="col">Date</th>
+          <th scope="col">Account</th>
+          <th scope="col">Description</th>
+          <th scope="col">Category</th>
+          <th scope="col" class="num">Amount</th>
+          <th scope="col"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody>
         {%- for row in rows %}
         <tr>
-          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+          <td class="px-3 py-3 align-top">
             <input type="checkbox" class="checkbox" name="txn" value="{{ row.txn_id }}" form="counterparty-form" aria-label="Select {{ row.description }}">
           </td>
-          <td class="px-3 py-3 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.on }}</td>
-          <td class="px-3 py-3 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.account }}</td>
-          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+          <td class="px-3 py-3 align-top whitespace-nowrap">{{ row.on }}</td>
+          <td class="px-3 py-3 align-top whitespace-nowrap">{{ row.account }}</td>
+          <td class="px-3 py-3 align-top">
             <span class="break-words">{{ row.description }}</span>
           </td>
-          <td class="px-3 py-3 align-top text-secondary{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.category }}</td>
-          <td class="px-3 py-3 align-top text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.amount }}</td>
-          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+          <td class="px-3 py-3 align-top text-secondary">{{ row.category }}</td>
+          <td class="px-3 py-3 align-top text-right tabular-nums">{{ row.amount }}</td>
+          <td class="px-3 py-3 align-top">
             <div class="flex flex-col items-end gap-2">
               {{ button("Link manually…", variant="outline", size="sm", attrs={
                 "hx-get": "/reconcile/link?txn=" ~ row.txn_id ~ "&start=" ~ start ~ "&end=" ~ end,
@@ -342,24 +340,24 @@
   {%- if rows %}
   <p class="text-sm text-secondary">No counterpart needed: the counterparty is known.</p>
   <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Explained transactions">
-    <table class="w-full border-separate border-spacing-0 bg-container text-sm text-primary">
+    <table class="data-table">
       <thead>
         <tr>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Account</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Description</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Counterparty</th>
+          <th scope="col">Date</th>
+          <th scope="col">Account</th>
+          <th scope="col">Description</th>
+          <th scope="col" class="num">Amount</th>
+          <th scope="col">Counterparty</th>
         </tr>
       </thead>
       <tbody>
         {%- for row in rows %}
         <tr>
-          <td class="px-3 py-2 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.on }}</td>
-          <td class="px-3 py-2 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.account }}</td>
-          <td class="px-3 py-2 align-top break-words{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.description }}</td>
-          <td class="px-3 py-2 align-top text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.amount }}</td>
-          <td class="px-3 py-2 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+          <td class="px-3 py-2 align-top whitespace-nowrap">{{ row.on }}</td>
+          <td class="px-3 py-2 align-top whitespace-nowrap">{{ row.account }}</td>
+          <td class="px-3 py-2 align-top break-words">{{ row.description }}</td>
+          <td class="px-3 py-2 align-top text-right tabular-nums">{{ row.amount }}</td>
+          <td class="px-3 py-2 align-top">
             {%- if row.contact_id %}<a href="/settings/contacts/{{ row.contact_id }}" class="underline-offset-2 hover:underline focus-ring">{{ row.reason }}</a>{% else %}{{ row.reason }}{% endif %}
             <a href="/transactions/{{ row.txn_id }}/detail" class="ml-2 text-xs text-secondary underline-offset-2 hover:underline focus-ring">Change</a>
           </td>
@@ -379,29 +377,29 @@
   <h3 id="linked-title" class="font-medium text-primary">Links in this period <span class="text-sm text-secondary">({{ rows|length }})</span></h3>
   {%- if rows %}
   <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Linked transactions">
-    <table class="w-full border-separate border-spacing-0 bg-container text-sm text-primary">
+    <table class="data-table">
       <thead>
         <tr>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Kind</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Money out and in</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Made by</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Actions</span></th>
+          <th scope="col">Kind</th>
+          <th scope="col">Money out and in</th>
+          <th scope="col" class="num">Amount</th>
+          <th scope="col">Made by</th>
+          <th scope="col"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody>
         {%- for row in rows %}
         <tr>
-          <td class="px-3 py-2 align-top whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.kind }}</td>
-          <td class="px-3 py-2 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+          <td class="px-3 py-2 align-top whitespace-nowrap">{{ row.kind }}</td>
+          <td class="px-3 py-2 align-top">
             <div class="flex flex-col gap-1">
               {%- if row.money_out %}<span>Out: {{ row.money_out.on }} · {{ row.money_out.account }} · {{ row.money_out.payee }}</span>{% endif %}
               {%- if row.money_in %}<span>In: {{ row.money_in.on }} · {{ row.money_in.account }} · {{ row.money_in.payee }}</span>{% endif %}
             </div>
           </td>
-          <td class="px-3 py-2 align-top text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.amount }}</td>
-          <td class="px-3 py-2 align-top text-secondary{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.rule }}</td>
-          <td class="px-3 py-2 align-top text-right{% if not loop.first %} border-t border-subdued{% endif %}">
+          <td class="px-3 py-2 align-top text-right tabular-nums">{{ row.amount }}</td>
+          <td class="px-3 py-2 align-top text-secondary">{{ row.rule }}</td>
+          <td class="px-3 py-2 align-top text-right">
             {{ button("Unlink", variant="outline", size="sm", attrs={
               "hx-post": "/reconcile/unlink/" ~ row.link_id,
               "hx-vals": {"start": start, "end": end, "idempotency_key": row.unlink_key}|tojson|forceescape,
@@ -484,14 +482,8 @@
 
 {# The undo toast. Its Undo posts to the shared undo route with the range, so the results re-run. #}
 {% macro toast(message, batch_id=none, start=none, end=none, tab="") -%}
-<div class="toast" role="status" data-controller="toast">
-  <span class="toast-message">{{ message }}</span>
-  {%- if batch_id %}
-  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo?start=" ~ start ~ "&end=" ~ end ~ "&source=reconcile&tab=" ~ tab, "hx-target": "#toast-region"}) }}
-  {%- endif %}
-</div>
+{{ base_toast(message, undo_url(batch_id, start=start, end=end, source="reconcile", tab=tab)) }}
 {%- endmacro %}
-
 {% macro toast_region(message, batch_id=none, start=none, end=none, tab="") -%}
-<div id="toast-region" hx-swap-oob="true" aria-live="polite">{{ toast(message, batch_id, start, end, tab) }}</div>
+{{ base_toast_region(message, undo_url(batch_id, start=start, end=end, source="reconcile", tab=tab)) }}
 {%- endmacro %}

@@ -35,6 +35,7 @@ from omsync.web.brand import mascot_svg
 from omsync.web.categories_view import TYPE_OPTIONS
 from omsync.web.errors import install_error_pages
 from omsync.web.filter_forms import FIELD_LABELS, field_choices, op_choices
+from omsync.web.fragments import undo_url
 from omsync.web.icons import category_icon_name, icon_svg
 from omsync.web.institution_logos import institution_logo_url
 from omsync.web.register_replies import FRAGMENTS, RegisterError
@@ -62,6 +63,7 @@ from omsync.web.routes import (
     shell,
     sign_in,
     transactions,
+    undo,
 )
 from omsync.web.routes.demo import router as demo_router
 from omsync.web.routes.settings import router as settings_router
@@ -132,6 +134,7 @@ def create_app(
     templates.env.filters["money_text"] = format_cents
     templates.env.globals["icon_svg"] = icon_svg
     templates.env.globals["link_items"] = link_items
+    templates.env.globals["undo_url"] = undo_url
     templates.env.globals["category_icon_name"] = category_icon_name
     templates.env.globals["institution_logo_url"] = institution_logo_url
     templates.env.globals["account_digits"] = account_digits
@@ -184,6 +187,7 @@ def create_app(
     app.include_router(home.router)
     app.include_router(reports.router)
     app.include_router(transactions.router)
+    app.include_router(undo.router)
     app.include_router(accounts.router)
     app.include_router(register_filters.router)
     app.include_router(register_bulk.router)

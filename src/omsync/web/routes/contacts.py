@@ -25,6 +25,7 @@ from omsync.ledger.contacts import (
 from omsync.web.automatic import run_automatic, with_automatic
 from omsync.web.contacts_view import detail_context, list_context, region_context
 from omsync.web.deps import get_db
+from omsync.web.fragments import render_block
 from omsync.web.routes.shell import shell_context
 from omsync.web.settings_views import SETTINGS_NAV
 
@@ -161,9 +162,7 @@ def _page(
 
 
 def _fragment(request: Request, block: str, *, status: int = 200, **context: Any) -> HTMLResponse:
-    response = request.app.state.templates.TemplateResponse(
-        request, FRAGMENTS, context, status_code=status, block_name=block
-    )
+    response = render_block(request, FRAGMENTS, block, status=status, **context)
     # The region may show a different view than the page was opened on, so the address follows it.
     response.headers["HX-Replace-Url"] = str(context["region_url"])
     return response

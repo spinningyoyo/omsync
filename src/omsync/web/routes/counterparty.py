@@ -19,6 +19,7 @@ from omsync.web.automatic import run_automatic, with_automatic
 from omsync.web.contacts_view import parse_choice
 from omsync.web.counterparty_view import TransactionDetail, load_detail
 from omsync.web.deps import get_db
+from omsync.web.fragments import render_block
 from omsync.web.routes.shell import shell_context
 
 router = APIRouter()
@@ -142,6 +143,4 @@ def _label(batch: Any) -> str:
 
 
 def _fragment(request: Request, block: str, *, status: int = 200, **context: Any) -> HTMLResponse:
-    return request.app.state.templates.TemplateResponse(
-        request, FRAGMENTS, context, status_code=status, block_name=block
-    )
+    return render_block(request, FRAGMENTS, block, status=status, **context)

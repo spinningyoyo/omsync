@@ -131,14 +131,14 @@
   </div>
   {%- if view.categories %}
   <div class="table-scroll rounded-xl shadow-border-xs focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Spending by category">
-    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+    <table class="data-table">
       <thead>
         <tr>
-          <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Category</th>
-          <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Share</th>
-          <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
-          <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Change</th>
-          <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Last six months</th>
+          <th scope="col">Category</th>
+          <th scope="col" class="num">Share</th>
+          <th scope="col" class="num">Amount</th>
+          <th scope="col" class="num">Change</th>
+          <th scope="col">Last six months</th>
         </tr>
       </thead>
       <tbody>

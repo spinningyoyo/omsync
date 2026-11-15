@@ -10,7 +10,6 @@ The routes are split by feature: categories.py is the page, the table, and the i
 categories_keywords.py, categories_rules.py, and categories_triage.py hold the rest.
 """
 
-import json
 from typing import Any
 
 from fastapi import Request
@@ -21,6 +20,7 @@ from omsync.core.batch_models import Batch
 from omsync.core.batches import StalePreview
 from omsync.ledger.categories_admin import DraftPreview
 from omsync.web.automatic import run_automatic, with_automatic
+from omsync.web.fragments import render_block
 
 FRAGMENTS = "categories/fragments.html"
 PREVIEW_LIMIT = 50  # the transactions a preview lists; the rest are counted
@@ -36,12 +36,7 @@ def block(
     **context: Any,
 ) -> HTMLResponse:
     """One block of the fragments template, with the events to raise in the browser."""
-    response = request.app.state.templates.TemplateResponse(
-        request, FRAGMENTS, context, status_code=status, block_name=name
-    )
-    if trigger:
-        response.headers["HX-Trigger"] = json.dumps(trigger)
-    return response
+    return render_block(request, FRAGMENTS, name, status=status, trigger=trigger, **context)
 
 
 def events(*, changed: bool = False, close: bool = False) -> dict[str, bool]:

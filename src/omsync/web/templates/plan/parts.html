@@ -7,6 +7,7 @@
    it in place by id. Money arrives formatted, and widths are whole percents. #}
 {% from "components/icon.html" import icon, category_icon with context %}
 {% from "components/button.html" import button, link_button with context %}
+{% from "components/toast.html" import toast as base_toast, toast_region as base_toast_region with context %}
 {% from "components/alert.html" import alert with context %}
 {% from "components/pill.html" import pill with context %}
 {% from "components/toggle.html" import toggle %}
@@ -16,18 +17,10 @@
 {# The toast, with its Undo. The Undo names the page the change came from, so the reply can refresh
    that page's regions. #}
 {% macro toast(message, batch_id=none, plan=none) -%}
-<div class="toast" role="status" data-controller="toast">
-  <span class="toast-message">{{ message }}</span>
-  {%- if batch_id %}
-  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo" ~ ("?plan=" ~ (plan | urlencode) if plan else ""), "hx-target": "#toast-region", "hx-swap": "innerHTML"}) }}
-  {%- endif %}
-</div>
+{{ base_toast(message, undo_url(batch_id, plan=plan)) }}
 {%- endmacro %}
-
-{# The toast region, swapped out of band so a new change replaces the old toast. An empty message
-   clears it. #}
 {% macro toast_region(message, batch_id=none, plan=none) -%}
-<div id="toast-region" hx-swap-oob="true" aria-live="polite">{% if message %}{{ toast(message, batch_id, plan) }}{% endif %}</div>
+{{ base_toast_region(message, undo_url(batch_id, plan=plan)) }}
 {%- endmacro %}
 
 {# A bar for progress. The width is a whole percent, and the state colour comes from the domain.
@@ -372,7 +365,7 @@
    whole row, so the form values are the row's own. #}
 {% macro line_row(row, page) -%}
 <tr id="line-{{ row.category_id }}" class="group">
-  <td class="border-t border-subdued px-4 py-3 align-middle">
+  <td class="px-4 py-3 align-middle">
     <div class="flex min-w-0 items-center gap-3">
       {{ category_icon(row.icon) }}
       <div class="flex min-w-0 flex-col gap-0.5">
@@ -389,7 +382,7 @@
     {%- endif %}
   </td>
   {%- for column in row.columns %}
-  <td class="border-t border-subdued px-4 py-3 align-middle text-right tabular-nums{% if column == 'progress' %} text-left{% endif %}">
+  <td class="px-4 py-3 align-middle text-right tabular-nums{% if column == 'progress' %} text-left{% endif %}">
     {%- if column == "budget" %}
     {#- The $ sits inside the field, so the amount reads as money like the figures beside it. It saves
         when the field is left. #}
@@ -431,12 +424,12 @@
    section passes itself as total_of, for its total row. #}
 {% macro rows_table(columns, rows, page, label, total_of=none) -%}
 <div class="table-scroll rounded-xl shadow-border-xs focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="{{ label }}">
-  <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+  <table class="data-table">
     <thead>
       <tr>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Category</th>
+        <th scope="col">Category</th>
         {%- for column in columns %}
-        <th scope="col" class="border-b border-divider px-4 py-3 text-xs font-medium uppercase text-secondary{% if column == 'progress' %} text-left{% else %} text-right{% endif %}">{{ column_header(column) }}</th>
+        <th scope="col"{% if column != 'progress' %} class="num"{% endif %}>{{ column_header(column) }}</th>
         {%- endfor %}
       </tr>
     </thead>
@@ -535,7 +528,7 @@
   </div>
   {%- if page.unbudgeted %}
   <div class="table-scroll rounded-xl shadow-border-xs focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Not budgeted">
-    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+    <table class="data-table">
       <tbody>
         {%- for row in page.unbudgeted %}
         <tr>

@@ -1,0 +1,18 @@
+{# The undo toast: a message, and Undo when the change can be undone. undo is the address Undo posts
+   to; build it with undo_url(batch_id, ...), which adds the page's own parameters, so the reply can
+   redraw the page the toast came from. Import with context. #}
+{% from "components/button.html" import button %}
+
+{% macro toast(message, undo=none) -%}
+<div class="toast" role="status" data-controller="toast">
+  <span class="toast-message">{{ message }}</span>
+  {%- if undo %}
+  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": undo, "hx-target": "#toast-region"}) }}
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# The toast, swapped into the page's toast region out of band. #}
+{% macro toast_region(message, undo=none) -%}
+<div id="toast-region" hx-swap-oob="true" aria-live="polite">{% if message %}{{ toast(message, undo) }}{% endif %}</div>
+{%- endmacro %}

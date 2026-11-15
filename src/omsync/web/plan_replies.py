@@ -6,7 +6,6 @@ no longer matches answers 409. Successful changes answer 200 with the regions th
 of band, and a toast whose Undo posts to /batches/{id}/undo?plan=... (see plan.plan_undo_reply).
 """
 
-import json
 from typing import Any
 
 from fastapi import Request
@@ -14,6 +13,7 @@ from fastapi.responses import HTMLResponse
 
 from omsync.core.batches import BatchError, StalePreview
 from omsync.web.amounts import parse_cents
+from omsync.web.fragments import render_block
 
 FRAGMENTS = "plan/fragments.html"
 STALE_MESSAGE = "This changed elsewhere, reload."
@@ -45,9 +45,4 @@ def fragment(
     **context: Any,
 ) -> HTMLResponse:
     """One block of the Plan fragments, with an optional HX-Trigger for the page's listeners."""
-    response = request.app.state.templates.TemplateResponse(
-        request, FRAGMENTS, context, status_code=status_code, block_name=block
-    )
-    if trigger:
-        response.headers["HX-Trigger"] = json.dumps(trigger)
-    return response
+    return render_block(request, FRAGMENTS, block, status=status_code, trigger=trigger, **context)

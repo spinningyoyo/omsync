@@ -1,0 +1,19 @@
+/* A data table: a header row that stays at the top of its scrolling frame, a rule between rows,
+ * and numbers right-aligned with figures of one width. A page writes <table class="data-table">,
+ * plain <th> and <td> cells with their own padding, and class="num" on number columns. */
+.data-table {
+  @apply w-full border-separate border-spacing-0 bg-container text-sm text-primary;
+}
+
+.data-table thead th {
+  @apply sticky top-0 z-10 border-b border-divider bg-container px-3 py-2 text-left text-xs font-medium uppercase text-secondary;
+}
+
+.data-table tbody tr + tr > td,
+.data-table tbody tr + tr > th {
+  @apply border-t border-subdued;
+}
+
+.data-table .num {
+  @apply text-right tabular-nums;
+}

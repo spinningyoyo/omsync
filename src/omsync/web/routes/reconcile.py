@@ -1,6 +1,5 @@
 """Reconciliation pages and decision responses."""
 
-import json
 from dataclasses import dataclass
 from datetime import date
 from typing import Annotated, Any
@@ -34,6 +33,8 @@ from omsync.reconcile.decisions import (
 from omsync.web.automatic import run_automatic, with_automatic
 from omsync.web.contacts_view import NEW_CONTACT, parse_choice
 from omsync.web.deps import get_db
+from omsync.web.formats import money_input
+from omsync.web.fragments import render_block
 from omsync.web.reconcile_view import (
     CUSTOM,
     MANUAL_KIND_LABELS,
@@ -44,7 +45,6 @@ from omsync.web.reconcile_view import (
     open_remaining,
     period_label,
     period_options,
-    plain_amount,
     results_for,
     side_of,
 )
@@ -534,7 +534,7 @@ def _transaction_or_404(db: Session, txn_id: int) -> tuple[Transaction, Account]
 def _default_amount_text(remaining: int) -> str:
     """The amount a new link starts at: all of the source's open part. Choosing a candidate lowers
     it to that candidate's open part when it is smaller (reconcile_controller.js)."""
-    return plain_amount(remaining)
+    return money_input(remaining)
 
 
 def _link_context(
@@ -550,7 +550,7 @@ def _link_context(
     return {
         "source": side_of(source, account),
         "source_remaining": remaining,
-        "source_remaining_text": plain_amount(remaining),
+        "source_remaining_text": money_input(remaining),
         "candidates": candidates,
         "amount": amount,
         "kinds": [(value, MANUAL_KIND_LABELS[value]) for value in LINK_KINDS],
@@ -643,9 +643,4 @@ def _fragment(
     trigger: dict[str, bool] | None = None,
     **context: Any,
 ) -> HTMLResponse:
-    response = request.app.state.templates.TemplateResponse(
-        request, FRAGMENTS, context, status_code=status, block_name=block
-    )
-    if trigger:
-        response.headers["HX-Trigger"] = json.dumps(trigger)
-    return response
+    return render_block(request, FRAGMENTS, block, status=status, trigger=trigger, **context)

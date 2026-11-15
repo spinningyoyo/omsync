@@ -10,6 +10,7 @@
 {% from "components/segmented_control.html" import segmented_control %}
 {% from "components/brand.html" import mascot %}
 {% from "components/menu.html" import menu, menu_item with context %}
+{% from "components/toast.html" import toast as base_toast, toast_region as base_toast_region with context %}
 
 {# The text a memo cell shows, or a split's category cell, which shows "Split" because its lines
    hold the categories. #}
@@ -217,19 +218,10 @@
    with the undo for a bulk edit or a saved filter, whose undo re-renders the register as it was
    shown. #}
 {% macro toast(message, batch_id=none, account=none, state_query="", source=none) -%}
-<div class="toast" role="status" data-controller="toast">
-  <span class="toast-message">{{ message }}</span>
-  {%- if batch_id and state_query %}
-  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo?" ~ state_query, "hx-target": "#toast-region"}) }}
-  {%- elif batch_id %}
-  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo" ~ ("?account=" ~ account if account else "") ~ ("?source=" ~ source if source else ""), "hx-target": "#toast-region"}) }}
-  {%- endif %}
-</div>
+{{ base_toast(message, (undo_url(batch_id) ~ "?" ~ state_query) if batch_id and state_query else undo_url(batch_id, account=account, source=source)) }}
 {%- endmacro %}
-
-{# The toast region, swapped out of band so that a new change replaces the old toast. #}
 {% macro toast_region(message, batch_id=none, account=none, state_query="", source=none) -%}
-<div id="toast-region" hx-swap-oob="true" aria-live="polite">{{ toast(message, batch_id, account, state_query, source) }}</div>
+{{ base_toast_region(message, (undo_url(batch_id) ~ "?" ~ state_query) if batch_id and state_query else undo_url(batch_id, account=account, source=source)) }}
 {%- endmacro %}
 
 {# The rows of one page. #}

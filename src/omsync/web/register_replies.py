@@ -13,6 +13,7 @@ from uuid import uuid4
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 
+from omsync.web.fragments import render_block
 from omsync.web.register_state import RegisterState
 
 FRAGMENTS = "transactions/fragments.html"
@@ -30,9 +31,7 @@ class RegisterError(Exception):
 def fragment(
     request: Request, block: str, *, status_code: int = 200, **context: Any
 ) -> HTMLResponse:
-    return request.app.state.templates.TemplateResponse(
-        request, FRAGMENTS, context, status_code=status_code, block_name=block
-    )
+    return render_block(request, FRAGMENTS, block, status=status_code, **context)
 
 
 def reply(

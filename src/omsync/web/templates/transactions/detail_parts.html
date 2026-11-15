@@ -2,6 +2,7 @@
    split. The region swaps itself on each write, and out of band after an undo. Macros import what
    they use, because a fragment block renders without this file's top level. #}
 {% from "components/button.html" import button %}
+{% from "components/toast.html" import toast as base_toast, toast_region as base_toast_region with context %}
 {% from "components/pill.html" import pill with context %}
 
 {% macro detail_region(detail, error="", oob=false) -%}
@@ -111,14 +112,8 @@
 {%- endmacro %}
 
 {% macro toast(message, batch_id=none, txn_id=none) -%}
-<div class="toast" role="status" data-controller="toast">
-  <span class="toast-message">{{ message }}</span>
-  {%- if batch_id %}
-  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo?source=transaction&txn=" ~ txn_id, "hx-target": "#toast-region"}) }}
-  {%- endif %}
-</div>
+{{ base_toast(message, undo_url(batch_id, source="transaction", txn=txn_id)) }}
 {%- endmacro %}
-
 {% macro toast_region(message, batch_id=none, txn_id=none) -%}
-<div id="toast-region" hx-swap-oob="true" aria-live="polite">{{ toast(message, batch_id, txn_id) }}</div>
+{{ base_toast_region(message, undo_url(batch_id, source="transaction", txn=txn_id)) }}
 {%- endmacro %}

@@ -1,27 +1,25 @@
 {# Adapted from Sure (we-promise/sure), AGPL-3.0: app/components/DS/table.rb, table.html.erb and
-   table/column.rb. A card-framed table with a scrolling wrapper, a header row and subdued row
-   rules. Numeric columns are right-aligned with tabular figures, so amounts line up.
+   table/column.rb. A card-framed data table (styles/tables.css) in a scrolling wrapper. Numeric
+   columns are right-aligned with tabular figures, so amounts line up.
 
    columns: list of {header, numeric}. rows: list of lists of cell values (text or HTML).
    label: the accessible name of the scrolling region. #}
 
 {% macro table(columns, rows, label) -%}
 <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="{{ label }}">
-  <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+  <table class="data-table">
     <thead>
       <tr>
         {%- for column in columns %}
-        <th scope="col" class="px-4 py-3 border-b border-divider text-xs uppercase font-medium text-secondary{% if column.numeric %} text-right tabular-nums{% else %} text-left{% endif %}">{{ column.header }}</th>
+        <th scope="col"{% if column.numeric %} class="num"{% endif %}>{{ column.header }}</th>
         {%- endfor %}
       </tr>
     </thead>
     <tbody>
       {%- for row in rows %}
-      {%- set row_index = loop.index0 %}
       <tr>
         {%- for cell in row %}
-        {%- set numeric = columns[loop.index0].numeric %}
-        <td class="px-4 py-3{% if row_index > 0 %} border-t border-subdued{% endif %}{% if numeric %} text-right tabular-nums{% endif %}">{{ cell }}</td>
+        <td class="px-4 py-3{% if columns[loop.index0].numeric %} num{% endif %}">{{ cell }}</td>
         {%- endfor %}
       </tr>
       {%- endfor %}

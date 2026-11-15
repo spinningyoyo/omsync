@@ -17,6 +17,7 @@ from omsync.ledger.rental import (
     set_rental_categories,
 )
 from omsync.web.deps import get_db
+from omsync.web.fragments import render_block
 from omsync.web.routes.shell import shell_context
 from omsync.web.settings_views import SETTINGS_NAV, last4_text
 
@@ -175,9 +176,7 @@ def _reply(
     saved: bool = False,
 ) -> HTMLResponse:
     view = _view(db, message=error, error=bool(error), saved=saved)
-    return request.app.state.templates.TemplateResponse(
-        request, FRAGMENTS, {"view": view}, status_code=status, block_name="frag_rental"
-    )
+    return render_block(request, FRAGMENTS, "frag_rental", status=status, view=view)
 
 
 def _view(

@@ -16,6 +16,7 @@ from omsync.ingest.providers import ProviderSetupError, edit_provider, remove_pr
 from omsync.ledger.accounts_view import update_account
 from omsync.web.accounts_panel import account_groups
 from omsync.web.deps import get_db
+from omsync.web.fragments import render_block
 from omsync.web.routes.settings_wizard import check_files
 from omsync.web.routes.shell import shell_context
 from omsync.web.settings_views import (
@@ -454,6 +455,4 @@ def _fragment(
     status: int = 200,
     **context: object,
 ) -> HTMLResponse:
-    return request.app.state.templates.TemplateResponse(
-        request, FRAGMENTS, context, status_code=status, block_name=block
-    )
+    return render_block(request, FRAGMENTS, block, status=status, **context)

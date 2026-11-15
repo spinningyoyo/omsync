@@ -51,6 +51,7 @@ from omsync.web.accounts_panel import (
 )
 from omsync.web.automatic import run_automatic, with_automatic
 from omsync.web.deps import get_db
+from omsync.web.fragments import render_block
 from omsync.web.routes.shell import shell_context
 
 router = APIRouter()
@@ -349,6 +350,4 @@ def _missing(request: Request, db: Session) -> HTMLResponse:
 def _fragment(
     request: Request, block: str, *, status_code: int = 200, **context: object
 ) -> HTMLResponse:
-    return request.app.state.templates.TemplateResponse(
-        request, FRAGMENTS, context, status_code=status_code, block_name=block
-    )
+    return render_block(request, FRAGMENTS, block, status=status_code, **context)

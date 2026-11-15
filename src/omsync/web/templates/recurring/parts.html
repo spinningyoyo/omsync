@@ -68,13 +68,6 @@
 {% endcall %}
 {%- endmacro %}
 
-{% macro stat(label, cents, count=none) -%}
-<div class="flex flex-col gap-0.5">
-  <dt class="text-xs text-secondary">{{ label }}</dt>
-  <dd class="text-lg font-medium tabular-nums text-primary">{{ cents|money }}{% if count is not none %} <span class="text-xs font-normal text-secondary">({{ count }})</span>{% endif %}</dd>
-</div>
-{%- endmacro %}
-
 {% macro state_chip(occ) -%}
 <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ CHIP_CLASSES[occ.chip_kind] }}">{{ occ.chip_label }}</span>
 {%- endmacro %}
@@ -270,39 +263,38 @@
    under its amount. A transfer is marked as one, and the footer leaves it out. #}
 {% macro bills_table(body) -%}
 <div class="table-scroll fill-region rounded-xl shadow-border-xs focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Bills">
-  <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+  <table class="data-table">
     <thead>
       <tr>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Next due</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Category</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary"><span class="sr-only">Transactions</span></th>
+        <th scope="col">Name</th>
+        <th scope="col">Cadence</th>
+        <th scope="col" class="num">Amount</th>
+        <th scope="col">Next due</th>
+        <th scope="col">Category</th>
+        <th scope="col">Account</th>
+        <th scope="col"><span class="sr-only">Transactions</span></th>
       </tr>
     </thead>
     <tbody>
       {%- for row in body.series %}
-      {%- set rule = "" if loop.first else " border-t border-subdued" %}
       <tr>
-        <td class="px-3 py-3{{ rule }}">
+        <td class="px-3 py-3">
           <button type="button" class="line-clamp-2 max-w-[18rem] min-w-[8rem] wrap-anywhere text-left font-medium text-primary hover:underline focus-ring rounded-sm" title="{{ row.name }}" hx-get="/recurring/series/{{ row.id }}/drawer" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.name }}</button>
           {%- if row.transfer %}
           <span class="block text-xs text-secondary" title="Moves money between your accounts, so it isn't counted as a bill.">Transfer</span>
           {%- endif %}
         </td>
-        <td class="px-3 py-3{{ rule }}">{{ row.cadence }}</td>
-        <td class="px-3 py-3 text-right tabular-nums whitespace-nowrap{{ rule }}">
+        <td class="px-3 py-3">{{ row.cadence }}</td>
+        <td class="px-3 py-3 text-right tabular-nums whitespace-nowrap">
           {{ row.amount_text|sensitive }}
           {%- if row.monthly_text %}
           <span class="block text-xs text-secondary">≈ {{ row.monthly_text|sensitive }}/mo</span>
           {%- endif %}
         </td>
-        <td class="px-3 py-3 whitespace-nowrap{{ rule }}">{{ row.next_due_text }}</td>
-        <td class="px-3 py-3{{ rule }}">{{ row.category }}</td>
-        <td class="px-3 py-3{{ rule }}">{{ row.account }}</td>
-        <td class="px-3 py-3{{ rule }}"><a href="{{ row.link }}" class="text-link underline-offset-2 hover:underline focus-ring rounded-sm">Transactions</a></td>
+        <td class="px-3 py-3 whitespace-nowrap">{{ row.next_due_text }}</td>
+        <td class="px-3 py-3">{{ row.category }}</td>
+        <td class="px-3 py-3">{{ row.account }}</td>
+        <td class="px-3 py-3"><a href="{{ row.link }}" class="text-link underline-offset-2 hover:underline focus-ring rounded-sm">Transactions</a></td>
       </tr>
       {%- endfor %}
     </tbody>
@@ -325,27 +317,26 @@
 {# The ended bills, with the day each stopped. Resume makes one active again. #}
 {% macro ended_table(rows) -%}
 <div class="table-scroll fill-region rounded-xl shadow-border-xs focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Bills">
-  <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+  <table class="data-table">
     <thead>
       <tr>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Ended</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary"><span class="sr-only">Actions</span></th>
+        <th scope="col">Name</th>
+        <th scope="col">Cadence</th>
+        <th scope="col" class="num">Amount</th>
+        <th scope="col">Ended</th>
+        <th scope="col">Account</th>
+        <th scope="col" class="num"><span class="sr-only">Actions</span></th>
       </tr>
     </thead>
     <tbody>
       {%- for row in rows %}
-      {%- set rule = "" if loop.first else " border-t border-subdued" %}
       <tr>
-        <td class="px-4 py-3{{ rule }}"><button type="button" class="line-clamp-2 max-w-[18rem] min-w-[8rem] wrap-anywhere text-left font-medium text-primary hover:underline focus-ring rounded-sm" title="{{ row.name }}" hx-get="/recurring/series/{{ row.id }}/drawer" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.name }}</button></td>
-        <td class="px-4 py-3{{ rule }}">{{ row.cadence }}</td>
-        <td class="px-4 py-3 text-right tabular-nums{{ rule }}">{{ row.amount_text|sensitive }}</td>
-        <td class="px-4 py-3 whitespace-nowrap{{ rule }}">{{ row.ended_text }}</td>
-        <td class="px-4 py-3{{ rule }}">{{ row.account }}</td>
-        <td class="px-4 py-3 text-right{{ rule }}">
+        <td class="px-4 py-3"><button type="button" class="line-clamp-2 max-w-[18rem] min-w-[8rem] wrap-anywhere text-left font-medium text-primary hover:underline focus-ring rounded-sm" title="{{ row.name }}" hx-get="/recurring/series/{{ row.id }}/drawer" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.name }}</button></td>
+        <td class="px-4 py-3">{{ row.cadence }}</td>
+        <td class="px-4 py-3 text-right tabular-nums">{{ row.amount_text|sensitive }}</td>
+        <td class="px-4 py-3 whitespace-nowrap">{{ row.ended_text }}</td>
+        <td class="px-4 py-3">{{ row.account }}</td>
+        <td class="px-4 py-3 text-right">
           <form hx-post="/recurring/series/{{ row.id }}/resume" hx-target="#toast-region" class="inline">
             <input type="hidden" name="idempotency_key" value="{{ row.key }}">
             {{ button("Resume", variant="outline", size="sm", type="submit") }}
@@ -360,25 +351,24 @@
 
 {% macro dismissed_table(rows) -%}
 <div class="table-scroll fill-region rounded-xl shadow-border-xs focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Bills">
-  <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+  <table class="data-table">
     <thead>
       <tr>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
-        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary"><span class="sr-only">Actions</span></th>
+        <th scope="col">Name</th>
+        <th scope="col">Cadence</th>
+        <th scope="col" class="num">Amount</th>
+        <th scope="col">Account</th>
+        <th scope="col" class="num"><span class="sr-only">Actions</span></th>
       </tr>
     </thead>
     <tbody>
       {%- for row in rows %}
-      {%- set rule = "" if loop.first else " border-t border-subdued" %}
       <tr>
-        <td class="px-4 py-3{{ rule }}">{{ row.name }}</td>
-        <td class="px-4 py-3{{ rule }}">{{ row.cadence }}</td>
-        <td class="px-4 py-3 text-right tabular-nums{{ rule }}">{{ row.amount_text|sensitive }}</td>
-        <td class="px-4 py-3{{ rule }}">{{ row.account }}</td>
-        <td class="px-4 py-3 text-right{{ rule }}">
+        <td class="px-4 py-3">{{ row.name }}</td>
+        <td class="px-4 py-3">{{ row.cadence }}</td>
+        <td class="px-4 py-3 text-right tabular-nums">{{ row.amount_text|sensitive }}</td>
+        <td class="px-4 py-3">{{ row.account }}</td>
+        <td class="px-4 py-3 text-right">
           <form hx-post="/recurring/series/{{ row.id }}/restore" hx-target="#toast-region" class="inline">
             <input type="hidden" name="idempotency_key" value="{{ row.key }}">
             {{ button("Restore", variant="outline", size="sm", type="submit") }}

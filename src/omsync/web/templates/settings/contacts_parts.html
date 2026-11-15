@@ -5,6 +5,7 @@
    context: the region reads the view data (view, has_owner, rows, detail, ...) from the render
    context. #}
 {% from "components/button.html" import button, link_button %}
+{% from "components/toast.html" import toast as base_toast, toast_region as base_toast_region with context %}
 {% from "components/pill.html" import pill with context %}
 
 {% macro contacts_region(error="", oob=false) -%}
@@ -240,29 +241,29 @@
   <p class="text-sm text-secondary">Leave blank to use the name as written.</p>
   {%- if rows %}
   <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Contacts">
-    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+    <table class="data-table">
       <thead>
         <tr>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Name</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Kind</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Balance</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Open items</th>
+          <th scope="col">Name</th>
+          <th scope="col">Kind</th>
+          <th scope="col">Balance</th>
+          <th scope="col" class="num">Open items</th>
         </tr>
       </thead>
       <tbody>
         {%- for row in rows %}
         <tr>
-          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+          <td class="px-3 py-3 align-top">
             <a href="/settings/contacts/{{ row.id }}" class="line-clamp-2 max-w-[24rem] wrap-anywhere text-primary underline-offset-2 hover:underline focus-ring" title="{{ row.name }}">{{ row.name }}</a>
             {%- if row.role %} {{ pill(row.role, tone="indigo", style="soft") }}{% endif %}
           </td>
-          <td class="px-3 py-3 align-top text-secondary{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.kind }}</td>
-          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+          <td class="px-3 py-3 align-top text-secondary">{{ row.kind }}</td>
+          <td class="px-3 py-3 align-top">
             {%- if row.balance_cents is none %}<span class="text-secondary">No balance</span>
             {%- elif row.balance_cents == 0 %}<span class="text-secondary">Settled</span>
             {%- else %}<span class="text-secondary">{{ row.direction }}</span> <span class="tabular-nums">{{ row.balance_cents|abs|money }}</span>{% endif %}
           </td>
-          <td class="px-3 py-3 align-top text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.open_items if row.balance_cents else "" }}</td>
+          <td class="px-3 py-3 align-top text-right tabular-nums">{{ row.open_items if row.balance_cents else "" }}</td>
         </tr>
         {%- endfor %}
       </tbody>
@@ -378,22 +379,22 @@
   <div>
     <h4 class="mb-2 text-sm font-medium text-primary">Open items</h4>
     <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Open items">
-      <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+      <table class="data-table">
         <thead>
           <tr>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Payee</th>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Open</th>
+            <th scope="col">Date</th>
+            <th scope="col">Payee</th>
+            <th scope="col" class="num">Amount</th>
+            <th scope="col" class="num">Open</th>
           </tr>
         </thead>
         <tbody>
           {%- for item in b.open_items %}
           <tr>
-            <td class="px-3 py-2 whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ item.on }}</td>
-            <td class="px-3 py-2{% if not loop.first %} border-t border-subdued{% endif %}"><a href="/transactions/{{ item.txn_id }}/detail" class="underline-offset-2 hover:underline focus-ring">{{ item.payee }}</a></td>
-            <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ item.amount_cents|money }}</td>
-            <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ item.open_cents|money }}</td>
+            <td class="px-3 py-2 whitespace-nowrap">{{ item.on }}</td>
+            <td class="px-3 py-2"><a href="/transactions/{{ item.txn_id }}/detail" class="underline-offset-2 hover:underline focus-ring">{{ item.payee }}</a></td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ item.amount_cents|money }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ item.open_cents|money }}</td>
           </tr>
           {%- endfor %}
         </tbody>
@@ -407,22 +408,22 @@
     <summary class="cursor-pointer text-sm font-medium text-primary">All transactions ({{ b.lines|length }})</summary>
     <p class="mt-2 text-sm text-secondary">Loans and transfers, oldest first. Payments clear the oldest first.</p>
     <div class="table-scroll mt-2 shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Transactions">
-      <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+      <table class="data-table">
         <thead>
           <tr>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Payee</th>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
-            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Cleared</th>
+            <th scope="col">Date</th>
+            <th scope="col">Payee</th>
+            <th scope="col" class="num">Amount</th>
+            <th scope="col" class="num">Cleared</th>
           </tr>
         </thead>
         <tbody>
           {%- for line in b.lines %}
           <tr>
-            <td class="px-3 py-2 whitespace-nowrap{% if not loop.first %} border-t border-subdued{% endif %}">{{ line.on }}</td>
-            <td class="px-3 py-2{% if not loop.first %} border-t border-subdued{% endif %}"><a href="/transactions/{{ line.txn_id }}/detail" class="underline-offset-2 hover:underline focus-ring">{{ line.payee }}</a>{% if line.is_split %} <span class="text-xs text-secondary">(part)</span>{% endif %}</td>
-            <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ line.amount_cents|money }}</td>
-            <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ line.cleared_cents|money }}</td>
+            <td class="px-3 py-2 whitespace-nowrap">{{ line.on }}</td>
+            <td class="px-3 py-2"><a href="/transactions/{{ line.txn_id }}/detail" class="underline-offset-2 hover:underline focus-ring">{{ line.payee }}</a>{% if line.is_split %} <span class="text-xs text-secondary">(part)</span>{% endif %}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ line.amount_cents|money }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ line.cleared_cents|money }}</td>
           </tr>
           {%- endfor %}
         </tbody>
@@ -437,14 +438,8 @@
 
 {# The undo toast. Its Undo posts to the shared undo route; contact says which view to show. #}
 {% macro toast(message, batch_id=none, contact_id=none) -%}
-<div class="toast" role="status" data-controller="toast">
-  <span class="toast-message">{{ message }}</span>
-  {%- if batch_id %}
-  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo?source=contacts" ~ ("&contact=" ~ contact_id if contact_id else ""), "hx-target": "#toast-region"}) }}
-  {%- endif %}
-</div>
+{{ base_toast(message, undo_url(batch_id, source="contacts", contact=contact_id)) }}
 {%- endmacro %}
-
 {% macro toast_region(message, batch_id=none, contact_id=none) -%}
-<div id="toast-region" hx-swap-oob="true" aria-live="polite">{{ toast(message, batch_id, contact_id) }}</div>
+{{ base_toast_region(message, undo_url(batch_id, source="contacts", contact=contact_id)) }}
 {%- endmacro %}

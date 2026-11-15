@@ -46,19 +46,6 @@ QUEUE_TONES: dict[str, str] = {
     Queue.review.value: "amber",
     Queue.manual.value: "gray",
 }
-COUNT_LABELS: dict[str, str] = {
-    "matched": "Matched",
-    "already_applied": "Already applied",
-    "changed_since_applied": "Changed since applied",
-    "ambiguous": "Ambiguous",
-    "unmatched": "Unmatched",
-    "insufficient": "Not enough data",
-    "paid_elsewhere": "Paid elsewhere",
-    "unknown_payer": "Unknown payer",
-    "outside_period": "Matched outside this period",
-    "will_apply": "Will apply",
-    "apply_skipped": "Skipped",
-}
 # Each proposal group: the kind it shows, the rule keys it takes, and its heading.
 _SECTION_TITLES: dict[str, str] = {
     "joint": "Joint settlement",
@@ -117,11 +104,6 @@ class ProposalGroup:
     rows: tuple[ProposalRow, ...]
     approve_key: str
     reject_key: str
-    auto_key: str
-
-    @property
-    def auto_signatures(self) -> tuple[str, ...]:
-        return tuple(row.signature for row in self.rows if row.queue == Queue.auto_approve.value)
 
 
 @dataclass(frozen=True)
@@ -130,7 +112,6 @@ class VendorView:
     title: str
     files: int
     receipts: int
-    counts: tuple[tuple[str, int], ...]
     review: tuple["ReviewRow", ...]
     to_apply: int
 
@@ -215,9 +196,6 @@ class Results:
     start: date
     end: date
     groups: tuple[ProposalGroup, ...]
-    proposal_count: int
-    queue_counts: tuple[tuple[str, int], ...]
-    needs_you: int
     vendors: tuple[VendorView, ...]
     not_matched: tuple[NotMatchedRow, ...]
     explained: tuple[ExplainedRow, ...]
@@ -366,18 +344,10 @@ def build_groups(session: Session, drafts: Iterable[Draft]) -> tuple[ProposalGro
             rows=tuple(buckets[key]),
             approve_key=uuid4().hex,
             reject_key=uuid4().hex,
-            auto_key=uuid4().hex,
         )
         for key in order
         if key in buckets
     )
-
-
-def queue_counts(drafts: Iterable[Draft]) -> tuple[tuple[str, int], ...]:
-    counts = {queue.value: 0 for queue in Queue}
-    for draft in drafts:
-        counts[draft.queue.value] += 1
-    return tuple((QUEUE_LABELS[key], counts[key]) for key in QUEUE_LABELS)
 
 
 def _group_of(draft: Draft) -> tuple[str, str]:
@@ -482,40 +452,19 @@ def account_label(last4: str | None, alias_last4: str | None = None) -> str:
     return account_digits(last4, alias_last4) or "—"
 
 
-def plain_amount(cents: int) -> str:
-    """Dollars and cents without a symbol, for an amount field: 2500 becomes 25.00."""
-    sign = "-" if cents < 0 else ""
-    dollars, remainder = divmod(abs(cents), 100)
-    return f"{sign}{dollars}.{remainder:02d}"
-
-
 # Receipts
-
-
-REVIEW_LABELS = {
-    "ambiguous": "Several fit",
-    "unmatched": "No transaction",
-    "unknown_payer": "Unknown card",
-    "insufficient": "Not enough data",
-    "changed_since_applied": "Changed",
-    "needs_triage": "Waits for a category",
-    "parse_error": "Cannot read",
-}
 
 
 @dataclass(frozen=True)
 class ReviewRow:
-    """One receipt that needs you, as the vendor's tab lists it. A file that cannot be read has
-    only its kind and text."""
+    """One receipt of the vendor's tab, with what to do about it, or why nothing is needed. A file
+    that cannot be read has only its advice."""
 
-    kind: str
-    text: str
     on: str = ""
     amount: str = ""
     receipt: str = ""
     url: str | None = None
     external: bool = False
-    reason: str = ""
     action: str = "none"
     advice: str = ""
     candidates_href: str = ""
@@ -532,12 +481,9 @@ def vendor_view(
 ) -> VendorView:
     """The vendor's tab. Its review lists the receipts dated in the period, and every file that
     cannot be read."""
-    counts = tuple((COUNT_LABELS.get(key, key), report.counts.get(key, 0)) for key in COUNT_LABELS)
     vendor = get_vendor(report.vendor_key)
     review = tuple(
         ReviewRow(
-            kind=REVIEW_LABELS.get(line.kind, line.kind.replace("_", " ")),
-            text=line.text,
             on="" if line.on is None else line.on.isoformat(),
             amount="" if line.amount_cents is None else money.format_cents(line.amount_cents),
             receipt=line.receipt_id or "",
@@ -546,7 +492,6 @@ def vendor_view(
             else receipt_href(report.vendor_key, line.receipt_id),
             external=line.receipt_id is not None
             and vendor.receipt_url(line.receipt_id) is not None,
-            reason=line.reason or "",
             action=line.action.value,
             advice=line.advice or line.text,
             candidates_href=pair_href(*line.candidate_ids) if line.candidate_ids else "",
@@ -562,7 +507,6 @@ def vendor_view(
         title=title,
         files=report.files_read,
         receipts=report.receipts_read,
-        counts=counts,
         review=review,
         to_apply=report.to_apply,
         apply_key=uuid4().hex,
@@ -795,9 +739,6 @@ def results_for(
         start=start,
         end=end,
         groups=build_groups(session, drafts),
-        proposal_count=len(drafts),
-        queue_counts=queue_counts(drafts),
-        needs_you=result.needs_you,
         vendors=vendors,
         not_matched=tuple(not_matched_rows(session, result.not_matched)),
         explained=tuple(explained_rows(session, result.explained)),

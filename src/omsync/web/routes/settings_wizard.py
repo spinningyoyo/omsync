@@ -24,6 +24,7 @@ from omsync.ingest.providers import (
 )
 from omsync.ledger.accounts import NewAccount, last4_of
 from omsync.web.deps import get_db
+from omsync.web.fragments import render_block
 from omsync.web.routes.shell import shell_context
 from omsync.web.settings_views import (
     SETTINGS_NAV,
@@ -615,6 +616,4 @@ def _step(request: Request, block: str, status_code: int = 200, **context: objec
 def _fragment(
     request: Request, block: str, *, status_code: int = 200, **context: object
 ) -> HTMLResponse:
-    return request.app.state.templates.TemplateResponse(
-        request, FRAGMENTS, context, status_code=status_code, block_name=block
-    )
+    return render_block(request, FRAGMENTS, block, status=status_code, **context)
