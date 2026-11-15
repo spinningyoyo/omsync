@@ -17,8 +17,9 @@
    trigger at the right of the content), bottom-start (opens below it and extends to the right, for
    a trigger at the left of the content, where a leftward panel would open under the accounts
    panel), or right-end (opens to the right of it, for a trigger at the foot of a rail where a
-   downward panel would be off screen). #}
-{% macro menu(id, label, placement="bottom-end", trigger=none) -%}
+   downward panel would be off screen). trigger_icon replaces the ellipsis of the icon trigger, and
+   trigger_class its classes, which then draw the icon at 16 pixels. #}
+{% macro menu(id, label, placement="bottom-end", trigger=none, trigger_icon="ellipsis-vertical", trigger_class=none) -%}
 {%- set panel_place = {"bottom-end": "right-0 top-full mt-3", "bottom-start": "left-0 top-full mt-3", "right-end": "left-full bottom-0 ml-3"}[placement] -%}
 <div class="relative inline-block" data-controller="menu" data-action="keydown->menu#keydown click@window->menu#clickOutside">
   {%- if trigger %}
@@ -27,8 +28,8 @@
     {{ icon("chevron-down", 16, "text-secondary") }}
   </button>
   {%- else %}
-  <button type="button" class="inline-flex items-center justify-center w-9 h-9 pointer-coarse:w-11 pointer-coarse:h-11 rounded-lg hover:bg-container-inset-hover focus-ring cursor-pointer" aria-label="{{ label }}" aria-haspopup="menu" aria-expanded="false" aria-controls="{{ id }}" data-menu-target="button" data-action="menu#toggle">
-    {{ icon("ellipsis-vertical", 20, "text-secondary") }}
+  <button type="button" class="{{ trigger_class or 'inline-flex items-center justify-center w-9 h-9 pointer-coarse:w-11 pointer-coarse:h-11 rounded-lg hover:bg-container-inset-hover focus-ring cursor-pointer' }}" aria-label="{{ label }}" aria-haspopup="menu" aria-expanded="false" aria-controls="{{ id }}" data-menu-target="button" data-action="menu#toggle">
+    {{ icon(trigger_icon, 16 if trigger_class else 20, "text-secondary") }}
   </button>
   {%- endif %}
   <div id="{{ id }}" role="menu" aria-label="{{ label }}" data-menu-target="content" data-action="click->menu#close" class="hidden absolute {{ panel_place }} z-50 px-2">

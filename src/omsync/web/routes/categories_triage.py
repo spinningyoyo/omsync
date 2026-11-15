@@ -24,7 +24,6 @@ from omsync.core.settings import Settings
 from omsync.ledger import categories_admin as admin
 from omsync.ledger.bulk import count_matching
 from omsync.ledger.categorize import PAYEE_LIST, list_name
-from omsync.ledger.filters import Condition, FilterSpec
 from omsync.ledger.keyword_import import (
     KeywordFileError,
     apply_keyword_import,
@@ -48,6 +47,7 @@ from omsync.web.categories_replies import (
 from omsync.web.deps import get_db
 from omsync.web.register_state import query_string
 from omsync.web.routes.categories_keywords import keyword_form, safe_list
+from omsync.web.row_links import transaction_href
 
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
@@ -270,20 +270,13 @@ def _item_view(item: receipt_triage.WaitingItem) -> dict[str, Any]:
     return {
         "text": item.text,
         "sources": [
-            {"source": source, "href": _transaction_href(source)} for source in item.sources
+            {
+                "source": source,
+                "href": transaction_href(source.account_id, source.posted_on, source.amount_cents),
+            }
+            for source in item.sources
         ],
     }
-
-
-def _transaction_href(source: receipt_triage.ItemSource) -> str:
-    """Transactions, showing the matched transaction: its account, date, and amount."""
-    spec = FilterSpec(
-        (
-            Condition("date", "is", source.posted_on),
-            Condition("amount", "is", source.amount_cents),
-        )
-    )
-    return "/transactions?" + query_string(source.account_id, spec, None)
 
 
 def _with_receipts(

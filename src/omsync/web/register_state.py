@@ -8,6 +8,7 @@ fresh values. The rows per page are a saved preference, not part of the URL.
 
 import base64
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -18,6 +19,7 @@ from omsync.core.money import format_cents
 from omsync.ledger.bulk import count_matching
 from omsync.ledger.categories import Category
 from omsync.ledger.filters import (
+    PICKED_FIELDS,
     Condition,
     FilterError,
     FilterSpec,
@@ -120,9 +122,14 @@ class RegisterState:
         return "/transactions" + (f"?account={self.account_id}" if self.account_id else "")
 
     @property
-    def chips(self) -> list[tuple[int, str]]:
+    def chips(self) -> list[tuple[int, str, bool]]:
+        """Each condition's index, words, and whether the filter form can change it."""
         return [
-            (index, chip_text(condition, self.account_names, self.category_names))
+            (
+                index,
+                chip_text(condition, self.account_names, self.category_names),
+                condition.field not in PICKED_FIELDS,
+            )
             for index, condition in enumerate(self.spec.conditions)
         ]
 
@@ -263,8 +270,15 @@ def chip_text(
         if op == "between":
             return f"Amount between {format_cents(value[0])} and {format_cents(value[1])}"
         return f"Amount {_op_words(op)} {format_cents(value)}"
+    return _plain_chip_text(field, op, value)
+
+
+def _plain_chip_text(field: str, op: str, value: Any) -> str:
+    """Words for the fields that need no names looked up."""
     if field == "memo":
         return "Memo is empty" if op == "is_empty" else f"Memo contains “{value}”"
+    if field == "transaction":
+        return "1 linked transaction" if len(value) == 1 else f"{len(value)} linked transactions"
     return f"Origin is {value}"
 
 

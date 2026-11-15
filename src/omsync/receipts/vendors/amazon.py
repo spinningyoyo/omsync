@@ -60,6 +60,7 @@ ORDER_FILE = "Order History.csv"
 ORDERS_FOLDER = "Your Amazon Orders"
 REFUND_FILE = "Refund Details.csv"
 ORDER_PAGE = "https://www.amazon.com/gp/your-account/order-details"
+REFUND_ID_PART = "-refund-"
 
 # Observed single-shipment charges: from 3 days before the order to 30 days after.
 OBSERVED_BEFORE_DAYS = 3
@@ -131,9 +132,13 @@ class AmazonVendor(BaseVendor):
     def is_vendor_payee(self, payee: str) -> bool:
         return is_amazon_payee(payee)
 
-    def receipt_url(self, receipt: Receipt) -> str | None:
-        order_id = receipt.refund_of or receipt.receipt_id
-        return f"{ORDER_PAGE}?{urlencode({'orderID': order_id})}"
+    def receipt_url(self, receipt_id: str) -> str | None:
+        return f"{ORDER_PAGE}?{urlencode({'orderID': _order_id(receipt_id)})}"
+
+    def receipt_label(self, receipt_id: str) -> str:
+        order_id = _order_id(receipt_id)
+        kind = "refund of order" if order_id != receipt_id else "order"
+        return f"Amazon {kind} {order_id}"
 
     def charges(self, receipt: Receipt) -> ChargeResult:
         if receipt.is_refund:
@@ -378,6 +383,11 @@ def _as_amazon(
     return AmazonReceipt(**values, shipments=shipments, quantities=quantities)
 
 
+def _order_id(receipt_id: str) -> str:
+    """The order a receipt ID names: a refund's ID starts with its order's."""
+    return receipt_id.split(REFUND_ID_PART, 1)[0]
+
+
 def _shipments(receipt: Receipt) -> int:
     return receipt.shipments if isinstance(receipt, AmazonReceipt) else 1
 
@@ -477,7 +487,7 @@ def _refund_receipt(
     card = _card(order) if order is not None else None
     base = make_receipt(
         vendor_key=VENDOR_KEY,
-        receipt_id=f"{order_id}-refund-{refund_date.isoformat()}-{refund_cents}",
+        receipt_id=f"{order_id}{REFUND_ID_PART}{refund_date.isoformat()}-{refund_cents}",
         purchased_on=refund_date,
         vendor_login=login,
         items=items,

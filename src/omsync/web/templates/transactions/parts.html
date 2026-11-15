@@ -61,6 +61,25 @@
 </td>
 {%- endmacro %}
 
+{# The links of a transaction: what each ties it to, opening the other transaction, or the vendor's
+   page for a receipt. A row with no link keeps the space, so the icons of every row line up. #}
+{% macro link_menu(row) -%}
+{%- set items = link_items(row.id, row.links) %}
+{%- if items %}
+{%- call menu("txn-links-" ~ row.id, "Links of " ~ row.payee, trigger_icon="link-2", trigger_class="link-btn") %}
+{%- for item in items %}
+{%- if item.external %}
+{{ menu_item(item.text, icon_name=item.icon, href=item.href, attrs={"target": "_blank", "rel": "noopener noreferrer"}) }}
+{%- else %}
+{{ menu_item(item.text, icon_name=item.icon, href=item.href) }}
+{%- endif %}
+{%- endfor %}
+{%- endcall %}
+{%- else %}
+<span class="link-btn" aria-hidden="true"></span>
+{%- endif %}
+{%- endmacro %}
+
 {# The number of columns in the register, which a split editor spans. #}
 {% macro column_count(show_account) -%}{{ 8 if show_account else 7 }}{%- endmacro %}
 
@@ -108,6 +127,7 @@
     {{ menu_item("Counterparty", icon_name="users", href="/transactions/" ~ row.id ~ "/detail") }}
     {{ menu_item("Mark as recurring", icon_name="repeat", href="/recurring?view=all&add_from=" ~ row.id) }}
     {%- endcall %}
+    {{ link_menu(row) }}
     <button type="button" class="split-btn" data-action="click->register#openSplitFromButton" data-txn-id="{{ row.id }}" aria-label="Split {{ row.payee }}" title="Split"><span class="split-glyph" aria-hidden="true"></span></button></td>
 </tr>
 {%- for line in row.splits %}

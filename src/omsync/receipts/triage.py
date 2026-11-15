@@ -83,7 +83,9 @@ def waiting_items(
         if not (skip.item_positions or skip.offset_names):
             continue
         outcome = outcomes[skip.receipt_key]
-        source = _source(session, vendor.receipt_url(outcome.receipt), outcome, category_for)
+        source = _source(
+            session, vendor.receipt_url(outcome.receipt.receipt_id), outcome, category_for
+        )
         if source is None:
             continue
         names = [
@@ -100,6 +102,26 @@ def waiting_items(
                 group.append(source)
     ranked = sorted(grouped, key=lambda key: (-len(grouped[key]), display[key].casefold()))
     return [WaitingItem(display[key], tuple(grouped[key])) for key in ranked]
+
+
+def receipt_sources(
+    session: Session, settings: Settings, vendor_key: str, receipt_id: str, *, today: date
+) -> list[ItemSource]:
+    """One receipt as Triage shows it, once for each transaction its charges matched or were
+    applied to. Empty when the receipt is not in the vendor's files or matched nothing."""
+    report = run_vendor(session, settings, vendor_key, today=today)
+    if report.match is None:
+        return []
+    vendor = get_vendor(vendor_key)
+    category_for = _category_names(session, vendor_key)
+    sources: list[ItemSource] = []
+    for outcome in report.match.outcomes:
+        if outcome.receipt.receipt_id != receipt_id:
+            continue
+        source = _source(session, vendor.receipt_url(receipt_id), outcome, category_for)
+        if source is not None and source not in sources:
+            sources.append(source)
+    return sources
 
 
 def _category_names(session: Session, vendor_key: str) -> CategoryName:

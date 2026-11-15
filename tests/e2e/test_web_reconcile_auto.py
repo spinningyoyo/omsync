@@ -180,3 +180,23 @@ def test_review_and_manual_proposals_are_never_applied_automatically(
     assert undo
     assert client.post(f"/batches/{undo.group(1)}/undo").status_code == 200
     assert rejections(client) == []
+
+
+def test_a_linked_row_opens_both_transactions_of_its_link(
+    data_dir: Path, make_client: MakeClient
+) -> None:
+    zelle_pair(data_dir, "pair", 3, 10_000, "abc7654321")
+    statement(data_dir, "other.ofx", CHECKING, "checking", [(5, -700, "ACME CAFE", "")])
+    import_all(data_dir)
+    client = make_client()
+    sign_in(client)
+
+    register = client.get("/transactions").text
+    pair = re.search(r'href="(/transactions\?f=[^"]+)"', register)
+
+    assert pair is not None, register
+    shown = client.get(pair.group(1).replace("&amp;", "&")).text
+    assert "2 linked transactions" in shown
+    assert "Zelle payment to Self" in shown
+    assert "Zelle payment from Self" in shown
+    assert "ACME CAFE" not in shown

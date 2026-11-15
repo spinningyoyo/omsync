@@ -12,6 +12,7 @@ from omsync.core.batch_models import Batch
 from omsync.core.batches import BatchError, StalePreview
 from omsync.ledger.filters import (
     FIELD_OPS,
+    PICKED_FIELDS,
     FilterError,
     FilterSpec,
     SavedFilterInfo,
@@ -53,8 +54,11 @@ def filter_form(
     spec = _spec(f)
     state = _state(db, account, spec, saved)
     if index is not None:
-        values = values_for(spec.conditions[_position(index, spec)], index)
-    elif field in FIELD_OPS:
+        condition = spec.conditions[_position(index, spec)]
+        if condition.field in PICKED_FIELDS:
+            raise RegisterError("This filter comes from a link. Remove it instead.")
+        values = values_for(condition, index)
+    elif field in FIELD_OPS and field not in PICKED_FIELDS:
         values = blank_values(field)
     else:
         raise RegisterError("Choose a field to filter by.")

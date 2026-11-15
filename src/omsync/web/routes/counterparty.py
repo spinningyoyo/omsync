@@ -30,11 +30,11 @@ FRAGMENTS = "transactions/detail_fragments.html"
 @router.get("/transactions/{txn_id}/detail", response_class=HTMLResponse)
 def detail_page(request: Request, db: DbSession, txn_id: int) -> HTMLResponse:
     context = shell_context(request, db, active="transactions", title="Transaction")
-    context.update(detail=_detail_or_404(db, txn_id), back_href=_back_href(request))
+    context.update(detail=_detail_or_404(db, txn_id), back_href=back_href(request))
     return request.app.state.templates.TemplateResponse(request, PAGE, context)
 
 
-def _back_href(request: Request) -> str:
+def back_href(request: Request) -> str:
     """The page this one was opened from, with its filters, when that was a page of this app.
     Otherwise the register."""
     referer = urlsplit(request.headers.get("referer", ""))

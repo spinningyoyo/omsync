@@ -52,6 +52,7 @@ from omsync.web.routes import (
     home,
     plan,
     plan_goals,
+    receipts,
     reconcile,
     recurring,
     register_bulk,
@@ -67,6 +68,7 @@ from omsync.web.routes.settings import router as settings_router
 from omsync.web.routes.settings_providers import router as settings_providers_router
 from omsync.web.routes.settings_rental import router as settings_rental_router
 from omsync.web.routes.settings_wizard import router as settings_wizard_router
+from omsync.web.row_links import link_items
 from omsync.web.scenes import nursery_scenes
 from omsync.web.settings_tokens import MappingTokens
 from omsync.web.sync_runner import SyncRunner
@@ -129,6 +131,7 @@ def create_app(
     templates.env.filters["sensitive"] = sensitive
     templates.env.filters["money_text"] = format_cents
     templates.env.globals["icon_svg"] = icon_svg
+    templates.env.globals["link_items"] = link_items
     templates.env.globals["category_icon_name"] = category_icon_name
     templates.env.globals["institution_logo_url"] = institution_logo_url
     templates.env.globals["account_digits"] = account_digits
@@ -190,6 +193,7 @@ def create_app(
     app.include_router(categories_rules.router)
     app.include_router(categories_triage.router)
     app.include_router(reconcile.router)
+    app.include_router(receipts.router)
     app.include_router(recurring.router)
     app.include_router(plan.router)
     app.include_router(plan_goals.router)

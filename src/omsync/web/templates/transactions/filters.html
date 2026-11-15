@@ -26,9 +26,13 @@
     {% endcall %}
     {{ form_slot() }}
   </div>
-  {%- for index, label in state.chips %}
+  {%- for index, label, editable in state.chips %}
   <span class="relative inline-flex items-center rounded-full border border-secondary bg-container text-sm text-primary" data-filter-anchor>
+    {%- if editable %}
     <button type="button" class="rounded-l-full py-1 pl-3 pr-1 focus-ring" hx-get="/transactions/filter/form" hx-vals='{"index": {{ index }}}' hx-include="#register-state" hx-target="next .filter-slot" hx-swap="innerHTML">{{ label }}</button>
+    {%- else %}
+    <span class="py-1 pl-3 pr-1">{{ label }}</span>
+    {%- endif %}
     <button type="button" class="rounded-r-full py-1 pl-1 pr-2 text-secondary hover:text-primary focus-ring" aria-label="Remove filter: {{ label }}" hx-post="/transactions/filter/remove" hx-vals='{"index": {{ index }}}' hx-include="#register-state" hx-swap="none">{{ icon("x", 14) }}</button>
     {{ form_slot() }}
   </span>

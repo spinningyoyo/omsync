@@ -22,7 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
@@ -38,6 +38,7 @@ from omsync.core.money import format_cents, to_cents
 from omsync.ledger.categories import Category
 from omsync.ledger.filters import FilterSpec
 from omsync.ledger.filters import apply as apply_filter
+from omsync.ledger.links import Link, LinkKind
 from omsync.ledger.sources import Account, account_digits
 from omsync.ledger.statements import StatementFile, StatementRow
 from omsync.ledger.transactions import (
@@ -64,6 +65,38 @@ class SplitRow:
 
 
 @dataclass(frozen=True)
+class LinkedTransaction:
+    """The other transaction of a link, as the register names it."""
+
+    id: int
+    posted_on: date
+    account_id: int
+    account_name: str
+    account_digits: str
+    amount_cents: int
+
+
+@dataclass(frozen=True)
+class RowLink:
+    """What a link ties a transaction to: another transaction, or a receipt. label says what kind
+    of link it is, in the words of the rule that made it."""
+
+    kind: LinkKind
+    label: str
+    other: LinkedTransaction | None = None
+    receipt_key: str | None = None
+
+
+LINK_LABELS = {
+    LinkKind.transfer: "Transfer",
+    LinkKind.receipt: "Receipt",
+    LinkKind.refund: "Refund",
+    LinkKind.p2p: "Money sent and sent back",
+    LinkKind.joint_settlement: "Joint card bill",
+}
+
+
+@dataclass(frozen=True)
 class RegisterRow:
     """One transaction as the register shows it. Splits are in position order."""
 
@@ -79,6 +112,7 @@ class RegisterRow:
     amount_cents: int
     memo: str | None
     splits: list[SplitRow] = field(default_factory=list)
+    links: list[RowLink] = field(default_factory=list)
 
     @property
     def is_split(self) -> bool:
@@ -592,7 +626,9 @@ def _register_query() -> Select:
 def _rows(
     session: Session, found: Sequence[tuple[Transaction, Account, Category | None]]
 ) -> list[RegisterRow]:
-    splits = _splits_for(session, [txn.id for txn, _, _ in found])
+    ids = [txn.id for txn, _, _ in found]
+    splits = _splits_for(session, ids)
+    links = _links_for(session, ids)
     return [
         RegisterRow(
             id=txn.id,
@@ -607,9 +643,71 @@ def _rows(
             amount_cents=txn.amount_cents,
             memo=txn.memo,
             splits=splits.get(txn.id, []),
+            links=links.get(txn.id, []),
         )
         for txn, account, category in found
     ]
+
+
+def _links_for(session: Session, txn_ids: list[int]) -> dict[int, list[RowLink]]:
+    """Each transaction's links. A receipt with several charges on one transaction shows once."""
+    if not txn_ids:
+        return {}
+    found = session.scalars(
+        select(Link)
+        .where(or_(Link.from_transaction_id.in_(txn_ids), Link.to_transaction_id.in_(txn_ids)))
+        .order_by(Link.id)
+    ).all()
+    other_ids = {
+        txn_id
+        for link in found
+        for txn_id in (link.from_transaction_id, link.to_transaction_id)
+        if txn_id is not None
+    }
+    others = {
+        txn.id: LinkedTransaction(
+            id=txn.id,
+            posted_on=txn.posted_on,
+            account_id=account.id,
+            account_name=account.name,
+            account_digits=account_digits(account.last4, account.alias_last4),
+            amount_cents=txn.amount_cents,
+        )
+        for txn, account in session.execute(
+            select(Transaction, Account)
+            .join(Account, Account.id == Transaction.account_id)
+            .where(Transaction.id.in_(other_ids))
+        ).tuples()
+    }
+    wanted = set(txn_ids)
+    result: dict[int, list[RowLink]] = {}
+    for link in found:
+        kind = LinkKind(link.kind)
+        description = (link.evidence or {}).get("description")
+        label = description if isinstance(description, str) and description else LINK_LABELS[kind]
+        ends = (link.from_transaction_id, link.to_transaction_id)
+        for own, other in (ends, ends[::-1]):
+            if own is None or own not in wanted:
+                continue
+            row_link = RowLink(
+                kind,
+                LINK_LABELS[kind] if kind is LinkKind.receipt else label,
+                None if other is None else others.get(other),
+                _receipt_of(link.receipt_key),
+            )
+            rows = result.setdefault(own, [])
+            if row_link not in rows:
+                rows.append(row_link)
+    return result
+
+
+def _receipt_of(receipt_key: str | None) -> str | None:
+    """The receipt part of a charge key ("amazon:113-42:0" is "amazon:113-42"), so the charges of
+    one receipt show as one link."""
+    if receipt_key is None:
+        return None
+    head, _, last = receipt_key.rpartition(":")
+    return head if last.isdigit() and head else receipt_key
 
 
 def _splits_for(session: Session, txn_ids: list[int]) -> dict[int, list[SplitRow]]:

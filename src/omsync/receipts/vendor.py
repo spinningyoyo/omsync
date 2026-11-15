@@ -48,13 +48,17 @@ class ReceiptVendor(Protocol):
         """Work out charges from candidate transactions, when charges() asked for them."""
         ...
 
-    def receipt_url(self, receipt: Receipt) -> str | None:
+    def receipt_url(self, receipt_id: str) -> str | None:
         """The vendor's own page for the receipt, or None when it has none."""
+        ...
+
+    def receipt_label(self, receipt_id: str) -> str:
+        """The receipt's name for a person, such as "Costco receipt 2104…"."""
         ...
 
 
 class BaseVendor:
-    """Inherit from this to get the default infer_charges and receipt_url.
+    """Inherit from this to get the default infer_charges, receipt_url, and receipt_label.
 
     The default says the receipt cannot be split and has no web page. A vendor that can infer
     charges overrides infer_charges and still implements the rest of ReceiptVendor itself.
@@ -65,5 +69,8 @@ class BaseVendor:
     def infer_charges(self, receipt: Receipt, candidates: list[CandidateTxn]) -> ChargeResult:
         return ChargeResult("insufficient", reason=NOT_ENOUGH_DATA)
 
-    def receipt_url(self, receipt: Receipt) -> str | None:
+    def receipt_url(self, receipt_id: str) -> str | None:
         return None
+
+    def receipt_label(self, receipt_id: str) -> str:
+        return f"{self.key.capitalize()} receipt {receipt_id}"

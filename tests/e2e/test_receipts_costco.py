@@ -285,6 +285,12 @@ def test_triage_lists_only_items_that_hold_up_a_charge_and_its_keyword_applies_t
 
     assert "Applied 1 receipt charge." in added.text, added.text
     assert categories(ledger, -2000) == [("Household", -1000), ("Groceries", -1000)]
+    register = client.get("/transactions").text
+    assert "Costco receipt R14" in register
+    receipt = client.get("/receipts/costco/R14")
+    assert receipt.status_code == 200, receipt.text
+    assert "SOAP" in receipt.text and "PEARS" in receipt.text
+    assert 'href="/receipts/costco/R14"' in register
     undo = re.search(r"/batches/(\d+)/undo", added.text)
     assert undo is not None
     assert client.post(f"/batches/{undo.group(1)}/undo").status_code == 200

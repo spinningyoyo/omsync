@@ -5,7 +5,7 @@ omsync.ledger.filters."""
 from dataclasses import dataclass, field
 
 from omsync.core.money import to_cents
-from omsync.ledger.filters import FIELD_OPS, Condition, FilterError
+from omsync.ledger.filters import FIELD_OPS, PICKED_FIELDS, Condition, FilterError
 from omsync.web.formats import money_input
 
 FIELD_LABELS: dict[str, str] = {
@@ -16,6 +16,7 @@ FIELD_LABELS: dict[str, str] = {
     "amount": "Amount",
     "memo": "Memo",
     "origin": "Origin",
+    "transaction": "Transaction",
 }
 
 OP_LABELS: dict[str, dict[str, str]] = {
@@ -26,6 +27,7 @@ OP_LABELS: dict[str, dict[str, str]] = {
     "amount": {"is": "is", "gt": "is greater than", "lt": "is less than", "between": "is between"},
     "memo": {"contains": "contains", "is_empty": "is empty"},
     "origin": {"is": "is"},
+    "transaction": {"is": "is"},
 }
 
 
@@ -51,7 +53,7 @@ class FormValues:
 
 
 def field_choices() -> list[tuple[str, str]]:
-    return [(key, FIELD_LABELS[key]) for key in FIELD_OPS]
+    return [(key, FIELD_LABELS[key]) for key in FIELD_OPS if key not in PICKED_FIELDS]
 
 
 def op_choices(field_name: str) -> list[tuple[str, str]]:
@@ -91,7 +93,11 @@ def blank_values(field_name: str, index: str = "") -> FormValues:
 def condition_from(values: FormValues) -> Condition:
     """Turn the submitted form into a condition. Raises FilterError with a message for the form."""
     field_name, op = values.field, values.op
-    if field_name not in FIELD_OPS or op not in FIELD_OPS[field_name]:
+    if (
+        field_name in PICKED_FIELDS
+        or field_name not in FIELD_OPS
+        or op not in FIELD_OPS[field_name]
+    ):
         raise FilterError("Choose a field and an operation.")
     if field_name == "date":
         return _date_condition(values)

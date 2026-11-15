@@ -52,7 +52,10 @@ FIELD_OPS: dict[str, tuple[str, ...]] = {
     "amount": ("is", "gt", "lt", "between"),
     "memo": ("contains", "is_empty"),
     "origin": ("is",),
+    "transaction": ("is",),
 }
+PICKED_FIELDS = frozenset({"transaction"})
+"""Fields a link sets, such as the two transactions of a pair. The filter form never offers them."""
 VALUELESS_OPS = frozenset({"is_empty"})
 MATCHES = ("all", "any")
 SEARCH_MAX = 200
@@ -179,7 +182,7 @@ def _normal_value(field: str, op: str, value: Any) -> Any:
         raise FilterError(f"{field} {op} needs a value.")
     if field == "date":
         return _date_value(op, value)
-    if field == "account" or (field == "category" and op in ("is", "is_not")):
+    if field in ("account", "transaction") or (field == "category" and op in ("is", "is_not")):
         return _ids(value)
     if field == "payee" or (field == "memo" and op == "contains"):
         return _text(value)
@@ -290,6 +293,8 @@ def _clause(condition: Condition) -> ColumnElement[bool]:
         return _amount_clause(op, value)
     if field == "memo":
         return _memo_clause(op, value)
+    if field == "transaction":
+        return Transaction.id.in_(value)
     return _origin_clause(value)
 
 

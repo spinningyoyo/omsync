@@ -183,6 +183,10 @@
   @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-secondary hover:bg-container-inset-hover pointer-coarse:h-11 pointer-coarse:w-11;
 }
 
+.register .link-btn {
+  @apply inline-flex h-7 w-7 items-center justify-center rounded-md align-middle text-secondary hover:bg-container-inset-hover pointer-coarse:h-11 pointer-coarse:w-11;
+}
+
 .register .split-glyph {
   @apply block size-4 bg-current;
   -webkit-mask: url("/static/icons/split.svg") center / contain no-repeat;
