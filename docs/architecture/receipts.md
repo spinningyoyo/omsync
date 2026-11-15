@@ -39,14 +39,24 @@ flowchart TD
   must match exactly one transaction. If more than one matches, the receipt waits for review.
 - **A receipt with an unknown card does not apply automatically.** Amount and date cannot show that
   the purchase is yours.
+- **A receipt that names only cards you do not have is paid elsewhere.** This is also true when it
+  has several charges or a gift card, because no part of it can be on your accounts.
+- **Twins are paired in date order.** Two receipts with the same items can have the same charge.
+  When as many transactions fit them as there are twins, any pairing gives the same categories.
 - **A card matches an account by any of its numbers.** One account can pay with several numbers,
   such as a phone wallet's number. You add each number to the account. omsync does not add one
   from matches, because a match is evidence, not proof.
 - **The period limits what applies, not the evidence.** A shorter period cannot make an ambiguous
   match unique.
 - **Amazon: an order total must equal one exact set of charges.** A first-fit guess can take a
-  different purchase. An order with a gift card waits for review, because Amazon does not show the
+  different purchase. Amazon can charge each item of one shipment separately, so an order that no
+  single charge explains is also tried as a set. A shipment of free items only is not a charge. An order with a gift card waits for review, because Amazon does not show the
   gift card amount.
+- **Amazon: a refund names the items it can only be for.** First the whole items that add up to
+  it. Then single units, because you can return one of two. Then the order's only product, because
+  a return fee or a price adjustment can only belong to it. Each step runs only when the step
+  before it finds nothing, so a refund that whole items explain never changes. A refund of an order
+  with several products that no units add up to waits for review.
 - **Costco: each line that is not a product goes into the products.** A discount goes into the item
   it names, also when it has no tax flag. A price adjustment takes the name of its item on an
   earlier receipt. A credit that names no item is shared across the items by amount. Thus a

@@ -3,10 +3,12 @@
 For each receipt, the vendor says what its charges are. Observed charges are matched to
 transactions with the same amount, inside the charge's window, paid by the card whose last four
 digits the receipt names. Inferred charges start from candidate transactions the vendor is shown
-first. A card no account in this workspace has is paid elsewhere, and is skipped quietly. A charge
+first. A card no account in this workspace has is paid elsewhere, and is skipped quietly, also
+when the receipt cannot say what that card paid. A charge
 that names no card has an unknown payer: it goes to review with the transactions it might be, and
 is never applied, because another household member's account could hold the match. Anything else
-that does not match exactly once goes to review.
+that does not match exactly once goes to review, except twins: identical charges of receipts with
+identical items, as many as the transactions that fit them, are paired in date order.
 
 The report lists every outcome. Apply turns the matched ones into changes.
 """
@@ -99,13 +101,25 @@ def match_receipts(
         if receipt.revision != receipt_revision(receipt):
             raise ValueError(f"receipt {receipt.receipt_id} has a stale revision")
         outcomes.extend(_receipt_outcomes(session, vendor, receipt, today))
-    return MatchReport(vendor.key, today, tuple(_one_claim_per_transaction(outcomes)))
+    resolved = _one_claim_per_transaction(outcomes)
+    return MatchReport(vendor.key, today, tuple(_pair_twins(session, vendor, resolved, today)))
 
 
 def _receipt_outcomes(
     session: Session, vendor: ReceiptVendor, receipt: Receipt, today: date
 ) -> list[MatchOutcome]:
     result = vendor.charges(receipt)
+    if result.kind != "observed" and _paid_elsewhere(session, receipt):
+        cards = ", ".join(sorted(_cards(receipt)))
+        return [
+            MatchOutcome(
+                MatchStatus.paid_elsewhere,
+                receipt,
+                receipt_ref(receipt.vendor_key, receipt.receipt_id),
+                None,
+                reason=f"paid with a card ending {cards}, which this workspace lacks",
+            )
+        ]
     outcomes = _result_outcomes(session, vendor, receipt, result, today)
     if not result.infer_if_unmatched or any(
         outcome.status is not MatchStatus.unmatched for outcome in outcomes
@@ -416,6 +430,17 @@ def _workspace_has_last4(session: Session, last4: str) -> bool:
     return found is not None
 
 
+def _cards(receipt: Receipt) -> set[str]:
+    return {tender.last4 for tender in receipt.tenders if tender.kind == "card" and tender.last4}
+
+
+def _paid_elsewhere(session: Session, receipt: Receipt) -> bool:
+    """The receipt names cards, and the workspace has none of them. Whatever else paid, such as a
+    gift card, no charge of it can be on a tracked account."""
+    cards = _cards(receipt)
+    return bool(cards) and not any(_workspace_has_last4(session, card) for card in cards)
+
+
 def _window(start: date, end: date, today: date) -> tuple[date, date] | None:
     """The window with its end capped at today, or None when nothing in it can have posted."""
     end = min(end, today)
@@ -447,4 +472,80 @@ def _one_claim_per_transaction(outcomes: list[MatchOutcome]) -> list[MatchOutcom
                 reason="another receipt charge also matches this transaction",
             )
         resolved.append(outcome)
+    return resolved
+
+
+def _twin_key(outcome: MatchOutcome) -> tuple | None:
+    """What makes ambiguous charges interchangeable: the same card and amount, on receipts with
+    the same items. Any pairing of twins with their transactions then gives the same categories."""
+    charge = outcome.charge
+    if outcome.status is not MatchStatus.ambiguous or charge is None or not charge.card_last4:
+        return None
+    items = tuple((item.description, item.amount_cents) for item in outcome.receipt.items)
+    return (
+        outcome.receipt.is_refund,
+        charge.card_last4,
+        charge.amount_cents,
+        charge.item_positions,
+        items,
+    )
+
+
+def _pair_twins(
+    session: Session, vendor: ReceiptVendor, outcomes: list[MatchOutcome], today: date
+) -> list[MatchOutcome]:
+    """Match twins when as many transactions fit them as there are twins.
+
+    They are paired in date order. Each transaction must be in its own charge's window, and no
+    other charge may claim it. Otherwise the twins stay ambiguous.
+    """
+    groups: dict[tuple, list[int]] = {}
+    for index, outcome in enumerate(outcomes):
+        key = _twin_key(outcome)
+        if key is not None:
+            groups.setdefault(key, []).append(index)
+    claimed = {
+        outcome.transaction_id
+        for outcome in outcomes
+        if outcome.status is MatchStatus.matched and outcome.transaction_id is not None
+    }
+    resolved = list(outcomes)
+    for indexes in groups.values():
+        twins = sorted(
+            indexes, key=lambda i: (outcomes[i].receipt.purchased_on, outcomes[i].receipt_key)
+        )
+        charges = [outcomes[i].charge for i in twins]
+        if len(twins) < 2 or len({outcomes[i].receipt.receipt_id for i in twins}) < len(twins):
+            continue
+        window = _window(
+            min(charge.window_start for charge in charges if charge is not None),
+            max(charge.window_end for charge in charges if charge is not None),
+            today,
+        )
+        if window is None:
+            continue
+        card, amount = charges[0].card_last4, charges[0].amount_cents  # type: ignore[union-attr]
+        rows = [
+            row
+            for row in _candidate_rows(
+                session, vendor, *window, Transaction.amount_cents == amount, has_number(card)
+            )
+            if row.id not in claimed
+        ]
+        if len(rows) != len(twins):
+            continue
+        pairs = list(zip(twins, rows, strict=True))
+        if not all(
+            charge is not None and charge.window_start <= row.posted_on <= charge.window_end
+            for charge, (_, row) in zip(charges, pairs, strict=True)
+        ):
+            continue
+        for index, row in pairs:
+            resolved[index] = replace(
+                outcomes[index],
+                status=MatchStatus.matched,
+                transaction_id=row.id,
+                candidate_ids=(),
+                reason=None,
+            )
     return resolved

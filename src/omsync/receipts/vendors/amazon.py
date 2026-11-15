@@ -1,8 +1,11 @@
 """Amazon: order history and refund exports, read into receipts, and the card charges they paid.
 
 Each order is one receipt, built from its item rows. Each completed refund row is a refund
-receipt. Its items are the order's items that add up to the refund exactly, when some do;
-otherwise one item carries the refund and goes to triage.
+receipt. Its items are found in this order:
+- the order's items that add up to the refund exactly, when some do;
+- else its units that add up to the refund exactly, so one of two units returned is found;
+- else, when the order has one product, that product, as for a return fee or a price adjustment;
+- else one item carries the refund and goes to triage.
 
 Amazon's Total Amount already includes each item's tax and shipping, so items are not marked
 taxable. The engine then spreads no tax, and each group is scaled to the charge from its exact
@@ -11,7 +14,9 @@ Total Amount sums. The order's tax is kept on the receipt as a fact.
 Charges:
 - A single-shipment order paid with a known card is observed: one charge for the total. Its window
   runs from 3 days before the earlier of the ship date and the order date, to 30 days after the
-  later of them. Without a ship date, the order date is used.
+  later of them. Without a ship date, the order date is used. When no transaction has the total,
+  the order is tried as split charges, as below, because Amazon sometimes charges each item.
+  A shipment of free items only is not counted.
 - An order with several shipments may be charged once per shipment, so it needs transactions.
   infer_charges looks for transactions that add up to the total. It accepts only one answer:
   no answer or several answers go to review. Its window runs from 1 day before the order to
@@ -85,6 +90,8 @@ _ORDER_COLUMNS = (
     "Payment Method Type",
 )
 _REFUND_COLUMNS = ("Order ID", "Refund Amount", "Refund Date", "Payment Status", "Reversal Reason")
+# Optional: an older export without it counts one of each item.
+QUANTITY_COLUMN = "Original Quantity"
 _MISSING = frozenset({"", "not available", "na", "nan", "none"})
 
 
@@ -94,12 +101,15 @@ class AmazonFileError(ValueError):
 
 @dataclass(frozen=True)
 class AmazonReceipt(Receipt):
-    """A receipt with the number of shipments in its order.
+    """A receipt with the number of shipments in its order, and each item's quantity in the same
+    order as its items.
 
-    shipments is not part of the revision, which covers the facts the engine knows about.
+    shipments and quantities are not part of the revision, which covers the facts the engine knows
+    about. An empty quantities means one of each.
     """
 
     shipments: int = 1
+    quantities: tuple[int, ...] = ()
 
 
 class AmazonVendor(BaseVendor):
@@ -139,7 +149,7 @@ class AmazonVendor(BaseVendor):
             observed=True,
             anchor=min(receipt.ship_dates, default=None),
         )
-        return ChargeResult("observed", (charge,))
+        return ChargeResult("observed", (charge,), infer_if_unmatched=True)
 
     def infer_charges(self, receipt: Receipt, candidates: list[CandidateTxn]) -> ChargeResult:
         if receipt.is_refund:
@@ -182,11 +192,14 @@ class AmazonVendor(BaseVendor):
         chosen = [usable[index] for index in combinations[0]]
         amounts = [abs(candidate.amount_cents) for candidate in chosen]
         positions = _item_positions(receipt.items, amounts) if len(chosen) > 1 else None
+        # A single shipment is inferred only after its whole-order charge found nothing. Its keys
+        # start at 1, so they never collide with that charge's key 0.
+        first_key = 1 if _shipments(receipt) == 1 else 0
         # A charge that names no card keeps card_last4 None: its payer is unknown, so it is
         # reviewed, not applied, even though its transaction is known.
         charges = tuple(
             Charge(
-                receipt_key=charge_key(VENDOR_KEY, receipt.receipt_id, index),
+                receipt_key=charge_key(VENDOR_KEY, receipt.receipt_id, first_key + index),
                 amount_cents=-amount,
                 window_start=start,
                 window_end=end,
@@ -253,6 +266,12 @@ def _blank(value: str) -> bool:
     return value.strip().lower() in _MISSING
 
 
+def _quantity(value: str) -> int:
+    """A whole number of units of at least one, or 1 when the value is anything else."""
+    text = value.strip()
+    return int(text) if text.isdigit() and int(text) >= 1 else 1
+
+
 def _card_last4(payment_method: str) -> str | None:
     """The last four digits from text such as "Visa - 1111", or None."""
     last = payment_method.split(" - ")[-1].strip()
@@ -306,6 +325,7 @@ def _build_order(
         return None
 
     items: list[ReceiptItem] = []
+    quantities: list[int] = []
     for line, row in group:
         amount = _money(row["Total Amount"], path, line, "Total Amount")
         if amount == 0:
@@ -319,10 +339,13 @@ def _build_order(
                 taxable=False,
             )
         )
+        quantities.append(_quantity(row.get(QUANTITY_COLUMN, "")))
+    # A free item can ship on its own, and that shipment charges nothing.
     ship_dates = {
         _date(row["Ship Date"], path, line, "Ship Date")
         for line, row in group
         if not _blank(row["Ship Date"])
+        and _money(row["Total Amount"], path, line, "Total Amount") != 0
     }
     tax_text = first["Shipment Item Subtotal Tax"]
     tax = 0
@@ -339,12 +362,14 @@ def _build_order(
         tenders=_tenders(first["Payment Method Type"], total),
         ship_dates=ship_dates,
     )
-    return _as_amazon(base, shipments=max(len(ship_dates), 1))
+    return _as_amazon(base, shipments=max(len(ship_dates), 1), quantities=tuple(quantities))
 
 
-def _as_amazon(base: Receipt, *, shipments: int = 1) -> AmazonReceipt:
+def _as_amazon(
+    base: Receipt, *, shipments: int = 1, quantities: tuple[int, ...] = ()
+) -> AmazonReceipt:
     values = {field.name: getattr(base, field.name) for field in fields(Receipt)}
-    return AmazonReceipt(**values, shipments=shipments)
+    return AmazonReceipt(**values, shipments=shipments, quantities=quantities)
 
 
 def _shipments(receipt: Receipt) -> int:
@@ -460,6 +485,17 @@ def _refund_receipt(
 
 
 def _refund_items(order: Receipt, refund_cents: int) -> tuple[ReceiptItem, ...] | None:
+    """What a refund paid back, or None: whole items that add up to it, else units that add up to
+    it, else the order's one product. Each later step runs only when the earlier ones find
+    nothing, so a refund the whole items explain never changes."""
+    return (
+        _whole_items(order, refund_cents)
+        or _units(order, refund_cents)
+        or _one_product(order, refund_cents)
+    )
+
+
+def _whole_items(order: Receipt, refund_cents: int) -> tuple[ReceiptItem, ...] | None:
     """The order's items that add up to the refund exactly, or None. Searches up to 8 items."""
     items = order.items
     if not items or len(items) > SPLIT_MAX_ITEMS:
@@ -478,6 +514,50 @@ def _refund_items(order: Receipt, refund_cents: int) -> tuple[ReceiptItem, ...] 
                 for number, item in enumerate(chosen, start=1)
             )
     return None
+
+
+def _units(order: Receipt, refund_cents: int) -> tuple[ReceiptItem, ...] | None:
+    """The units that add up to the refund exactly, as when one of two units was returned, or None.
+    A line of several units splits into equal units only when its amount divides evenly. Searches
+    up to 8 units."""
+    quantities = order.quantities if isinstance(order, AmazonReceipt) else ()
+    units: list[int] = []
+    owners: list[int] = []
+    for index, item in enumerate(order.items):
+        quantity = quantities[index] if index < len(quantities) else 1
+        if quantity > 1 and item.amount_cents % quantity == 0:
+            units += [item.amount_cents // quantity] * quantity
+            owners += [index] * quantity
+        else:
+            units.append(item.amount_cents)
+            owners.append(index)
+    if len(units) == len(order.items) or len(units) > SPLIT_MAX_ITEMS:
+        return None
+    sums = _subset_sums(units)
+    for mask in range(1, 1 << len(units)):
+        if sums[mask] == refund_cents:
+            refunded: dict[int, int] = {}
+            for bit in _bits(mask, len(units)):
+                refunded[owners[bit]] = refunded.get(owners[bit], 0) + units[bit]
+            return tuple(
+                ReceiptItem(
+                    position=number,
+                    description=order.items[index].description,
+                    amount_cents=amount,
+                    taxable=False,
+                )
+                for number, (index, amount) in enumerate(sorted(refunded.items()), start=1)
+            )
+    return None
+
+
+def _one_product(order: Receipt, refund_cents: int) -> tuple[ReceiptItem, ...] | None:
+    """The order's one product, for a refund that is not a whole number of its units, such as a
+    return fee kept back or a price adjustment, or None. A refund larger than the product is not
+    explained by it."""
+    if len(order.items) != 1 or refund_cents > order.items[0].amount_cents:
+        return None
+    return (ReceiptItem(1, order.items[0].description, refund_cents, taxable=False),)
 
 
 def _refund_charges(receipt: Receipt) -> ChargeResult:

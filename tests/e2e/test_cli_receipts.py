@@ -58,7 +58,7 @@ SEEDED_TRANSACTIONS = [
 ORDER_HEADER = (
     "Order ID,Order Date,Order Status,Ship Date,Product Name,ASIN,Unit Price,Unit Price Tax,"
     "Shipping Charge,Total Amount,Shipment Item Subtotal,Shipment Item Subtotal Tax,"
-    "Payment Method Type"
+    "Payment Method Type,Original Quantity"
 )
 REFUND_HEADER = "Order ID,Refund Amount,Refund Date,Reversal Reason,Payment Status"
 
@@ -74,13 +74,19 @@ def order_line(
     product: str,
     cents: int,
     payment: str = "Visa - 1111",
+    quantity: int = 1,
 ) -> str:
-    """One item row of an order. Dates are ISO days, such as 2026-08-05."""
+    """One item row of an order: `quantity` units that cost `cents` together. Dates are ISO days,
+    such as 2026-08-05."""
     total = money_text(cents)
     return (
         f"{order_id},{ordered}T10:00:00Z,Closed,{shipped},{product},FAKEASIN,"
-        f"{total},0.00,0.00,{total},{total},0.00,{payment}"
+        f"{total},0.00,0.00,{total},{total},0.00,{payment},{quantity}"
     )
+
+
+def refund_line(order_id: str, cents: int, refunded: str, reason: str = "Customer return") -> str:
+    return f"{order_id},{money_text(cents)},{refunded}T12:00:00Z,{reason},Completed"
 
 
 def write_export(data_dir: Path, login: str, orders: list[str], refunds: list[str] = ()) -> None:
@@ -274,3 +280,93 @@ def test_a_partly_applied_split_order_finishes_on_a_later_run(database: Path) ->
     assert "Nothing to apply." in third.output
     assert scalar(database, "SELECT COUNT(*) FROM batch") == 2
     assert scalar(database, "SELECT COUNT(*) FROM link") == 2
+
+
+REFUND_CASES = {
+    # Two soaps on one line, and one returned: the refund is one unit of the line.
+    "one of two units": (
+        [
+            order_line("U-1", "2026-08-05", "2026-08-06", "Fake Soap", 2000, quantity=2),
+            order_line("U-1", "2026-08-05", "2026-08-06", "Fake Cable", 500),
+        ],
+        [refund_line("U-1", 1000, "2026-08-20")],
+        [(date(2026, 8, 7), -2500, "AMZN Mktp US"), (date(2026, 8, 21), 1000, "AMZN Refund")],
+    ),
+    # A price adjustment on an order of one product is not a whole number of its units.
+    "partial refund of the one product": (
+        [order_line("P-1", "2026-08-05", "2026-08-06", "Fake Vase", 3000)],
+        [refund_line("P-1", 700, "2026-08-20", reason="Account adjustment")],
+        [(date(2026, 8, 7), -3000, "AMZN Mktp US"), (date(2026, 8, 21), 700, "AMZN Refund")],
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("orders", "refunds", "transactions"), REFUND_CASES.values(), ids=REFUND_CASES.keys()
+)
+def test_a_refund_that_is_not_whole_items_still_names_what_it_refunds(
+    database: Path, orders: list[str], refunds: list[str], transactions
+) -> None:
+    seed(database, transactions)
+    write_export(database, "Orders_R", orders, refunds)
+
+    applied = run("receipts", "run", "amazon", "--apply")
+
+    assert "Applied 2 charges as batch 1." in applied.output, applied.output
+    assert "need a category first" not in applied.output
+    assert category_of_amount(database, transactions[1][1]) == "Household"
+
+
+ORDER_CASES = {
+    # A free item shipped on its own. That shipment charged nothing, so the order is one charge.
+    "free item shipped apart": (
+        [
+            order_line("S-1", "2026-08-05", "2026-08-06", "Fake Soap", 2000),
+            order_line("S-1", "2026-08-05", "2026-08-12", "Fake Soap Sample", 0),
+        ],
+        [(date(2026, 8, 7), -2000, "AMZN Mktp US")],
+        "Applied 1 charges as batch 1.",
+    ),
+    # One shipment, but Amazon charged each item on its own.
+    "one shipment charged per item": (
+        [
+            order_line("C-1", "2026-08-05", "2026-08-06", "Fake Soap", 2000),
+            order_line("C-1", "2026-08-05", "2026-08-06", "Fake Cable", 500),
+        ],
+        [(date(2026, 8, 7), -2000, "AMZN Mktp US"), (date(2026, 8, 7), -500, "AMZN Mktp US")],
+        "Applied 2 charges as batch 1.",
+    ),
+    # Two identical orders and two identical charges: either pairing gives the same categories.
+    "twin orders": (
+        [
+            order_line("T-1", "2026-08-05", "2026-08-06", "Fake Soap", 1200),
+            order_line("T-2", "2026-08-05", "2026-08-06", "Fake Soap", 1200),
+        ],
+        [(date(2026, 8, 7), -1200, "AMZN Mktp US"), (date(2026, 8, 8), -1200, "AMZN Mktp US")],
+        "Applied 2 charges as batch 1.",
+    ),
+    # Another person's card paid an order of two shipments. Nothing of it is in this ledger.
+    "another person's card": (
+        [
+            order_line("O-1", "2026-08-05", "2026-08-06", "Fake Soap", 2000, "Visa - 9999"),
+            order_line("O-1", "2026-08-05", "2026-08-09", "Fake Cable", 500, "Visa - 9999"),
+        ],
+        [(date(2026, 8, 7), -2000, "AMZN Mktp US")],
+        "paid elsewhere: 1",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("orders", "transactions", "expected"), ORDER_CASES.values(), ids=ORDER_CASES.keys()
+)
+def test_an_order_that_one_charge_cannot_explain_still_finds_its_charges(
+    database: Path, orders: list[str], transactions, expected: str
+) -> None:
+    seed(database, transactions)
+    write_export(database, "Orders_O", orders)
+
+    applied = run("receipts", "run", "amazon", "--apply")
+
+    assert expected in applied.output, applied.output
+    assert "Review (" not in applied.output
