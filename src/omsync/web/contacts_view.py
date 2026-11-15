@@ -356,7 +356,7 @@ def _balance_view(db: Session, balance: ContactBalance) -> BalanceView:
         line.transaction_id for line in balance.lines
     }
     payees = dict(
-        db.execute(select(Transaction.id, Transaction.payee).where(Transaction.id.in_(ids)))
+        db.execute(select(Transaction.id, Transaction.payee).where(Transaction.id.in_(ids))).all()
     )
     return BalanceView(
         cents=balance.balance_cents,
