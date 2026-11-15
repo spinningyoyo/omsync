@@ -19,14 +19,14 @@ class CandidateTxn:
     """A transaction a vendor may use to infer a receipt's charges.
 
     payee is the text the vendor recognizes: the raw statement text when it is present.
-    account_last4 is None when the account has no last four digits.
+    account_numbers are the last four digits the account is known by: its own and its aliases'.
     """
 
     id: int
     posted_on: date
     amount_cents: int
     payee: str
-    account_last4: str | None
+    account_numbers: frozenset[str]
 
 
 class ReceiptVendor(Protocol):

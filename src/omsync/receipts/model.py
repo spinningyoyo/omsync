@@ -23,13 +23,16 @@ ChargeKind = Literal["observed", "needs_transactions", "insufficient"]
 
 @dataclass(frozen=True)
 class ReceiptItem:
-    """One line on a receipt. amount_cents is net of the item's own discounts."""
+    """One line on a receipt. amount_cents is net of the item's own discounts. code is the vendor's
+    own class for the item, such as Costco's E for food: evidence for its category when no keyword
+    matches, and not part of the revision."""
 
     position: int
     description: str
     amount_cents: int
     taxable: bool
     quantity: int = 1
+    code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,15 @@ class Receipt:
 
 
 @dataclass(frozen=True)
+class Offset:
+    """A part of a receipt paid without a tracked account, such as a reward or a shop card.
+    amount_cents is signed against the charge: positive on a purchase, negative on a refund."""
+
+    description: str
+    amount_cents: int
+
+
+@dataclass(frozen=True)
 class Charge:
     """The part of a receipt paid as one transaction on one account.
 
@@ -67,6 +79,10 @@ class Charge:
     anchor is the date the "closest transaction" tie-break measures from; None means the purchase
     date. transaction_id is set on an inferred charge: the transaction it was inferred from, which
     matching uses directly instead of searching again by amount.
+
+    offsets are the receipt's other payments when this charge paid the rest: the items are then
+    allocated at full price, and each offset is a line of its own, so the lines add up to the
+    charge.
     """
 
     receipt_key: str
@@ -78,6 +94,7 @@ class Charge:
     observed: bool
     anchor: date | None = None
     transaction_id: int | None = None
+    offsets: tuple[Offset, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -23,6 +23,7 @@ from omsync.ledger.categories_admin.helpers import (
     _category_usage,
     _check_no_clash,
     _clean_name,
+    _costco_food_changes,
     _ensure_name_free,
     _icon,
     _rental_name_changes,
@@ -233,6 +234,7 @@ def move_preview(session: Session, category_id: int, target_id: int) -> MovePrev
         *_repoint_changes(session, category_id, target_id),
         *_saved_filter_changes(session, category_id, target_id),
         *_rental_name_changes(session, source_name, target.name),
+        *_costco_food_changes(session, category_id, target_id),
         Change("category", str(category_id), source, None),
     ]
     label = f"Deleted {source_name} and moved its uses to {target.name}"

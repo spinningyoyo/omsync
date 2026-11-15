@@ -23,6 +23,8 @@ flowchart TD
     Latest --> Current[Current number]
     New[A new card's digits with no statement yet] --> Current
     Current --> Sync[Sync looks for this number]
+    Hidden[A number the bank does not show] --> Receipts
+    Numbers --> Receipts[Receipts match any number]
 ```
 
 ## Design decisions
@@ -34,8 +36,13 @@ flowchart TD
   two gave only false warnings, so omsync makes none.
 - **The current card number comes from the statements.** It is the number on the latest statement.
   omsync does not store it.
+- **A number that the bank does not show is marked when you add it.** A phone wallet or a second
+  card can pay with a number that only receipts show. Before a statement comes, omsync cannot tell
+  it from a reissued card. Sync looks for a reissued card's number, so it must not look for this
+  number.
 
 ## Terms
 
-- **Alias:** a statement account number that maps to an account.
+- **Alias:** a number that maps to an account: a statement account number, or a card number that
+  only receipts show.
 - **Current number:** the number the bank uses now, from the latest statement.

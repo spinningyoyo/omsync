@@ -29,7 +29,10 @@ SAVED_FILTER_USE = "saved_filter"
 RENTAL_NAME_USE = "rental_name"
 
 
-# A kind of use is a table name, or one of the two kinds above. Each has a singular and a plural.
+COSTCO_FOOD_USE = "costco_food"
+
+
+# A kind of use is a table name, or one of the kinds above. Each has a singular and a plural.
 _USE_NAMES = {
     "transaction": ("transaction", "transactions"),
     "split": ("split line", "split lines"),
@@ -39,6 +42,7 @@ _USE_NAMES = {
     "recurring_series": ("recurring series", "recurring series"),
     SAVED_FILTER_USE: ("saved filter", "saved filters"),
     RENTAL_NAME_USE: ("rental category name", "rental category names"),
+    COSTCO_FOOD_USE: ("Costco food setting", "Costco food settings"),
 }
 
 

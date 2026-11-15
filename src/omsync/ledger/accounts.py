@@ -170,11 +170,13 @@ def add_alias(
     institution_key: str,
     statement_account_id: str,
     idempotency_key: str,
+    receipts_only: bool = False,
 ) -> Batch:
-    """Map another statement account ID to an existing account, as a batch.
+    """Map another number to an existing account, as a batch.
 
-    Used when a card is reissued under a new number. Raises AccountError if the institution
-    or account is unknown, the account belongs to another institution, or the ID is mapped.
+    Used when a card is reissued under a new number, or, with receipts_only, for a card number
+    only receipts show. Raises AccountError if the institution or account is unknown, the account
+    belongs to another institution, or the number is mapped.
     """
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
@@ -193,7 +195,9 @@ def add_alias(
             "is already mapped to an account"
         )
 
-    change = _alias_change(session, institution.id, account_id, statement_account_id)
+    change = _alias_change(
+        session, institution.id, account_id, statement_account_id, receipts_only=receipts_only
+    )
     preview = make_preview(
         session,
         "add_alias",
@@ -212,7 +216,12 @@ def _sole_provider_id(session: Session, institution_id: int) -> int | None:
 
 
 def _alias_change(
-    session: Session, institution_id: int, account_id: int, statement_account_id: str
+    session: Session,
+    institution_id: int,
+    account_id: int,
+    statement_account_id: str,
+    *,
+    receipts_only: bool = False,
 ) -> Change:
     alias_id = next_primary_key(session, AccountAlias.__table__)
     return Change(
@@ -224,6 +233,7 @@ def _alias_change(
             "institution_id": institution_id,
             "account_id": account_id,
             "statement_account_id": statement_account_id,
+            "receipts_only": receipts_only,
         },
     )
 
@@ -394,6 +404,7 @@ def _new_alias_change(alias_id: int, institution_id: int, account_id: int, last4
             "institution_id": institution_id,
             "account_id": account_id,
             "statement_account_id": last4,
+            "receipts_only": False,
         },
     )
 

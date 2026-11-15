@@ -397,6 +397,26 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 </form>
 {%- endmacro %}
 
+{# The Costco list's fallback: the category for a food item that no keyword matches. Costco marks food
+   on its receipts. Blank turns it off, so such items wait for a keyword. The reply replaces the form. #}
+{% macro costco_food_form(food, choices, error="", saved=false) -%}
+<form id="costco-food" hx-post="/categories/keywords/costco-food" hx-target="#costco-food" hx-swap="outerHTML" class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-container-inset px-4 py-2">
+  <label for="costco-food-category" class="text-sm text-secondary">Food items with no keyword</label>
+  <select id="costco-food-category" name="category_id" class="h-7 min-w-0 max-w-full rounded-md border border-secondary bg-container px-2 text-sm text-primary focus-ring">
+      <option value=""{% if food is none %} selected{% endif %}>Wait for a keyword</option>
+      {%- for cid, name in choices %}
+      <option value="{{ cid }}"{% if cid == food %} selected{% endif %}>{{ name }}</option>
+      {%- endfor %}
+    </select>
+  {{ button("Save", variant="primary", size="sm", type="submit") }}
+  {%- if error %}
+  <p class="text-sm text-destructive" role="alert">{{ error }}</p>
+  {%- elif saved %}
+  <p class="text-sm text-secondary" role="status">Saved.</p>
+  {%- endif %}
+</form>
+{%- endmacro %}
+
 {# Conflicts: the same pattern naming different categories. Each member links to its row, and the
    one that applies reads "(applies)" in the text, so a screen reader announces it. #}
 {% macro conflicts_banner(conflicts) -%}
@@ -463,7 +483,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
    region, and their buttons keep their ids, so focus survives a reload. It reloads itself
    after any category or keyword change, and its list tabs replace it. Each of those reloads sends the
    search text in #keyword-search, so the view keeps its search. Only the results swap while typing. #}
-{% macro keyword_panel(list_key, lists, conflicts, rows, choices, form, query, total) -%}
+{% macro keyword_panel(list_key, lists, conflicts, rows, choices, form, query, total, food=none) -%}
 <div id="keyword-panel" class="fill-chain flex flex-col gap-4"
   hx-get="/categories/keywords?list={{ list_key|urlencode }}" hx-include="#keyword-search" hx-trigger="categories-changed from:body" hx-target="#keyword-panel" hx-swap="outerHTML">
   <div class="flex flex-wrap items-center justify-between gap-2">
@@ -476,6 +496,9 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
     {{ button("Import keywords", variant="outline", size="sm", icon="upload", attrs={"id": "import-open", "data-action": "categories#openDialog", "data-dialog-id": "import-dialog"}) }}
   </div>
   {{ conflicts_banner(conflicts) }}
+  {%- if list_key == "costco" %}
+  {{ costco_food_form(food, choices) }}
+  {%- endif %}
   {{ keyword_add_form(form, list_key, choices) }}
   <div class="flex flex-wrap items-end gap-2">
   {% call field("Search keywords", "min-w-0 flex-1") %}<input id="keyword-search" type="search" name="q" value="{{ query }}" autocomplete="off" placeholder="Pattern or category" class="form-field__input"

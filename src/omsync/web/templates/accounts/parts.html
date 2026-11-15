@@ -85,14 +85,14 @@
 </section>
 {%- endmacro %}
 
-{# The numbers card: the last four digits the bank and its statements know this account by, the current
-   one first, with the date its statements reach, and a form to add a reissued card's new digits. A
-   write re-renders the card in place, and an undo re-renders it out of band (oob). #}
+{# The numbers card: the last four digits this account is known by, the current one first, with the
+   date its statements reach, and a form to add another card's digits: a reissued card's, or one only
+   receipts show. A write re-renders the card in place, and an undo re-renders it out of band (oob). #}
 {% macro numbers_card(account_id, numbers, add_key, error="", oob=false) -%}
 <section id="account-numbers" class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="numbers-title" hx-target="#account-numbers" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
   <div>
     <h2 id="numbers-title" class="text-sm font-medium text-primary">Numbers</h2>
-    <p class="text-sm text-secondary">Numbers the bank has used for this account. Sync uses the newest.</p>
+    <p class="text-sm text-secondary">Card numbers for this account. Receipts match any of them.</p>
   </div>
   {%- if error %}
   <p class="text-sm text-destructive" role="alert">{{ error }}</p>
@@ -102,7 +102,7 @@
     {%- for number in numbers %}
     <li class="flex items-center justify-between gap-3 py-2">
       <span class="flex items-center gap-2 text-sm tabular-nums text-primary">••{{ number.last4 }}{% if number.current %} {{ pill("Current", tone="green") }}{% endif %}</span>
-      <span class="text-xs text-secondary">{% if number.latest %}Statements to {{ number.latest.strftime("%b %-d, %Y") }}{% else %}No statements yet{% endif %}</span>
+      <span class="text-xs text-secondary">{% if number.latest %}Statements to {{ number.latest.strftime("%b %-d, %Y") }}{% elif number.receipts_only %}Receipts only{% else %}No statements yet{% endif %}</span>
     </li>
     {%- endfor %}
   </ul>
@@ -112,8 +112,11 @@
   <form class="flex flex-wrap items-end gap-3" hx-post="/accounts/{{ account_id }}/numbers">
     <input type="hidden" name="idempotency_key" value="{{ add_key }}">
     <label class="form-field w-auto min-w-[14rem]">
-      <span class="form-field__label">New card's last four digits</span>
-      <input type="text" name="last4" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" required autocomplete="off" class="form-field__input" placeholder="After a card is reissued">
+      <span class="form-field__label">Another card's last four digits</span>
+      <input type="text" name="last4" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" required autocomplete="off" class="form-field__input">
+    </label>
+    <label class="flex items-center gap-2 self-end pb-2 text-sm text-primary">
+      <input type="checkbox" name="receipts_only" value="1"> The bank does not show it
     </label>
     {{ button("Add", variant="outline", type="submit") }}
   </form>

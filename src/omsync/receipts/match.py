@@ -21,7 +21,8 @@ from sqlalchemy.orm import Session
 
 from omsync.ledger.categorize import payee_match_text
 from omsync.ledger.links import Link, LinkKind
-from omsync.ledger.models import Account, Transaction
+from omsync.ledger.models import Account, AccountAlias, Transaction
+from omsync.ledger.sources import has_number
 from omsync.receipts.model import (
     Charge,
     ChargeResult,
@@ -202,7 +203,7 @@ def _match_charge(
         return MatchOutcome(
             MatchStatus.unmatched, receipt, ref, charge, reason="the charge window has not started"
         )
-    clauses = [Transaction.amount_cents == charge.amount_cents, Account.last4 == charge.card_last4]
+    clauses = [Transaction.amount_cents == charge.amount_cents, has_number(charge.card_last4)]
     rows = _candidate_rows(session, vendor, *window, *clauses)
     if not rows:
         return MatchOutcome(
@@ -362,7 +363,7 @@ def _candidate_rows(
             Transaction.amount_cents,
             Transaction.payee,
             Transaction.payee_raw,
-            Account.last4,
+            Transaction.account_id,
         )
         .join(Account, Account.id == Transaction.account_id)
         .where(
@@ -373,12 +374,35 @@ def _candidate_rows(
         )
         .order_by(Transaction.posted_on, Transaction.id)
     )
+    numbers = _account_numbers(session)
     rows: list[CandidateTxn] = []
     for row in session.execute(query).all():
         payee = payee_match_text(row.payee_raw, row.payee)
         if vendor.is_vendor_payee(payee):
-            rows.append(CandidateTxn(row.id, row.posted_on, row.amount_cents, payee, row.last4))
+            rows.append(
+                CandidateTxn(
+                    row.id,
+                    row.posted_on,
+                    row.amount_cents,
+                    payee,
+                    numbers.get(row.account_id, frozenset()),
+                )
+            )
     return rows
+
+
+def _account_numbers(session: Session) -> dict[int, frozenset[str]]:
+    """Each account's last four digits: its own, and every alias's."""
+    found: dict[int, set[str]] = {}
+    for account_id, last4 in session.execute(select(Account.id, Account.last4)):
+        if last4:
+            found.setdefault(account_id, set()).add(last4)
+    for account_id, number in session.execute(
+        select(AccountAlias.account_id, AccountAlias.statement_account_id)
+    ):
+        if len(number) >= 4:
+            found.setdefault(account_id, set()).add(number[-4:])
+    return {account_id: frozenset(digits) for account_id, digits in found.items()}
 
 
 def _receipt_linked_transactions() -> Select:
@@ -388,7 +412,7 @@ def _receipt_linked_transactions() -> Select:
 
 
 def _workspace_has_last4(session: Session, last4: str) -> bool:
-    found = session.scalars(select(Account.id).where(Account.last4 == last4).limit(1)).first()
+    found = session.scalars(select(Account.id).where(has_number(last4)).limit(1)).first()
     return found is not None
 
 

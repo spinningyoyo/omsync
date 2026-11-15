@@ -239,10 +239,10 @@ def _unknown_payer_reason(session: Session, outcome: MatchOutcome) -> str:
 
 
 def _describe_skip(outcome: MatchOutcome, skip: ApplySkip) -> str:
-    """The skip reason, naming the receipt items that need a category when there are some."""
+    """The skip reason, naming the receipt items and other payments that need a category."""
     names = [
         item.description for item in outcome.receipt.items if item.position in skip.item_positions
-    ]
+    ] + list(skip.offset_names)
     detail = f"{skip.reason}: {', '.join(names)}" if names else skip.reason
     return _describe(outcome, detail)
 

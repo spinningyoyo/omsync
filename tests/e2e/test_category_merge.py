@@ -3,7 +3,7 @@ over HTTP the way the browser does it, and undo goes through the CLI.
 
 Two categories may not budget the same month, so that merge is refused and nothing changes. A line
 in a month only one of them budgets moves with the merge, and a flex pool line, which belongs to no
-category, stays where it is."""
+category, stays where it is. The Costco food setting moves with the merge too."""
 
 from datetime import date
 
@@ -44,6 +44,11 @@ def merge(client, source: int, target: int):
     return client.post(path, data={**hidden_fields(dialog, path), "target_id": target})
 
 
+def costco_food(ledger: Ledger) -> int | None:
+    found = ledger.query("SELECT value FROM preference WHERE key = 'costco_food_category'")
+    return found[0][0] if found else None
+
+
 def lines(ledger: Ledger) -> list[tuple]:
     return ledger.query(
         "SELECT b.month, b.kind, c.name, b.amount_cents FROM budget_line b "
@@ -70,8 +75,10 @@ def test_a_merge_moves_lines_of_other_months_and_undo_restores_both(budgeted) ->
     budget(client, KEY, ids["Groceries"], "200")
     budget(client, OTHER, ids["Dining"], "80")
     client.post(f"/plan/budget/{KEY}/flex-number", data={"amount": "500"})
+    client.post("/categories/keywords/costco-food", data={"category_id": ids["Dining"]})
     before = lines(ledger)
     assert len(before) == 3
+    assert costco_food(ledger) == ids["Dining"]
 
     merged = merge(client, ids["Dining"], ids["Groceries"])
 
@@ -82,9 +89,11 @@ def test_a_merge_moves_lines_of_other_months_and_undo_restores_both(budgeted) ->
         ("flex_pool", None),
         ("category", "Groceries"),
     ]
+    assert costco_food(ledger) == ids["Groceries"]
     batch = ledger.query("SELECT id FROM batch WHERE kind = 'category.delete_move'")[0][0]
 
     ledger.cli("batches", "undo", batch)
 
     assert lines(ledger) == before
     assert ledger.count("category") == 2
+    assert costco_food(ledger) == ids["Dining"]

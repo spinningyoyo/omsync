@@ -33,7 +33,12 @@
 
 {% block frag_keyword_panel %}
 {% from "categories/parts.html" import keyword_panel %}
-{{ keyword_panel(list_key, lists, conflicts, rows, choices, form, query, total) }}
+{{ keyword_panel(list_key, lists, conflicts, rows, choices, form, query, total, food) }}
+{% endblock %}
+
+{% block frag_costco_food %}
+{% from "categories/parts.html" import costco_food_form %}
+{{ costco_food_form(food, choices, error, saved) }}
 {% endblock %}
 
 {% block frag_move_dialog %}

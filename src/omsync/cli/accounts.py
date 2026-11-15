@@ -95,14 +95,23 @@ def accounts_alias(
         str,
         typer.Option(
             "--statement-account",
-            help="The new statement account ID, or only a reissued card's new last four digits.",
+            help="The new statement account ID, or only a card's last four digits.",
         ),
     ],
+    receipts_only: Annotated[
+        bool,
+        typer.Option(
+            "--receipts-only",
+            help="The bank does not show this number, such as a phone wallet's card number. "
+            "Receipts match it, and sync never looks for it.",
+        ),
+    ] = False,
 ) -> None:
-    """Map another statement account ID to an existing account, e.g. after a card is reissued.
+    """Map another number to an existing account, e.g. after a card is reissued.
 
     With only the new card's last four, the bank connector looks for the account by them, and the
-    first file it fetches for them is linked to this account too."""
+    first file it fetches for them is linked to this account too. Receipts match every number of
+    an account."""
     key = institution.strip().lower()
     with ready_session() as (_settings, session):
         try:
@@ -112,7 +121,8 @@ def accounts_alias(
                 institution_key=key,
                 statement_account_id=statement_account,
                 idempotency_key=f"accounts-alias:{uuid4()}",
+                receipts_only=receipts_only,
             )
         except AccountError as exc:
             fail(str(exc))
-    typer.echo(f"Mapped statement account ••{last4_of(statement_account)} to account {account_id}.")
+    typer.echo(f"Mapped ••{last4_of(statement_account)} to account {account_id}.")

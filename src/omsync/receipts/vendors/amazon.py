@@ -159,7 +159,7 @@ class AmazonVendor(BaseVendor):
                 for candidate in candidates
                 if candidate.amount_cents != 0
                 and start <= candidate.posted_on <= end
-                and (card is None or candidate.account_last4 == card)
+                and (card is None or card in candidate.account_numbers)
             ),
             key=lambda candidate: (candidate.posted_on, candidate.id),
         )
@@ -512,7 +512,7 @@ def _infer_refund_charges(receipt: Receipt, candidates: list[CandidateTxn]) -> C
             for candidate in candidates
             if candidate.amount_cents > 0
             and start <= candidate.posted_on <= end
-            and candidate.account_last4 == card
+            and card in candidate.account_numbers
         ),
         key=lambda candidate: (candidate.posted_on, candidate.id),
     )

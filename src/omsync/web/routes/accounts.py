@@ -6,7 +6,7 @@ The account's nicknames are added and removed on the page too, as batches from l
 with the automatic step after each (see omsync.web.automatic). Their card is re-rendered by the
 reply, and undo calls nicknames_undo_reply here.
 
-A reissued card's new last four digits are added in the numbers card, as an alias batch from
+Another card's last four digits are added in the numbers card, as an alias batch from
 ledger.accounts_view. The reply re-renders the card, and the header and the panel out of band,
 because the digits they show can change; undo calls numbers_undo_reply here.
 
@@ -172,12 +172,18 @@ def add_number_route(
     db: DbSession,
     account_id: int,
     last4: Annotated[str, Form()] = "",
+    receipts_only: Annotated[bool, Form()] = False,
     idempotency_key: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """Add a reissued card's new last four digits, which sync then looks for."""
+    """Add another card's last four digits: a reissued card's, which sync then looks for, or, with
+    receipts_only, a card number only receipts show."""
     try:
         batch = add_account_number(
-            db, account_id, last4, idempotency_key=idempotency_key or uuid4().hex
+            db,
+            account_id,
+            last4,
+            idempotency_key=idempotency_key or uuid4().hex,
+            receipts_only=receipts_only,
         )
     except LookupError:
         raise HTTPException(status_code=404, detail="No such account") from None

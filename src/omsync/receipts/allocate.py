@@ -5,7 +5,11 @@ in proportion to that part. Each group's amount plus its tax is then scaled to t
 a partial charge (split shipments) and rounding both come out exact. money.allocate does the
 rounding (largest remainder), so the lines always add up to the charge amount.
 
-Nothing is guessed: an item without a category sends the charge to triage.
+A charge with offsets paid only part of the receipt. Its items are then allocated at full price,
+and each offset is a line of its own with the opposite sign, categorized by its description as an
+item is. The lines still add up to the charge.
+
+Nothing is guessed: an item or an offset without a category sends the charge to triage.
 """
 
 from collections.abc import Callable
@@ -13,7 +17,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from omsync.core import money
-from omsync.receipts.model import Charge, Receipt, ReceiptItem
+from omsync.receipts.model import Charge, Offset, Receipt, ReceiptItem
 
 CategoryForItem = Callable[[ReceiptItem], int | None]
 
@@ -33,11 +37,13 @@ class AllocationLine:
 
 @dataclass(frozen=True)
 class AllocationResult:
-    """Either lines that add up to the charge, or the positions of items that need a category."""
+    """Either lines that add up to the charge, or what needs a category: the positions of items,
+    and the descriptions of offsets."""
 
     status: Literal["allocated", "needs_triage"]
     lines: tuple[AllocationLine, ...] = ()
     triage_positions: tuple[int, ...] = ()
+    triage_offsets: tuple[str, ...] = ()
 
 
 def allocate_charge(
@@ -49,9 +55,13 @@ def allocate_charge(
     for example an item that names a position the receipt lacks, or a negative item amount.
     """
     assigned = [(item, category_for_item(item)) for item in _covered_items(receipt, charge)]
+    offsets = [(offset, category_for_item(_as_item(offset))) for offset in charge.offsets]
     untriaged = tuple(item.position for item, category in assigned if category is None)
-    if untriaged:
-        return AllocationResult("needs_triage", triage_positions=untriaged)
+    unknown_offsets = tuple(offset.description for offset, category in offsets if category is None)
+    if untriaged or unknown_offsets:
+        return AllocationResult(
+            "needs_triage", triage_positions=untriaged, triage_offsets=unknown_offsets
+        )
 
     groups: dict[int, list[ReceiptItem]] = {}
     for item, category in assigned:
@@ -68,17 +78,33 @@ def allocate_charge(
     if sum(totals) == 0:
         raise AllocationError("the covered items add up to nothing to spread")
 
-    # money.allocate keeps the charge's sign and magnitude, so a refund stays positive.
-    shares = money.allocate(charge.amount_cents, totals)
+    # The items' part is the charge without its offsets: the receipt's full price, signed like the
+    # charge. money.allocate keeps that sign and magnitude, so a refund stays positive.
+    items_part = charge.amount_cents - sum(offset.amount_cents for offset, _ in offsets)
+    if offsets and (items_part == 0 or (items_part < 0) != (charge.amount_cents < 0)):
+        raise AllocationError("the receipt's other payments are larger than its items")
+    shares = money.allocate(items_part, totals)
     lines = [
         AllocationLine(group, share, _memo(groups[group]))
         for group, share in zip(group_ids, shares, strict=True)
         if share != 0
     ] or [AllocationLine(group_ids[0], 0, _memo(groups[group_ids[0]]))]
+    lines += [
+        AllocationLine(category, offset.amount_cents, offset.description)
+        for offset, category in offsets
+        if category is not None and offset.amount_cents != 0
+    ]
 
     if sum(line.amount_cents for line in lines) != charge.amount_cents:
         raise RuntimeError("allocation does not add up to the charge; this is a bug")
     return AllocationResult("allocated", lines=tuple(lines))
+
+
+def _as_item(offset: Offset) -> ReceiptItem:
+    """An offset as the item its category is looked up by: its description is all that counts."""
+    return ReceiptItem(
+        position=0, description=offset.description, amount_cents=offset.amount_cents, taxable=False
+    )
 
 
 def _covered_items(receipt: Receipt, charge: Charge) -> list[ReceiptItem]:

@@ -22,6 +22,7 @@ from omsync.ledger.categories import DEFAULT_CATEGORY_ICON
 from omsync.ledger.categories_admin.rows import (
     _BY_HAND,
     _ICON_NAME,
+    COSTCO_FOOD_USE,
     RENTAL_NAME_USE,
     SAVED_FILTER_USE,
     CategoryRow,
@@ -45,6 +46,8 @@ from omsync.ledger.payment_methods import (
     PaymentMethod,
     store_paid_by,
 )
+from omsync.ledger.preferences import get_pref
+from omsync.ledger.receipt_vendors import COSTCO_FOOD_CATEGORY
 from omsync.ledger.rental import RENTAL_CATEGORIES, get_rental_categories
 
 
@@ -209,7 +212,8 @@ def _category_columns() -> dict[str, list[Any]]:
 
 def _category_usage(session: Session) -> dict[int, Counter[str]]:
     """What points at each category, by kind: rows with a foreign key to it, saved filters that name
-    it, and rental category names that match it. A category nothing points at is absent.
+    it, rental category names that match it, and the Costco food setting. A category nothing points
+    at is absent.
 
     Each table names a category in one column, so counting each column counts each row once.
     """
@@ -232,6 +236,9 @@ def _category_usage(session: Session) -> dict[int, Counter[str]]:
     for name in {name.strip() for name in get_rental_categories(session)}:
         if name in ids_by_name:
             tally(int(ids_by_name[name]), RENTAL_NAME_USE)
+    food = get_pref(session, COSTCO_FOOD_CATEGORY)
+    if isinstance(food, int) and not isinstance(food, bool):
+        tally(food, COSTCO_FOOD_USE)
     return usage
 
 
@@ -397,6 +404,15 @@ def _rental_name_changes(session: Session, source_name: str, target_name: str) -
         {"key": RENTAL_CATEGORIES, "value": value} if before is None else {**before, "value": value}
     )
     return [Change("preference", RENTAL_CATEGORIES, before, after)]
+
+
+def _costco_food_changes(session: Session, source_id: int, target_id: int) -> list[Change]:
+    """The Costco food setting names the target when it named the source. It is a batch change,
+    so undo puts it back."""
+    before = snapshot(session, "preference", COSTCO_FOOD_CATEGORY)
+    if before is None or before.get("value") != source_id:
+        return []
+    return [Change("preference", COSTCO_FOOD_CATEGORY, before, {**before, "value": target_id})]
 
 
 def _check_list_key(list_key: str) -> None:

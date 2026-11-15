@@ -18,7 +18,11 @@ from omsync.ledger import categories_admin as admin
 from omsync.ledger.categories_admin import KeywordRow, NothingChanged
 from omsync.ledger.categorize import PAYEE_LIST, explain, find_conflicts, is_list_key, list_name
 from omsync.ledger.payment_methods import METHOD_LABELS
-from omsync.ledger.receipt_vendors import RECEIPT_VENDOR_KEYS
+from omsync.ledger.receipt_vendors import (
+    RECEIPT_VENDOR_KEYS,
+    costco_food_category,
+    set_costco_food_category,
+)
 from omsync.web.categories_replies import (
     applied_toast,
     block,
@@ -316,7 +320,30 @@ def keyword_context(db: Session, list_key: str, *, query: str = "") -> dict[str,
         "total": admin.keyword_count(db, list_key),
         "choices": admin.category_choices(db),
         "form": keyword_form(list_key),
+        "food": costco_food_category(db) if list_key == "costco" else None,
     }
+
+
+@router.post("/categories/keywords/costco-food", response_class=HTMLResponse)
+def save_costco_food(
+    request: Request, db: DbSession, category_id: Annotated[str, Form()] = ""
+) -> HTMLResponse:
+    """Set the category for Costco food items that no keyword matches, or turn it off when blank."""
+    chosen = int(category_id) if category_id.strip().isdigit() else None
+    error = ""
+    try:
+        set_costco_food_category(db, chosen)
+    except ValueError as exc:
+        error = str(exc)
+    return block(
+        request,
+        "frag_costco_food",
+        status=422 if error else 200,
+        food=costco_food_category(db),
+        choices=admin.category_choices(db),
+        error=error,
+        saved=not error,
+    )
 
 
 def _keyword_edit(

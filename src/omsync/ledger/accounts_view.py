@@ -83,15 +83,17 @@ class TypeTotal:
 
 @dataclass(frozen=True)
 class AccountNumber:
-    """One number the bank and its statements know an account by, as its last four digits.
+    """One number an account is known by, as its last four digits.
 
     latest is the last date its statements reach, None while no statement carries it. current marks
-    the one sync looks for and screens show (see ledger.sources.current_alias_id).
+    the one sync looks for and screens show (see ledger.sources.current_alias_id). receipts_only
+    marks a number the bank never shows, which only receipts match.
     """
 
     last4: str
     latest: date | None
     current: bool
+    receipts_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -271,7 +273,10 @@ def account_numbers(session: Session, account_id: int) -> tuple[AccountNumber, .
     for alias in aliases:
         last4 = alias.statement_account_id[-LAST4_LENGTH:]
         current = alias.id == current_id or (last4 in numbers and numbers[last4].current)
-        numbers[last4] = AccountNumber(last4, latest.get(last4), current)
+        receipts_only = alias.receipts_only and (
+            last4 not in numbers or numbers[last4].receipts_only
+        )
+        numbers[last4] = AccountNumber(last4, latest.get(last4), current, receipts_only)
     return tuple(
         sorted(
             numbers.values(),
@@ -281,11 +286,17 @@ def account_numbers(session: Session, account_id: int) -> tuple[AccountNumber, .
 
 
 def add_account_number(
-    session: Session, account_id: int, last4: str, *, idempotency_key: str
+    session: Session,
+    account_id: int,
+    last4: str,
+    *,
+    idempotency_key: str,
+    receipts_only: bool = False,
 ) -> Batch:
-    """Map a reissued card's new last four digits to the account, as one alias batch. With no
-    statement carrying them yet, they become the number sync looks for, and the first file sync
-    fetches for them is linked to the account (see ingest.sync).
+    """Map another card's last four digits to the account, as one alias batch. A reissued card's
+    digits, with no statement carrying them yet, become the number sync looks for, and the first
+    file sync fetches for them is linked to the account (see ingest.sync). receipts_only digits
+    are matched by receipts only, and sync never looks for them.
 
     Raises LookupError if there is no such account, and ValueError for anything but four digits or
     digits the account or another account at its institution already has. The same key applies at
@@ -303,7 +314,7 @@ def add_account_number(
     account, institution_key = row
     clean = last4.strip()
     if len(clean) != LAST4_LENGTH or not clean.isdigit():
-        raise ValueError(f"Give the {LAST4_LENGTH} digits the bank shows for the new card.")
+        raise ValueError(f"Give the card's last {LAST4_LENGTH} digits.")
     if any(number.last4 == clean for number in account_numbers(session, account_id)):
         raise ValueError(f"••{clean} is already one of this account's numbers.")
     if find_account(session, institution_key, clean) is not None:
@@ -314,6 +325,7 @@ def add_account_number(
         institution_key=institution_key,
         statement_account_id=clean,
         idempotency_key=idempotency_key,
+        receipts_only=receipts_only,
     )
 
 

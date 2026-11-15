@@ -21,6 +21,7 @@ from omsync.core.batches import (
 )
 from omsync.ledger.categorize import load_keywords, match_receipt_item
 from omsync.ledger.models import CategoryOrigin, Split, Transaction
+from omsync.ledger.receipt_vendors import code_categories
 from omsync.receipts.allocate import (
     AllocationError,
     AllocationLine,
@@ -48,6 +49,7 @@ class ApplySkip:
     transaction_id: int | None
     reason: str
     item_positions: tuple[int, ...] = ()
+    offset_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -58,12 +60,16 @@ class ApplyPlan:
 
 
 def keyword_categories(session: Session, vendor_key: str) -> CategoryForItem:
-    """Categorize receipt items with one vendor's keyword list, as categorize does for payees."""
+    """Categorize receipt items with one vendor's keyword list, as categorize does for payees. An
+    item that no keyword matches takes the category set for its vendor code, if there is one."""
     keywords = load_keywords(session)
+    by_code = code_categories(session, vendor_key)
 
     def category_for_item(item: ReceiptItem) -> int | None:
         match = match_receipt_item(vendor_key, item.description, keywords)
-        return None if match is None else match.category_id
+        if match is not None:
+            return match.category_id
+        return None if item.code is None else by_code.get(item.code)
 
     return category_for_item
 
@@ -144,11 +150,12 @@ def _plan_one(
     except AllocationError as exc:
         return _skip(outcome, str(exc))
     if result.status == "needs_triage":
-        n_items = len(result.triage_positions)
+        n_items = len(result.triage_positions) + len(result.triage_offsets)
         return _skip(
             outcome,
             f"{n_items} receipt item(s) need a category first",
             result.triage_positions,
+            result.triage_offsets,
         )
 
     lines = result.lines
@@ -212,10 +219,16 @@ def _plan_one(
     return item, changes
 
 
-def _skip(outcome: MatchOutcome, reason: str, item_positions: tuple[int, ...] = ()) -> ApplySkip:
+def _skip(
+    outcome: MatchOutcome,
+    reason: str,
+    item_positions: tuple[int, ...] = (),
+    offset_names: tuple[str, ...] = (),
+) -> ApplySkip:
     return ApplySkip(
         receipt_key=outcome.receipt_key,
         transaction_id=outcome.transaction_id,
         reason=reason,
         item_positions=item_positions,
+        offset_names=offset_names,
     )

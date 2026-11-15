@@ -1,7 +1,8 @@
 """Institutions, the accounts they hold, how statement files name those accounts, and providers.
 
-An account's identity is its row here, not its last four digits. Several statement account
-IDs can map to one account through AccountAlias, as when a card is reissued.
+An account's identity is its row here, not its last four digits. Several numbers can map to one
+account through AccountAlias: statement account IDs, as when a card is reissued, and card numbers
+that only receipts show.
 """
 
 from datetime import datetime
@@ -10,6 +11,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    ColumnElement,
     Date,
     DateTime,
     ForeignKey,
@@ -18,8 +20,10 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     column,
+    exists,
     false,
     func,
+    or_,
     select,
     table,
     true,
@@ -67,7 +71,9 @@ class Account(Base):
 
 
 class AccountAlias(Base):
-    """Maps a statement file's account ID to an account. Several IDs may map to one account."""
+    """Maps a number to an account. Several numbers may map to one account. A receipts_only
+    number is one the bank never shows, such as a phone wallet's card number: receipts match it,
+    and sync never asks the bank for it."""
 
     __tablename__ = "account_alias"
     __table_args__ = (
@@ -83,6 +89,7 @@ class AccountAlias(Base):
     institution_id: Mapped[int] = mapped_column(ForeignKey("institution.id"), index=True)
     account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), index=True)
     statement_account_id: Mapped[str]
+    receipts_only: Mapped[bool] = mapped_column(default=False, server_default=false())
 
 
 # The statement tables, by name only: ledger.statements imports this module.
@@ -106,7 +113,8 @@ def current_alias_id(account_id: Any) -> ScalarSelect[int]:
     posted row when it has no period end. Digits no statement carries yet are a new card the person
     has told omsync about, so they win over any date. Among aliases with the winning digits, the
     one whose own statements are latest is chosen, then the newest row. The order rows were added
-    in says nothing about when the bank used a number, so a merge of old files cannot change it."""
+    in says nothing about when the bank used a number, so a merge of old files cannot change it.
+    A receipts_only alias is never the current one, because the bank never shows it."""
     candidate = aliased(AccountAlias)
     file_date = func.coalesce(
         _statement_file.c.period_end,
@@ -125,7 +133,7 @@ def current_alias_id(account_id: Any) -> ScalarSelect[int]:
     # SQLite sorts NULL lowest, so a descending date puts aliases without statements last.
     return (
         select(candidate.id)
-        .where(candidate.account_id == account_id)
+        .where(candidate.account_id == account_id, candidate.receipts_only.is_(False))
         .order_by(
             digits_latest.is_(None).desc(),
             digits_latest.desc(),
@@ -150,6 +158,17 @@ Account.alias_last4 = column_property(
     .correlate_except(AccountAlias)
     .scalar_subquery()
 )
+
+
+def has_number(last4: str) -> ColumnElement[bool]:
+    """Whether an account is known by these last four digits: its own, or any alias's."""
+    return or_(
+        Account.last4 == last4,
+        exists().where(
+            AccountAlias.account_id == Account.id,
+            func.substr(AccountAlias.statement_account_id, -4) == last4,
+        ),
+    )
 
 
 def account_digits(last4: str | None, alias_last4: str | None = None) -> str:

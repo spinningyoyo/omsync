@@ -3,27 +3,41 @@
 A receipt is one JSON file, named <barcode>.json, under receipts/COSTCO/<year>/<quarter>/.
 Money is integer cents. A purchase is negative on the card, and a return is positive.
 
-Items keep the descriptions the earlier categorizer used. A discount or fee line that names an
-item ("/<item number>") is folded into that item, and so takes its category. A fold happens only
-when both lines carry the same taxable flag, because a receipt item has one flag. The engine
-refuses negative items, so:
-- a return stores its items and tax as positive amounts, and the charge carries the refund's sign;
-- a credit line that names no item stays negative, and its receipt goes to review.
-The item identifier (E, F, or other) is not carried. The engine categorizes items from their
-keyword lists, not from that code.
+Items keep the descriptions the earlier categorizer used. The engine refuses negative items, so a
+return stores its items and tax as positive amounts, and the charge carries the refund's sign.
+Lines become items in this order:
+- Two lines of one item number whose amounts cancel are a void, and both are dropped.
+- A discount or fee line that names an item ("/<item number>") is folded into that item, and so
+  takes its category. A receipt item has one taxable flag, so a line folds when its flag matches
+  the item's, or when it has no flag, as Costco prints its discounts.
+- A line that names an item on none of this receipt's lines is a price adjustment of an earlier
+  purchase. It takes the description and code of that item on the latest earlier receipt, so the
+  item's keywords, or its code, categorize it.
+- A credit left negative, such as a coupon taken back on a return, is shared across the positive
+  items in proportion to their amounts. A receipt whose credits exceed its items goes to review.
+- A discount or fee line of zero, or with no amount, is dropped.
+The item identifier (E for food, F, or other) is carried as the item's code. Keywords categorize an
+item first; a food item that no keyword matches takes the category set for Costco food (see
+ledger/receipt_vendors.py). A folded line keeps its item's code.
 
 Charges: each card tender with an amount is one observed charge. When a receipt has several card
 tenders, each one is a charge that covers all items (item_positions None), so allocation scales
 each card's share across the same categories. Non-card tenders (shop card, cash, rebates) make no
-charge. A card tender with no amount, or with no readable last four digits, sends the receipt to
-review. Each charge may post from the purchase date up to five days later.
+charge. When one card paid the rest of them, they are offsets of its charge: the items keep their
+full price, and each tender is a line named by its description, such as "2% REBATE", which the
+keyword list categorizes. A card tender with no amount sends the receipt to review. A card number
+with no readable last four digits, or only zeros, as on a return, names no card: its charge has an
+unknown payer. Each charge may post from the purchase date up to five days later. A receipt that
+totals zero, such as an even exchange, moved no money and yields no receipt.
 
 Payees: Costco or COST CO, except P2P payees (Zelle, Venmo, PayPal, Cash App).
 """
 
+import functools
 import json
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -34,6 +48,7 @@ from omsync.ledger.receipt_vendors import is_costco_payee
 from omsync.receipts.model import (
     Charge,
     ChargeResult,
+    Offset,
     Receipt,
     ReceiptItem,
     Tender,
@@ -74,9 +89,12 @@ class _Line:
     description: str
     amount_cents: int
     taxable: bool
+    flagged: bool  # the line has a tax flag at all
     quantity: int
     item_number: str
     links_to: str | None
+    adjustment: bool  # a discount, fee, or coupon line rather than a product
+    code: str | None  # Costco's itemIdentifier, such as E for food
 
 
 class CostcoVendor(BaseVendor):
@@ -87,7 +105,10 @@ class CostcoVendor(BaseVendor):
 
     def parse(self, path: Path) -> list[Receipt]:
         data = load_receipt_file(path)
-        return [parse_receipt(data, path.name)]
+        if _cents(data.get("total"), "total") == 0:
+            return []
+        earlier = _earlier_items(path.parent.parent.parent, receipt_date(data, path.name))
+        return [parse_receipt(data, path.name, earlier)]
 
     def is_vendor_payee(self, payee: str) -> bool:
         return is_costco_payee(payee)
@@ -108,8 +129,6 @@ class CostcoVendor(BaseVendor):
         for index, tender in cards:
             if tender.amount_cents is None:
                 return _insufficient("a card tender has no amount")
-            if tender.last4 is None:
-                return _insufficient("a card tender has no readable last four digits")
             if tender.amount_cents == 0:
                 continue
             paid = abs(tender.amount_cents)
@@ -126,7 +145,21 @@ class CostcoVendor(BaseVendor):
             )
         if not charges:
             return _insufficient("the card tenders add up to nothing")
+        if len(charges) == 1:
+            charges = [replace(charges[0], offsets=_offsets(receipt))]
         return ChargeResult("observed", tuple(charges))
+
+
+def _offsets(receipt: Receipt) -> tuple[Offset, ...]:
+    """The receipt's non-card payments, as offsets of its one card charge. None unless every
+    payment has an amount and the payments add up to the total, so the items' full price is
+    known."""
+    others = [t for t in receipt.tenders if t.kind != "card" and t.amount_cents != 0]
+    if not others or any(t.amount_cents is None for t in receipt.tenders):
+        return ()
+    if sum(t.amount_cents or 0 for t in receipt.tenders) != receipt.total_cents:
+        return ()
+    return tuple(Offset(t.kind, t.amount_cents or 0) for t in others)
 
 
 def load_receipt_file(path: Path) -> dict[str, Any]:
@@ -151,8 +184,14 @@ def load_receipt_file(path: Path) -> dict[str, Any]:
     return data
 
 
-def parse_receipt(data: dict[str, Any], name: str = "receipt") -> Receipt:
-    """Build the engine's Receipt from one Costco receipt object. Raises CostcoParseError."""
+def parse_receipt(
+    data: dict[str, Any],
+    name: str = "receipt",
+    earlier: Mapping[str, tuple[str, str | None]] | None = None,
+) -> Receipt:
+    """Build the engine's Receipt from one Costco receipt object. earlier maps an item number to
+    its description and code on an earlier receipt, for price adjustments. Raises
+    CostcoParseError."""
     barcode = _text(data.get("transactionBarcode"))
     if not barcode:
         raise CostcoParseError(f"{name} has no transactionBarcode")
@@ -168,7 +207,7 @@ def parse_receipt(data: dict[str, Any], name: str = "receipt") -> Receipt:
         receipt_id=barcode,
         purchased_on=purchased_on,
         vendor_login=VENDOR_LOGIN,
-        items=_items(data.get("itemArray"), sign),
+        items=_items(data.get("itemArray"), sign, earlier or {}),
         tax_cents=tax,
         total_cents=total,
         tenders=_tenders(data.get("tenderArray")),
@@ -202,10 +241,11 @@ def item_description(item: dict[str, Any]) -> str:
 
 
 def extract_slash_item_number(item: dict[str, Any]) -> str | None:
-    """The item number a discount or fee line names, from "/<number>", or None."""
+    """The item number a discount or fee line names, from "/<number>", or None. "/0" names no
+    item, and Costco writes it in one field while the other names the item."""
     for key in ("frenchItemDescription1", "itemDescription01"):
         match = _SLASH_LINK.match(_text(item.get(key)))
-        if match:
+        if match and match.group(1).strip("0"):
             return match.group(1)
     return None
 
@@ -215,25 +255,35 @@ def is_taxable(tax_flag: Any) -> bool:
 
 
 def last_four(display_number: Any) -> str | None:
-    """The last four digits of a card number as the receipt displays it, or None."""
+    """The last four digits of a card number as the receipt displays it, or None. Zeros stand in
+    for a number the receipt does not show."""
     digits = _LAST_DIGITS.sub("", _text(display_number))
-    return digits[-4:] if len(digits) >= 4 else None
+    if len(digits) < 4 or not digits.strip("0"):
+        return None
+    return digits[-4:]
 
 
-def _items(raw_items: Any, sign: int) -> tuple[ReceiptItem, ...]:
-    lines = _lines(raw_items, sign)
+def _items(
+    raw_items: Any, sign: int, earlier: Mapping[str, tuple[str, str | None]]
+) -> tuple[ReceiptItem, ...]:
+    lines = _without_voids(_lines(raw_items, sign))
     first_by_number: dict[str, _Line] = {}
     for line in lines:
-        if line.links_to is None and line.item_number:
+        if not line.adjustment and line.item_number:
             first_by_number.setdefault(line.item_number, line)
 
     kept: list[_Line] = []
     for line in lines:
         target = first_by_number.get(line.links_to) if line.links_to is not None else None
-        if target is not None and target.taxable == line.taxable:
+        if target is not None and (target.taxable == line.taxable or not line.flagged):
             target.amount_cents += line.amount_cents
-        else:
-            kept.append(line)
+            continue
+        if target is None and line.links_to in earlier:
+            line.description, line.code = earlier[line.links_to]
+        if line.adjustment and line.amount_cents == 0:
+            continue
+        kept.append(line)
+    _share_credits(kept)
     return tuple(
         ReceiptItem(
             position=line.position,
@@ -241,9 +291,48 @@ def _items(raw_items: Any, sign: int) -> tuple[ReceiptItem, ...]:
             amount_cents=line.amount_cents,
             taxable=line.taxable,
             quantity=line.quantity,
+            code=line.code,
         )
         for line in kept
     )
+
+
+def _without_voids(lines: list[_Line]) -> list[_Line]:
+    """The lines without each pair of product lines of one item number that cancel."""
+    voided: set[int] = set()
+    open_lines: dict[tuple[str, int], list[_Line]] = {}
+    for line in lines:
+        if line.adjustment or not line.item_number:
+            continue
+        partners = open_lines.get((line.item_number, -line.amount_cents))
+        if partners:
+            voided.update({partners.pop().position, line.position})
+        else:
+            open_lines.setdefault((line.item_number, line.amount_cents), []).append(line)
+    return [line for line in lines if line.position not in voided]
+
+
+def _share_credits(lines: list[_Line]) -> None:
+    """Share each negative line across the positive lines by amount, in place. The largest
+    remainders take the leftover cents, so the shares add up to the credit exactly. Nothing changes
+    when the credits are larger than the positive lines."""
+    credit_lines = [line for line in lines if line.amount_cents < 0]
+    items = [line for line in lines if line.amount_cents > 0]
+    total = sum(line.amount_cents for line in items)
+    credit = -sum(line.amount_cents for line in credit_lines)
+    if not credit_lines or not items or credit > total:
+        return
+    shares = [line.amount_cents * credit // total for line in items]
+    by_remainder = sorted(
+        range(len(items)),
+        key=lambda i: (-(items[i].amount_cents * credit % total), items[i].position),
+    )
+    for i in by_remainder[: credit - sum(shares)]:
+        shares[i] += 1
+    for line, share in zip(items, shares, strict=True):
+        line.amount_cents -= share
+    for line in credit_lines:
+        lines.remove(line)
 
 
 def _lines(raw_items: Any, sign: int) -> list[_Line]:
@@ -252,18 +341,70 @@ def _lines(raw_items: Any, sign: int) -> list[_Line]:
     for position, raw in enumerate(rows, start=1):
         if not isinstance(raw, dict):
             raise CostcoParseError(f"item {position} is not an object")
+        adjustment = _is_adjustment(raw)
+        amount = raw.get("amount")
+        cents = 0 if amount is None and adjustment else _cents(amount, f"item {position} amount")
         lines.append(
             _Line(
                 position=position,
                 description=item_description(raw),
-                amount_cents=sign * _cents(raw.get("amount"), f"item {position} amount"),
+                amount_cents=sign * cents,
                 taxable=is_taxable(raw.get("taxFlag")),
+                flagged=bool(_text(raw.get("taxFlag"))),
                 quantity=_quantity(raw.get("unit")),
                 item_number=_text(raw.get("itemNumber")),
                 links_to=extract_slash_item_number(raw),
+                adjustment=adjustment,
+                code=_text(raw.get("itemIdentifier")) or None,
             )
         )
     return lines
+
+
+def _is_adjustment(raw: dict[str, Any]) -> bool:
+    """Whether a line is a discount, fee, or coupon: its description starts with "/", or with
+    "CPN/" for a coupon."""
+    texts = [_text(raw.get(key)) for key in ("frenchItemDescription1", "itemDescription01")]
+    return any(text.startswith(("/", "CPN/")) for text in texts)
+
+
+def _earlier_items(root: Path, before: date) -> dict[str, tuple[str, str | None]]:
+    """Each item number's description and code on the latest receipt under root dated before
+    `before`."""
+    latest: dict[str, tuple[date, str, str | None]] = {}
+    for day, number, description, code in _product_lines(root, _folder_state(root)):
+        if day < before and (number not in latest or latest[number][0] < day):
+            latest[number] = (day, description, code)
+    return {number: (description, code) for number, (_day, description, code) in latest.items()}
+
+
+def _folder_state(root: Path) -> tuple[tuple[str, int], ...]:
+    """The receipt files under root and their modification times, so a change reads them again."""
+    return tuple((str(path), path.stat().st_mtime_ns) for path in sorted(root.glob("*/*/*.json")))
+
+
+@functools.lru_cache(maxsize=4)
+def _product_lines(
+    root: Path, state: tuple[tuple[str, int], ...]
+) -> tuple[tuple[date, str, str, str | None], ...]:
+    """(purchase date, item number, description, code) for every product line of every readable
+    receipt in state. A file that cannot be read is left out here, and parse reports it."""
+    found: list[tuple[date, str, str, str | None]] = []
+    for path_text, _mtime in state:
+        path = Path(path_text)
+        try:
+            data = load_receipt_file(path)
+            day = receipt_date(data, path.name)
+            rows = _list(data.get("itemArray"), "itemArray")
+        except CostcoParseError:
+            continue
+        for raw in rows:
+            if isinstance(raw, dict) and not _is_adjustment(raw):
+                number = _text(raw.get("itemNumber"))
+                if number:
+                    code = _text(raw.get("itemIdentifier")) or None
+                    found.append((day, number, item_description(raw), code))
+    return tuple(found)
 
 
 def _tenders(raw_tenders: Any) -> tuple[Tender, ...]:
