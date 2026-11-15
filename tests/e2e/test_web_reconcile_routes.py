@@ -130,11 +130,21 @@ def test_approve_one_proposal_then_undo_returns_it(
         assert db.scalar(select(func.count()).select_from(Link)) == 1
     batch_id = _batch_id(response.text)
 
-    undone = client.post(f"/batches/{batch_id}/undo?start=2026-07-01&end=2026-09-30")
+    # The tab that was open stays open: the approve named Linked, and so does its Undo.
+    linked = client.post(
+        "/reconcile/approve",
+        data={"start": "2026-07-01", "end": "2026-09-30", "signature": sig,
+              "idempotency_key": "a1", "tab": "linked"},
+    )  # fmt: skip
+    assert 'data-tabs-active-value="linked"' in linked.text
+    assert "tab=linked" in linked.text
+
+    undone = client.post(f"/batches/{batch_id}/undo?start=2026-07-01&end=2026-09-30&tab=linked")
 
     assert undone.status_code == 200
     assert "Undone" in undone.text
     assert 'id="reconcile-results"' in undone.text
+    assert 'data-tabs-active-value="linked"' in undone.text
     assert _sig(app, "zelle_same_confirmation") == sig  # the proposal is back
     with Session(app.state.engine) as db:
         assert db.scalar(select(func.count()).select_from(Link)) == 0

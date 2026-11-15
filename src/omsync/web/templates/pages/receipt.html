@@ -7,10 +7,38 @@
 <div class="flex flex-col gap-6">
   <div>{{ link_button("Back", href=back_href, variant="ghost", size="sm", icon="chevron-left") }}</div>
   {{ page_header(title, "Each line, its category, and the transaction it matched.") }}
+  {%- if sources %}
   <ul class="flex flex-col gap-3 text-sm" aria-label="{{ title }}">
     {%- for entry in sources %}
     {{ triage_source(entry.source, entry.href, "", vendor_key, keep=false) }}
     {%- endfor %}
   </ul>
+  {%- else %}
+  <section class="flex flex-col gap-2 rounded-lg bg-container-inset p-3 text-sm" aria-label="{{ title }}">
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <span class="font-medium text-primary tabular-nums">{{ detail.purchased_on.isoformat() }}</span>
+      <span class="text-secondary">{{ "Refund" if detail.is_refund else "Purchase" }} · {{ detail.receipt_id }}</span>
+    </div>
+    <p class="text-secondary">No transaction of yours matched this receipt.</p>
+    <table class="w-full text-left">
+      <caption class="sr-only">Lines of receipt {{ detail.receipt_id }}</caption>
+      <tbody>
+        {%- for line in detail.lines %}
+        <tr class="border-t border-subdued">
+          <td class="py-1 pr-2 break-all text-secondary">{{ line.description }}</td>
+          <td class="py-1 pr-2 whitespace-nowrap text-secondary">{{ line.category or "No keyword" }}</td>
+          <td class="py-1 text-right whitespace-nowrap tabular-nums text-primary">{{ line.amount_cents|money }}</td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </section>
+  {%- endif %}
+  <dl class="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+    {%- if detail.tax_cents %}
+    <div class="flex gap-2"><dt class="text-secondary">Tax and other</dt><dd class="tabular-nums text-primary">{{ detail.tax_cents|money }}</dd></div>
+    {%- endif %}
+    <div class="flex gap-2"><dt class="text-secondary">{{ "Refund total" if detail.is_refund else "Total" }}</dt><dd class="tabular-nums font-medium text-primary">{{ detail.total_cents|money }}</dd></div>
+  </dl>
 </div>
 {% endblock %}

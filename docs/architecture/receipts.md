@@ -75,6 +75,10 @@ flowchart TD
 - **Triage lists only items that hold up a match.** An item on a receipt that is paid elsewhere, or
   that matches no transaction, gets no keyword there, because the keyword cannot apply it. A
   keyword added in Triage applies the receipts at once, as one batch that undo removes with it.
+- **A receipt that waits says what to do, or that nothing is needed.** You can add a keyword, or
+  check the category of the one transaction that fits a receipt with no card. Once you chose that
+  category, the receipt needs nothing more. A receipt that no transaction of yours fits needs
+  nothing, and only says why.
 - **A one-off line gets no keyword.** A keyword says that a text is always one category. A line
   such as a service-desk ring is not. You keep or set the category of its transaction instead, and
   receipts never change a category that you chose.

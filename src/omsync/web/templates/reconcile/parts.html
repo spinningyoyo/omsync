@@ -7,69 +7,43 @@
 {% from "components/pill.html" import pill with context %}
 {% from "layouts/shell_parts.html" import empty_state %}
 
-{% macro range_picker(start, end, presets, active) -%}
-<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="reconcile-range-title">
-  <h2 id="reconcile-range-title" class="sr-only">Range</h2>
-  <div class="flex flex-wrap gap-2" role="group" aria-label="Presets">
-    {%- for preset in presets %}
-    {{ link_button(preset.label, href="/reconcile?start=" ~ preset.start ~ "&end=" ~ preset.end, variant="primary" if preset.key == active else "outline", size="sm", attrs={"aria-current": "true"} if preset.key == active else none) }}
-    {%- endfor %}
-  </div>
-  <form method="get" action="/reconcile" class="flex flex-wrap items-end gap-3">
-    <label class="form-field w-auto">
-      <span class="form-field__label">From</span>
-      <input type="date" name="start" value="{{ start }}" class="form-field__input" required>
-    </label>
-    <label class="form-field w-auto">
-      <span class="form-field__label">To</span>
-      <input type="date" name="end" value="{{ end }}" class="form-field__input" required>
-    </label>
-    {{ button("Run", variant="primary", type="submit") }}
-  </form>
-</section>
-{%- endmacro %}
-
-{# The results region. Its buttons inherit the target and swap, so each action replaces it. #}
-{% macro results_region(results, notice, start, end, oob=false) -%}
-{% from "components/pill.html" import pill with context %}
-<section id="reconcile-results" class="flex flex-col gap-6" hx-target="#reconcile-results" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
+{# The results region: one tab per task that has something in it, and Linked. Its buttons inherit
+   the target and swap, so each action replaces it, and every request includes the open tab, which
+   the tabs keep in a hidden field, so the same tab is open after it. #}
+{% macro results_region(results, notice, start, end, tab="", oob=false) -%}
+{% from "components/tabs.html" import tabs %}
+{%- set active = results.active_tab(tab) %}
+<section id="reconcile-results" class="fill-chain flex flex-col gap-4" hx-target="#reconcile-results" hx-swap="outerHTML" hx-include="#reconcile-tab-active"{% if oob %} hx-swap-oob="true"{% endif %}>
   {%- if notice %}
   {{ alert(notice, variant="warning", live="status") }}
   {%- endif %}
-  <p class="text-sm text-secondary">
-    {%- set parts = [] %}
-    {%- if results.queue_counts[1][1] %}{% set _ = parts.append(results.queue_counts[1][1] ~ " to review") %}{% endif %}
-    {%- if results.queue_counts[2][1] %}{% set _ = parts.append(results.queue_counts[2][1] ~ " to choose") %}{% endif %}
-    {%- if results.not_matched %}{% set _ = parts.append(results.not_matched|length ~ " not matched") %}{% endif %}
-    {{ results.needs_you }} need{{ 's' if results.needs_you == 1 else '' }} you{{ ": " ~ parts|join(", ") if parts }}.
-  </p>
-
-  {%- if results.groups %}
-  {%- for group in results.groups %}
-  {{ proposal_group(group, start, end) }}
-  {%- endfor %}
-  {%- elif results.not_matched %}
-  {%- set count = results.not_matched|length %}
-  {{ alert("Nothing to review. " ~ count ~ " not matched below.", title="Next step", variant="info") }}
-  {%- else %}
+  {%- if results.tabs|length == 1 %}
   {{ empty_state("All caught up", "Nothing needs you in this range.", mascot=true) }}
   {%- endif %}
-
-  {{ not_matched_card(results.not_matched, start, end, results.counterparty_choices) }}
-
-  {%- for vendor in results.vendors if vendor.files %}
-  {{ receipts_card(vendor, start, end) }}
-  {%- endfor %}
-
-  {{ explained_card(results.explained, start, end) }}
-  {{ linked_card(results.linked, start, end) }}
-  {{ tally_card(results.tally) }}
-
-  {%- set no_exports = results.vendors|rejectattr("files")|map(attribute="title")|list %}
-  {%- if no_exports %}
-  <p class="text-sm text-secondary">No {{ no_exports|join(" or ") }} receipts yet. Add the vendor's export to its receipts folder.</p>
+  {%- set items = [] %}
+  {%- for item in results.tabs %}
+  {%- set body %}
+  {%- if item.id == "review" %}{{ review_panel(results.groups, start, end) }}
+  {%- elif item.id == "not-matched" %}{{ not_matched_card(results.not_matched, start, end, results.counterparty_choices) }}
+  {%- elif item.id == "linked" %}{{ linked_panel(results, start, end) }}
+  {%- else %}{{ receipts_card(results.vendors|selectattr("key", "equalto", item.id)|first, start, end) }}
   {%- endif %}
+  {%- endset %}
+  {%- set _ = items.append({"id": item.id, "label": item.label ~ " " ~ item.count, "body": body, "scroll": true}) %}
+  {%- endfor %}
+  {{ tabs("reconcile-tab", items, active, "Reconcile tasks", fill=true, field="tab", url_param="tab") }}
 </section>
+{%- endmacro %}
+
+{# The top of a tab: what it is for on the left, and its main action on the right. #}
+{% macro tab_bar(text) -%}
+{%- set action = caller() if caller is defined else "" -%}
+<div class="flex flex-wrap items-center justify-between gap-3">
+  <p class="text-sm text-secondary">{{ text }}</p>
+  {%- if action | trim %}
+  <div class="flex flex-wrap items-center gap-2">{{ action }}</div>
+  {%- endif %}
+</div>
 {%- endmacro %}
 
 {# A notice with no results behind it: a stale run, or a range the page cannot use. #}
@@ -89,57 +63,52 @@
 </section>
 {%- endmacro %}
 
-{# One group of proposals. Its three actions act on the rows checked here, or on its auto rows. #}
-{% macro proposal_group(group, start, end) -%}
-{% set auto_count = group.auto_signatures|length %}
-<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="group-{{ group.key }}">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <h2 id="group-{{ group.key }}" class="font-medium text-primary">{{ group.title }} <span class="text-sm text-secondary">({{ group.rows|length }})</span></h2>
-    <div class="flex flex-wrap gap-2">
-      {{ button("Approve all auto (" ~ auto_count ~ ")", variant="outline", size="sm", disabled=auto_count == 0, attrs={
-        "hx-post": "/reconcile/approve",
-        "hx-include": "input[data-auto='" ~ group.key ~ "']",
-        "hx-vals": {"start": start, "end": end, "idempotency_key": group.auto_key}|tojson|forceescape,
-      }) }}
-      {{ button("Approve selected", variant="primary", size="sm", attrs={
-        "hx-post": "/reconcile/approve",
-        "hx-include": "input[data-pick='" ~ group.key ~ "']:checked",
-        "hx-vals": {"start": start, "end": end, "idempotency_key": group.approve_key}|tojson|forceescape,
-      }) }}
-      {{ button("Reject selected", variant="outline", size="sm", attrs={
-        "hx-post": "/reconcile/reject",
-        "hx-include": "input[data-pick='" ~ group.key ~ "']:checked",
-        "hx-vals": {"start": start, "end": end, "idempotency_key": group.reject_key}|tojson|forceescape,
-      }) }}
-    </div>
-  </div>
-  {%- for row in group.rows if row.queue == "auto_approve" %}
-  <input type="hidden" name="signature" value="{{ row.signature }}" data-auto="{{ group.key }}">
-  {%- endfor %}
-  <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="{{ group.title }} proposals">
-    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+{# The proposals of every kind in one table. Approve and Reject at the top act on the checked rows. #}
+{% macro review_panel(groups, start, end) -%}
+{%- set first = groups|first %}
+<div class="flex flex-col gap-4">
+  {% call tab_bar("Pairs omsync found but wants you to check. Approve links them, Reject never proposes them again.") %}
+    {{ button("Reject selected", variant="outline", size="sm", attrs={
+      "hx-post": "/reconcile/reject",
+      "hx-include": "input[data-pick]:checked, #reconcile-tab-active",
+      "hx-vals": {"start": start, "end": end, "idempotency_key": first.reject_key}|tojson|forceescape,
+    }) }}
+    {{ button("Approve selected", variant="primary", size="sm", attrs={
+      "hx-post": "/reconcile/approve",
+      "hx-include": "input[data-pick]:checked, #reconcile-tab-active",
+      "hx-vals": {"start": start, "end": end, "idempotency_key": first.approve_key}|tojson|forceescape,
+    }) }}
+  {% endcall %}
+  <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Proposals">
+    <table class="w-full border-separate border-spacing-0 bg-container text-sm text-primary">
       <thead>
         <tr>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Select</span></th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left"><span class="sr-only">Select</span></th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Kind</th>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Money out</th>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Money in</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Confidence</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Queue</th>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Evidence</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Actions</span></th>
+          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody>
+        {%- for group in groups %}
+        {%- set outer = loop %}
         {%- for row in group.rows %}
+        {%- set line = "" if (outer.first and loop.first) else " border-t border-subdued" %}
         <tr>
-          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
-            <input type="checkbox" class="checkbox" name="signature" value="{{ row.signature }}" data-pick="{{ group.key }}" aria-label="Select this proposal">
+          <td class="px-3 py-3 align-top{{ line }}">
+            <input type="checkbox" class="checkbox" name="signature" value="{{ row.signature }}" data-pick aria-label="Select this proposal">
           </td>
-          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">{{ side_cell(row.money_out) }}</td>
-          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">{{ side_cell(row.money_in) }}</td>
-          <td class="px-3 py-3 align-top text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.confidence }}</td>
-          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">{{ pill(row.queue_label, tone=row.queue_tone, style="soft") }}</td>
-          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
+          <td class="px-3 py-3 align-top{{ line }}">
+            <div class="flex flex-col items-start gap-1">
+              <span class="whitespace-nowrap">{{ group.title }}</span>
+              {{ pill(row.queue_label ~ " · " ~ row.confidence, tone=row.queue_tone, style="soft") }}
+            </div>
+          </td>
+          <td class="px-3 py-3 align-top{{ line }}">{{ side_cell(row.money_out) }}</td>
+          <td class="px-3 py-3 align-top{{ line }}">{{ side_cell(row.money_in) }}</td>
+          <td class="px-3 py-3 align-top{{ line }}">
             <div class="flex max-w-md flex-wrap gap-1">
               {%- for chip in row.chips %}{{ pill(chip, tone="gray", style="outline") }}{% endfor %}
             </div>
@@ -147,24 +116,25 @@
             <p class="mt-1 text-xs text-secondary">{{ note }}</p>
             {%- endfor %}
           </td>
-          <td class="px-3 py-3 align-top{% if not loop.first %} border-t border-subdued{% endif %}">
-            <div class="flex flex-col gap-2">
-              {{ button("Approve", variant="primary", size="sm", attrs={
-                "hx-post": "/reconcile/approve",
-                "hx-vals": {"start": start, "end": end, "signature": row.signature, "idempotency_key": row.approve_key}|tojson|forceescape,
-              }) }}
+          <td class="px-3 py-3 align-top{{ line }}">
+            <div class="flex justify-end gap-2">
               {{ button("Reject", variant="outline", size="sm", attrs={
                 "hx-post": "/reconcile/reject",
                 "hx-vals": {"start": start, "end": end, "signature": row.signature, "idempotency_key": row.reject_key}|tojson|forceescape,
+              }) }}
+              {{ button("Approve", variant="primary", size="sm", attrs={
+                "hx-post": "/reconcile/approve",
+                "hx-vals": {"start": start, "end": end, "signature": row.signature, "idempotency_key": row.approve_key}|tojson|forceescape,
               }) }}
             </div>
           </td>
         </tr>
         {%- endfor %}
+        {%- endfor %}
       </tbody>
     </table>
   </div>
-</section>
+</div>
 {%- endmacro %}
 
 {% macro side_cell(side) -%}
@@ -179,50 +149,101 @@
 {%- endif %}
 {%- endmacro %}
 
+{# One vendor: the charges ready to apply in this period, the receipts of the period that need
+   you, each with what to do, and, folded away, the ones that need nothing, with why. #}
 {% macro receipts_card(vendor, start, end) -%}
-<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="receipts-{{ vendor.key }}">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <h2 id="receipts-{{ vendor.key }}" class="font-medium text-primary">{{ vendor.title }} receipts in this period</h2>
-      <p class="text-sm text-secondary">{{ vendor.files }} file{{ '' if vendor.files == 1 else 's' }} and {{ vendor.receipts }} receipt{{ '' if vendor.receipts == 1 else 's' }}. Applied to charges in this period.</p>
-    </div>
-    {{ button("Apply " ~ vendor.to_apply ~ " " ~ vendor.title ~ " receipt" ~ ('' if vendor.to_apply == 1 else 's') ~ " in this period", variant="primary", size="sm", disabled=vendor.to_apply == 0, attrs={
+{%- set needs = vendor.needs_you %}
+{%- set rest = vendor.nothing_to_do %}
+<div class="flex flex-col gap-6">
+  {%- if vendor.to_apply %}
+  {% call tab_bar(vendor.to_apply ~ " charge" ~ ("" if vendor.to_apply == 1 else "s") ~ " in this period can be split into categories by " ~ ("its receipt" if vendor.to_apply == 1 else "their receipts") ~ ".") %}
+    {{ button("Apply " ~ vendor.to_apply ~ " receipt" ~ ('' if vendor.to_apply == 1 else 's'), variant="primary", size="sm", attrs={
       "hx-post": "/reconcile/receipts/" ~ vendor.key ~ "/apply",
       "hx-vals": {"start": start, "end": end, "expected": vendor.apply_digest, "idempotency_key": vendor.apply_key}|tojson|forceescape,
     }) }}
-  </div>
-  {%- if vendor.files == 0 %}
-  <p class="text-sm text-secondary">No receipts yet. Add the vendor's export to its receipts folder.</p>
+  {% endcall %}
   {%- endif %}
-  <dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm sm:grid-cols-[repeat(4,auto)_1fr]">
-    {%- for label, count in vendor.counts %}
-    <dt class="text-secondary">{{ label }}</dt>
-    <dd class="tabular-nums text-primary">{{ count }}</dd>
-    {%- endfor %}
-  </dl>
-  {%- if vendor.review %}
-  <details class="text-sm">
-    <summary class="cursor-pointer text-primary">Needs review ({{ vendor.review|length }})</summary>
-    <ul class="mt-2 flex flex-col gap-1 break-words text-secondary">
-      {%- for line in vendor.review %}
-      <li>{{ line }}</li>
+  {%- if needs %}
+  <section class="flex flex-col gap-3" aria-labelledby="needs-{{ vendor.key }}">
+    <div>
+      <h3 id="needs-{{ vendor.key }}" class="font-medium text-primary">Needs you <span class="text-sm text-secondary">({{ needs|length }})</span></h3>
+      <p class="text-sm text-secondary">Each receipt says what to do. It leaves this list when it is done.</p>
+    </div>
+    <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="{{ vendor.title }} receipts that need you">
+      <table class="w-full border-separate border-spacing-0 bg-container text-sm text-primary">
+        <thead>
+          <tr>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Amount</th>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Receipt</th>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">What to do</th>
+            <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {%- for row in needs %}
+          {%- set line = "" if loop.first else " border-t border-subdued" %}
+          <tr>
+            <td class="px-3 py-3 align-top whitespace-nowrap tabular-nums{{ line }}">{{ row.on }}</td>
+            <td class="px-3 py-3 align-top whitespace-nowrap text-right tabular-nums{{ line }}">{{ row.amount }}</td>
+            <td class="px-3 py-3 align-top{{ line }}">{{ receipt_link(row) }}</td>
+            <td class="px-3 py-3 align-top text-primary{{ line }}">{{ row.advice }}</td>
+            <td class="px-3 py-3 align-top{{ line }}">
+              <div class="flex justify-end gap-2">
+                {%- if row.action == "keyword" %}
+                {{ link_button("Add a keyword", href=row.keyword_href, variant="primary", size="sm") }}
+                {%- else %}
+                {{ link_button("Open transaction" if row.action == "check" else "Open transactions", href=row.candidates_href, variant="outline", size="sm") }}
+                {%- if row.candidate_id %}
+                {{ button("Keep category", variant="primary", size="sm", attrs={
+                  "hx-post": "/reconcile/keep",
+                  "hx-vals": {"start": start, "end": end, "transaction_id": row.candidate_id}|tojson|forceescape,
+                }) }}
+                {%- endif %}
+                {%- endif %}
+              </div>
+            </td>
+          </tr>
+          {%- endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {%- elif not vendor.to_apply %}
+  <p class="text-sm text-secondary">No {{ vendor.title }} receipt in this period needs you.</p>
+  {%- endif %}
+  {%- if rest %}
+  <details class="flex flex-col gap-3 text-sm">
+    <summary class="cursor-pointer font-medium text-primary">Nothing to do <span class="text-secondary">({{ rest|length }})</span></summary>
+    <p class="mt-2 text-secondary">These receipts were skipped, and need nothing from you. Each says why.</p>
+    <ul class="mt-2 flex flex-col">
+      {%- for row in rest %}
+      <li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-subdued py-2">
+        {%- if row.receipt %}
+        <span class="tabular-nums text-primary">{{ row.on }}</span>
+        <span class="tabular-nums text-primary">{{ row.amount }}</span>
+        {{ receipt_link(row) }}
+        {%- endif %}
+        <span class="text-secondary">{{ row.advice }}</span>
+      </li>
       {%- endfor %}
     </ul>
   </details>
   {%- endif %}
-</section>
+</div>
+{%- endmacro %}
+
+{% macro receipt_link(row) -%}
+{%- if row.url %}<a href="{{ row.url }}"{% if row.external %} target="_blank" rel="noopener noreferrer"{% endif %} class="break-all rounded-sm underline underline-offset-2 focus-ring">{{ row.receipt }}</a>{% else %}<span class="break-all">{{ row.receipt }}</span>{% endif %}
 {%- endmacro %}
 
 {# Transactions whose wording says a counterpart should exist, with no link or proposal for them
    and no known counterparty. #}
 {% macro not_matched_card(rows, start, end, choices) -%}
-<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="not-matched-title">
-  <div>
-    <h2 id="not-matched-title" class="font-medium text-primary">Not matched <span class="text-sm text-secondary">({{ rows|length }})</span></h2>
-    <p class="text-sm text-secondary">No counterpart found. Link one, or set its counterparty.</p>
-  </div>
+<div class="flex flex-col gap-4">
+  {{ tab_bar("Transfers with no counterpart found. Tick rows and set who they were with, or link one by hand.") }}
   {%- if rows %}
-  <form id="counterparty-form" class="flex flex-wrap items-end gap-3" hx-post="/reconcile/counterparty">
+  <form id="counterparty-form" class="flex flex-wrap items-end gap-3" hx-post="/reconcile/counterparty" hx-include="#reconcile-tab-active">
     <input type="hidden" name="start" value="{{ start }}">
     <input type="hidden" name="end" value="{{ end }}">
     <input type="hidden" name="idempotency_key" value="{{ new_key() }}">
@@ -255,7 +276,7 @@
     <div id="counterparty-error" class="basis-full" aria-live="assertive"></div>
   </form>
   <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Not matched transactions">
-    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+    <table class="w-full border-separate border-spacing-0 bg-container text-sm text-primary">
       <thead>
         <tr>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left relative"><span class="sr-only">Select</span></th>
@@ -299,17 +320,29 @@
   {%- else %}
   <p class="text-sm text-secondary">Nothing in this range is waiting for a counterpart.</p>
   {%- endif %}
-</section>
+</div>
+{%- endmacro %}
+
+{# What is done in this range: the links, with Unlink, then what needs no link because its
+   counterparty is known. A rule you unlinked twice no longer links by itself, and is named here. #}
+{% macro linked_panel(results, start, end) -%}
+<div class="flex flex-col gap-6">
+  {%- if results.paused_rules %}
+  {{ alert("These rules no longer link by themselves, because you unlinked their links: " ~ results.paused_rules|join(", ") ~ ". Their pairs wait in To review.", variant="info") }}
+  {%- endif %}
+  {{ linked_card(results.linked, start, end) }}
+  {{ explained_card(results.explained, start, end) }}
+</div>
 {%- endmacro %}
 
 {# What would be Not matched, with the counterparty that explains it. None of it is a link. #}
 {% macro explained_card(rows, start, end) -%}
-<details class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs">
-  <summary class="cursor-pointer font-medium text-primary">Explained ({{ rows|length }})</summary>
+<section class="flex flex-col gap-3" aria-labelledby="explained-title">
+  <h3 id="explained-title" class="font-medium text-primary">Explained <span class="text-sm text-secondary">({{ rows|length }})</span></h3>
   {%- if rows %}
   <p class="text-sm text-secondary">No counterpart needed: the counterparty is known.</p>
-  <div class="table-scroll rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Explained transactions">
-    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+  <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Explained transactions">
+    <table class="w-full border-separate border-spacing-0 bg-container text-sm text-primary">
       <thead>
         <tr>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Date</th>
@@ -338,15 +371,15 @@
   {%- else %}
   <p class="text-sm text-secondary">Nothing in this range is explained without a link.</p>
   {%- endif %}
-</details>
+</section>
 {%- endmacro %}
 
 {% macro linked_card(rows, start, end) -%}
-<details class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs">
-  <summary class="cursor-pointer font-medium text-primary">Linked ({{ rows|length }})</summary>
+<section class="flex flex-col gap-3" aria-labelledby="linked-title">
+  <h3 id="linked-title" class="font-medium text-primary">Links in this period <span class="text-sm text-secondary">({{ rows|length }})</span></h3>
   {%- if rows %}
-  <div class="table-scroll rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Linked transactions">
-    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
+  <div class="table-scroll shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Linked transactions">
+    <table class="w-full border-separate border-spacing-0 bg-container text-sm text-primary">
       <thead>
         <tr>
           <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Kind</th>
@@ -382,41 +415,7 @@
   {%- else %}
   <p class="text-sm text-secondary">No links in this range yet.</p>
   {%- endif %}
-</details>
-{%- endmacro %}
-
-{# What you did with each rule's output: a rule with two unlinked links no longer links by itself. #}
-{% macro tally_card(rows) -%}
-{%- if rows %}
-<details class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs">
-  <summary class="cursor-pointer font-medium text-primary">Rules ({{ rows|length }})</summary>
-  <div class="table-scroll rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Links, unlinks, and rejections by rule">
-    <table class="w-full border-separate border-spacing-0 text-sm text-primary">
-      <thead>
-        <tr>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-left">Rule</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Linked</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Unlinked</th>
-          <th scope="col" class="px-3 py-2 border-b border-divider text-xs uppercase font-medium text-secondary text-right">Rejected</th>
-        </tr>
-      </thead>
-      <tbody>
-        {%- for row in rows %}
-        <tr>
-          <td class="px-3 py-2{% if not loop.first %} border-t border-subdued{% endif %}">
-            {{ row.rule }}
-            {%- if row.paused %} {{ pill("Needs review", tone="amber", style="soft") }}{% endif %}
-          </td>
-          <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.linked }}</td>
-          <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.unlinked }}</td>
-          <td class="px-3 py-2 text-right tabular-nums{% if not loop.first %} border-t border-subdued{% endif %}">{{ row.rejected }}</td>
-        </tr>
-        {%- endfor %}
-      </tbody>
-    </table>
-  </div>
-</details>
-{%- endif %}
+</section>
 {%- endmacro %}
 
 {# The link dialog body: the transaction, a search for the counterpart, the kind, and the amount. #}
@@ -484,15 +483,15 @@
 {%- endmacro %}
 
 {# The undo toast. Its Undo posts to the shared undo route with the range, so the results re-run. #}
-{% macro toast(message, batch_id=none, start=none, end=none) -%}
+{% macro toast(message, batch_id=none, start=none, end=none, tab="") -%}
 <div class="toast" role="status" data-controller="toast">
   <span class="toast-message">{{ message }}</span>
   {%- if batch_id %}
-  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo?start=" ~ start ~ "&end=" ~ end ~ "&source=reconcile", "hx-target": "#toast-region"}) }}
+  {{ button("Undo", variant="outline", size="sm", attrs={"hx-post": "/batches/" ~ batch_id ~ "/undo?start=" ~ start ~ "&end=" ~ end ~ "&source=reconcile&tab=" ~ tab, "hx-target": "#toast-region"}) }}
   {%- endif %}
 </div>
 {%- endmacro %}
 
-{% macro toast_region(message, batch_id=none, start=none, end=none) -%}
-<div id="toast-region" hx-swap-oob="true" aria-live="polite">{{ toast(message, batch_id, start, end) }}</div>
+{% macro toast_region(message, batch_id=none, start=none, end=none, tab="") -%}
+<div id="toast-region" hx-swap-oob="true" aria-live="polite">{{ toast(message, batch_id, start, end, tab) }}</div>
 {%- endmacro %}

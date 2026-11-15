@@ -88,6 +88,9 @@ flowchart LR
   propose it again.
 - **Only a round trip links to a person.** That means money out to a person and back from the same
   person. The category tells what any other payment from a person repaid.
+- **The page has one tab for each task.** You do one task at a time: proposals, Not matched, or one
+  receipt vendor. A tab shows only when it holds something for the period, and Linked is always
+  there. Each tab shows only the period, also for receipts that need you.
 
 ## Terms
 

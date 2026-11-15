@@ -174,8 +174,6 @@ def test_review_and_manual_proposals_are_never_applied_automatically(
     [row] = rejections(client)
     assert (row.reason.value, row.rule, row.kind.value) == ("rejected", review.rule_key, "refund")
     assert row.evidence
-    page = client.get("/reconcile", params=RANGE)
-    assert "Return at the same store on another account" in page.text[page.text.index("Rules (") :]
     undo = re.search(r"/batches/(\d+)/undo", rejected.text)
     assert undo
     assert client.post(f"/batches/{undo.group(1)}/undo").status_code == 200

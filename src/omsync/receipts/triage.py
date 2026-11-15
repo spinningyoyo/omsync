@@ -104,24 +104,62 @@ def waiting_items(
     return [WaitingItem(display[key], tuple(grouped[key])) for key in ranked]
 
 
-def receipt_sources(
+@dataclass(frozen=True)
+class ReceiptDetail:
+    """A receipt and its lines, with the transactions its charges matched, if any. total_cents has
+    the sign of the lines, so a refund's total is what came back."""
+
+    receipt_id: str
+    vendor_login: str
+    purchased_on: date
+    is_refund: bool
+    total_cents: int
+    lines: tuple[SourceLine, ...]
+    sources: tuple[ItemSource, ...]
+
+    @property
+    def tax_cents(self) -> int:
+        """What the total holds beyond the lines: the tax, and any other amount."""
+        return self.total_cents - sum(line.amount_cents for line in self.lines)
+
+
+def receipt_detail(
     session: Session, settings: Settings, vendor_key: str, receipt_id: str, *, today: date
-) -> list[ItemSource]:
-    """One receipt as Triage shows it, once for each transaction its charges matched or were
-    applied to. Empty when the receipt is not in the vendor's files or matched nothing."""
+) -> ReceiptDetail | None:
+    """One receipt from the vendor's files, or None when no file has it."""
     report = run_vendor(session, settings, vendor_key, today=today)
     if report.match is None:
-        return []
+        return None
+    outcomes = [o for o in report.match.outcomes if o.receipt.receipt_id == receipt_id]
+    if not outcomes:
+        return None
     vendor = get_vendor(vendor_key)
     category_for = _category_names(session, vendor_key)
+    receipt = outcomes[0].receipt
     sources: list[ItemSource] = []
-    for outcome in report.match.outcomes:
-        if outcome.receipt.receipt_id != receipt_id:
-            continue
+    for outcome in outcomes:
         source = _source(session, vendor.receipt_url(receipt_id), outcome, category_for)
         if source is not None and source not in sources:
             sources.append(source)
-    return sources
+    offsets = [
+        ReceiptItem(0, offset.description, offset.amount_cents, taxable=False)
+        for outcome in outcomes[:1]
+        if outcome.charge is not None
+        for offset in outcome.charge.offsets
+    ]
+    return ReceiptDetail(
+        receipt_id=receipt_id,
+        vendor_login=receipt.vendor_login,
+        purchased_on=receipt.purchased_on,
+        is_refund=receipt.is_refund,
+        # A refund's lines are positive, as the money that comes back, and its total negative.
+        total_cents=-receipt.total_cents if receipt.is_refund else receipt.total_cents,
+        lines=tuple(
+            SourceLine(item.description, item.amount_cents, category_for(item))
+            for item in [*receipt.items, *offsets]
+        ),
+        sources=tuple(sources),
+    )
 
 
 def _category_names(session: Session, vendor_key: str) -> CategoryName:

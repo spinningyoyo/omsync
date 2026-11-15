@@ -5,8 +5,8 @@
 
 {% block frag_results %}
 {% from "reconcile/parts.html" import results_region, toast_region %}
-{{ results_region(results, notice, start, end) }}
-{%- if toast %}{{ toast_region(toast.message, toast.batch_id, start, end) }}{% endif %}
+{{ results_region(results, notice, start, end, tab) }}
+{%- if toast %}{{ toast_region(toast.message, toast.batch_id, start, end, tab) }}{% endif %}
 {% endblock %}
 
 {% block frag_stale %}
@@ -23,7 +23,7 @@
 {% block frag_undo_reply %}
 {% from "reconcile/parts.html" import toast, results_region %}
 {{ toast(message) }}
-{{ results_region(results, none, start, end, oob=true) }}
+{{ results_region(results, none, start, end, tab, oob=true) }}
 {% endblock %}
 
 {% block frag_link_dialog %}
@@ -45,6 +45,6 @@
 {# A saved decision made in a dialog: it closes on the close-dialogs event, and the results re-run. #}
 {% block frag_dialog_done %}
 {% from "reconcile/parts.html" import results_region, toast_region %}
-{{ results_region(results, none, start, end, oob=true) }}
-{{ toast_region(toast.message, toast.batch_id, start, end) }}
+{{ results_region(results, none, start, end, tab, oob=true) }}
+{{ toast_region(toast.message, toast.batch_id, start, end, tab) }}
 {% endblock %}

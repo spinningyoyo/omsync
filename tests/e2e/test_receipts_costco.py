@@ -319,3 +319,31 @@ def test_keep_category_takes_a_one_off_item_out_of_triage(ledger: Ledger, tmp_pa
     assert undo is not None
     assert client.post(f"/batches/{undo.group(1)}/undo").status_code == 200
     assert "Dept Ring" in client.get("/categories/triage", params={"source": "costco"}).text
+
+
+def test_a_return_with_no_card_asks_you_to_check_its_credit_until_you_keep_it(
+    ledger: Ledger, tmp_path: Path
+) -> None:
+    ready(ledger, tmp_path, [(D1, 1080)])
+    write_receipt(ledger.data_dir, "R17", D1, [line(101, "SOAP", -1000, "Y")], -80, card="0000")
+    client = web_client(ledger.data_dir)
+    period = {"start": "2026-03-01", "end": "2026-03-31", "tab": "costco"}
+
+    page = client.get("/reconcile", params=period).text
+
+    assert "Needs you" in page
+    assert "one transaction of yours fits" in page
+    assert 'href="/receipts/costco/R17"' in page
+    assert "Keep category" not in page  # the credit has no category yet, so you set one
+    payee_keywords = tmp_path / "payee-keywords.json"
+    payee_keywords.write_text('{"Household": ["COSTCO WHSE"]}', encoding="utf-8")
+    ledger.cli("keywords", "import", payee_keywords, "--list", "payee", "--apply")
+    ledger.cli("categorize", "--apply")
+    assert "Keep category" in client.get("/reconcile", params=period).text
+    [(txn_id,)] = ledger.query('SELECT id FROM "transaction"')
+    kept = client.post("/reconcile/keep", data={**period, "transaction_id": str(txn_id)})
+
+    assert kept.status_code == 200, kept.text
+    assert "Needs you" not in kept.text
+    assert ledger.query('SELECT category_origin FROM "transaction"') == [("manual",)]
+    assert "reconcile-tab-tab-costco" not in client.get("/reconcile", params=period).text

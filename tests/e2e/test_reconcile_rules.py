@@ -267,7 +267,7 @@ def test_a_doubtful_pair_waits_until_you_approve_it(ledger: Ledger, name: str, c
     assert ledger.links() == []  # doubt is never linked by itself
     client = web_client(ledger.data_dir)
     text = page_text(client)
-    assert "1 needs you" in text
+    assert "To review 1" in text
     assert case.queue in text
 
     html = client.get(f"/reconcile?{RANGE}").text

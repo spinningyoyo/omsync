@@ -31,6 +31,8 @@ from omsync.receipts.allocate import (
 from omsync.receipts.match import MatchOutcome, MatchReport, MatchStatus
 from omsync.receipts.model import ReceiptItem
 
+YOU_SET_IT = "you set this category"
+
 
 @dataclass(frozen=True)
 class ApplyItem:
@@ -143,7 +145,7 @@ def _plan_one(
         CategoryOrigin(split.category_origin) for split in splits
     }
     if CategoryOrigin.manual in origins:
-        return _skip(outcome, "you set this category")
+        return _skip(outcome, YOU_SET_IT)
 
     try:
         result = allocate_charge(receipt, charge, category_for_item)

@@ -18,6 +18,7 @@ from omsync.core.months import parse_day
 from omsync.ledger.contacts import ContactKind, create_contact, starting_names
 from omsync.ledger.counterparty import set_counterparty
 from omsync.ledger.links import LinkKind
+from omsync.ledger.register import keep_category
 from omsync.ledger.sources import Account
 from omsync.ledger.transactions import Transaction
 from omsync.receipts.service import apply_digest, apply_report, registered_vendors, run_vendor
@@ -34,14 +35,16 @@ from omsync.web.automatic import run_automatic, with_automatic
 from omsync.web.contacts_view import NEW_CONTACT, parse_choice
 from omsync.web.deps import get_db
 from omsync.web.reconcile_view import (
+    CUSTOM,
     MANUAL_KIND_LABELS,
     Results,
     active_preset,
     default_range,
     link_candidates,
     open_remaining,
+    period_label,
+    period_options,
     plain_amount,
-    presets,
     results_for,
     side_of,
 )
@@ -84,7 +87,12 @@ def parse_range(start: str | None, end: str | None, today: date) -> tuple[date, 
 
 @router.get("/reconcile", response_class=HTMLResponse)
 def reconcile_page(
-    request: Request, db: DbSession, start: str | None = None, end: str | None = None
+    request: Request,
+    db: DbSession,
+    start: str | None = None,
+    end: str | None = None,
+    period: str | None = None,
+    tab: str = "",
 ) -> HTMLResponse:
     today = date.today()
     notice = None
@@ -96,13 +104,17 @@ def reconcile_page(
         notice, status = str(exc), 422
     results = results_for(db, request.app.state.settings, start=first, end=last, today=today)
     context = shell_context(request, db, active="reconcile", title="Reconcile")
+    custom = period == CUSTOM
+    active = results.active_tab(tab)
     context.update(
         start=first.isoformat(),
         end=last.isoformat(),
-        presets=presets(today),
-        active_preset=active_preset(today, first, last),
+        custom=custom or active_preset(today, first, last) is None,
+        period_options=period_options(today, first, last, custom=custom, tab=active),
+        period_label=period_label(today, first, last, custom=custom),
         results=results,
         notice=notice,
+        tab=active,
     )
     return request.app.state.templates.TemplateResponse(request, PAGE, context, status_code=status)
 
@@ -118,8 +130,9 @@ def approve_rows(
     end: Annotated[str, Form()] = "",
     signature: Annotated[list[str] | None, Form()] = None,
     idempotency_key: Annotated[str, Form()] = "",
+    tab: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    return _decide(request, db, "approve", start, end, signature or [], idempotency_key)
+    return _decide(request, db, "approve", start, end, signature or [], idempotency_key, tab)
 
 
 @router.post("/reconcile/reject", response_class=HTMLResponse)
@@ -130,8 +143,9 @@ def reject_rows(
     end: Annotated[str, Form()] = "",
     signature: Annotated[list[str] | None, Form()] = None,
     idempotency_key: Annotated[str, Form()] = "",
+    tab: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    return _decide(request, db, "reject", start, end, signature or [], idempotency_key)
+    return _decide(request, db, "reject", start, end, signature or [], idempotency_key, tab)
 
 
 def _decide(
@@ -142,6 +156,7 @@ def _decide(
     end_text: str,
     signatures: list[str],
     key: str,
+    tab: str,
 ) -> HTMLResponse:
     try:
         start, end = parse_range(start_text, end_text, date.today())
@@ -149,7 +164,13 @@ def _decide(
         return _notice(request, str(exc), 422)
     if not signatures:
         return _region(
-            request, db, start, end, notice="Choose at least one proposal first.", status=422
+            request,
+            db,
+            start,
+            end,
+            tab=tab,
+            notice="Choose at least one proposal first.",
+            status=422,
         )
     key = key or uuid4().hex
     try:
@@ -162,10 +183,10 @@ def _decide(
     except StalePreview:
         return _stale(request, start, end)
     except NothingChanged as exc:
-        return _region(request, db, start, end, notice=str(exc), status=409)
+        return _region(request, db, start, end, tab=tab, notice=str(exc), status=409)
     except (ValueError, BatchError) as exc:
-        return _region(request, db, start, end, notice=str(exc), status=422)
-    return _region(request, db, start, end, toast=_toast(batch, batch.summary))
+        return _region(request, db, start, end, tab=tab, notice=str(exc), status=422)
+    return _region(request, db, start, end, tab=tab, toast=_toast(batch, batch.summary))
 
 
 @router.post("/reconcile/receipts/{vendor_key}/apply", response_class=HTMLResponse)
@@ -177,6 +198,7 @@ def apply_receipts(
     end: Annotated[str, Form()] = "",
     expected: Annotated[str, Form()] = "",
     idempotency_key: Annotated[str, Form()] = "",
+    tab: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """Apply a vendor's matched receipts, if the operation still matches the one you reviewed.
 
@@ -192,7 +214,9 @@ def apply_receipts(
     key = idempotency_key or uuid4().hex
     replay = applied_batch_for_key(db, key)
     if replay is not None:
-        return _region(request, db, start_date, end_date, toast=_toast(replay, replay.summary))
+        return _region(
+            request, db, start_date, end_date, tab=tab, toast=_toast(replay, replay.summary)
+        )
     report = run_vendor(
         db,
         request.app.state.settings,
@@ -204,17 +228,23 @@ def apply_receipts(
     if apply_digest(report) != expected:
         return _stale(request, start_date, end_date)
     if report.to_apply == 0:
-        return _region(request, db, start_date, end_date, notice="No receipt charge would change.")
+        return _region(
+            request, db, start_date, end_date, tab=tab, notice="No receipt charge would change."
+        )
     try:
         batch = apply_report(db, report, idempotency_key=key)
     except StalePreview:
         return _stale(request, start_date, end_date)
     except BatchError as exc:
-        return _region(request, db, start_date, end_date, notice=str(exc), status=422)
+        return _region(request, db, start_date, end_date, tab=tab, notice=str(exc), status=422)
     if batch is None:
-        return _region(request, db, start_date, end_date, notice="No receipt charge would change.")
+        return _region(
+            request, db, start_date, end_date, tab=tab, notice="No receipt charge would change."
+        )
     label = f"Applied {report.to_apply} {vendor_key.title()} receipt charge(s)"
-    return _region(request, db, start_date, end_date, toast=_toast(batch, {"label": label}))
+    return _region(
+        request, db, start_date, end_date, tab=tab, toast=_toast(batch, {"label": label})
+    )
 
 
 @router.post("/reconcile/unlink/{link_id}", response_class=HTMLResponse)
@@ -225,6 +255,7 @@ def unlink_link(
     start: Annotated[str, Form()] = "",
     end: Annotated[str, Form()] = "",
     idempotency_key: Annotated[str, Form()] = "",
+    tab: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     try:
         start_date, end_date = parse_range(start, end, date.today())
@@ -234,9 +265,39 @@ def unlink_link(
         batch = unlink(db, link_id, idempotency_key=idempotency_key or uuid4().hex)
     except LookupError:
         return _region(
-            request, db, start_date, end_date, notice="That link no longer exists.", status=409
+            request,
+            db,
+            start_date,
+            end_date,
+            tab=tab,
+            notice="That link no longer exists.",
+            status=409,
         )
-    return _region(request, db, start_date, end_date, toast=_toast(batch, batch.summary))
+    return _region(request, db, start_date, end_date, tab=tab, toast=_toast(batch, batch.summary))
+
+
+@router.post("/reconcile/keep", response_class=HTMLResponse)
+def keep_receipt_category(
+    request: Request,
+    db: DbSession,
+    transaction_id: Annotated[int, Form()],
+    start: Annotated[str, Form()] = "",
+    end: Annotated[str, Form()] = "",
+    idempotency_key: Annotated[str, Form()] = "",
+    tab: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """Keep the category a receipt's one possible transaction has, so the receipt stops waiting."""
+    try:
+        start_date, end_date = parse_range(start, end, date.today())
+    except RangeError as exc:
+        return _notice(request, str(exc), 422)
+    try:
+        batch = keep_category(db, transaction_id, idempotency_key=idempotency_key or uuid4().hex)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="No such transaction") from None
+    except (ValueError, BatchError) as exc:
+        return _region(request, db, start_date, end_date, tab=tab, notice=str(exc), status=422)
+    return _region(request, db, start_date, end_date, tab=tab, toast=_toast(batch, batch.summary))
 
 
 # The counterparty
@@ -253,6 +314,7 @@ def set_counterparty_rows(
     new_name: Annotated[str, Form()] = "",
     new_kind: Annotated[str, Form()] = ContactKind.person.value,
     idempotency_key: Annotated[str, Form()] = "",
+    tab: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """Set the counterparty of the chosen Not matched rows, as one batch, then run the
     automatic step. target is a contact, a contact's account, or NEW_CONTACT with new_name."""
@@ -279,12 +341,12 @@ def set_counterparty_rows(
             idempotency_key=key,
         )
     except LookupError as exc:
-        return _region(request, db, start_date, end_date, notice=str(exc), status=422)
+        return _region(request, db, start_date, end_date, tab=tab, notice=str(exc), status=422)
     except (ValueError, BatchError) as exc:
-        return _region(request, db, start_date, end_date, notice=str(exc), status=422)
+        return _region(request, db, start_date, end_date, tab=tab, notice=str(exc), status=422)
     label = str((batch.summary or {}).get("label", "Change saved"))
     message = with_automatic(label, run_automatic(db, batch.id))
-    return _region(request, db, start_date, end_date, toast=Toast(message, batch.id))
+    return _region(request, db, start_date, end_date, tab=tab, toast=Toast(message, batch.id))
 
 
 def _new_contact(db: Session, name: str, kind: str, key: str) -> int:
@@ -379,6 +441,7 @@ def link_submit(
     start: Annotated[str, Form()] = "",
     end: Annotated[str, Form()] = "",
     idempotency_key: Annotated[str, Form()] = "",
+    tab: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """Link two transactions by hand. A refusal shows its message in the dialog."""
     source, _ = _transaction_or_404(db, txn)
@@ -408,7 +471,7 @@ def link_submit(
         return _dialog_error(request, str(exc), 422)
     except BatchError as exc:
         return _dialog_error(request, str(exc), 409)
-    return _dialog_done(request, db, start_date, end_date, batch)
+    return _dialog_done(request, db, start_date, end_date, batch, tab)
 
 
 # Undo
@@ -430,6 +493,7 @@ def undo_reply(
     step again, because what it identified rested on what was undone.
     """
     message = with_automatic(message, run_automatic(db)) if automatic else message
+    tab = request.query_params.get("tab", "")  # the toast's Undo names the tab that was open
     today = date.today()
     try:
         start_date, end_date = parse_range(start, end, today)
@@ -444,6 +508,7 @@ def undo_reply(
         ),
         start=start_date.isoformat(),
         end=end_date.isoformat(),
+        tab=tab,
     )
 
 
@@ -503,6 +568,7 @@ def _region(
     start: date,
     end: date,
     *,
+    tab: str = "",
     notice: str | None = None,
     toast: Toast | None = None,
     status: int = 200,
@@ -519,11 +585,12 @@ def _region(
         toast=toast,
         start=start.isoformat(),
         end=end.isoformat(),
+        tab=tab,
     )
 
 
 def _dialog_done(
-    request: Request, db: Session, start: date, end: date, batch: Batch
+    request: Request, db: Session, start: date, end: date, batch: Batch, tab: str
 ) -> HTMLResponse:
     """A saved decision made in a dialog: the dialog closes and the results re-run."""
     return _fragment(
@@ -536,6 +603,7 @@ def _dialog_done(
         toast=_toast(batch, batch.summary),
         start=start.isoformat(),
         end=end.isoformat(),
+        tab=tab,
     )
 
 

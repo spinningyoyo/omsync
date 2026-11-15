@@ -16,7 +16,9 @@ import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import date
+from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -25,8 +27,9 @@ from omsync.core import money
 from omsync.core.batch_models import Batch
 from omsync.core.batches import preview_digest
 from omsync.core.settings import Settings
-from omsync.ledger.models import Transaction
+from omsync.ledger.models import CategoryOrigin, Split, Transaction
 from omsync.receipts.apply import (
+    YOU_SET_IT,
     ApplyPlan,
     ApplySkip,
     apply_receipts,
@@ -48,12 +51,40 @@ REVIEW_STATUSES = (
 )
 
 
+class ReviewAction(StrEnum):
+    """What you can do about a review line. none means nothing: it only says why omsync skipped
+    the receipt.
+
+    keyword: an item needs a keyword. check: one transaction of yours may be it, so check its
+    category. pick: several may be it, so set the category of the right one.
+    """
+
+    keyword = "keyword"
+    check = "check"
+    pick = "pick"
+    none = "none"
+
+
 @dataclass(frozen=True)
 class ReviewLine:
-    """One thing to look at. kind is a MatchStatus value, needs_triage, or parse_error."""
+    """One thing to look at. kind is a MatchStatus value, needs_triage, or parse_error.
+
+    text is the whole line. A line about a receipt also has its parts: the receipt's date, the
+    amount of the charge, the receipt and its vendor login, and the reason. A file that cannot be
+    read has none of them.
+    """
 
     kind: str
     text: str
+    on: date | None = None
+    amount_cents: int | None = None
+    receipt_id: str | None = None
+    vendor_login: str | None = None
+    reason: str | None = None
+    action: ReviewAction = ReviewAction.none
+    advice: str = ""
+    candidate_ids: tuple[int, ...] = ()
+    keepable: bool = False
 
 
 @dataclass(frozen=True)
@@ -236,12 +267,89 @@ def _review_lines(session: Session, report: MatchReport, plan: ApplyPlan) -> lis
             reason = outcome.reason or ""
             if status is MatchStatus.unknown_payer:
                 reason = _unknown_payer_reason(session, outcome)
-            lines.append(ReviewLine(status.value, _describe(outcome, reason)))
+            line = _line(status.value, outcome, reason)
+            lines.append(replace(line, **_advice(session, status, outcome)))
     by_key = {outcome.receipt_key: outcome for outcome in report.outcomes}
     for skip in plan.skipped:
         outcome = by_key[skip.receipt_key]
-        lines.append(ReviewLine("needs_triage", _describe_skip(outcome, skip)))
+        line = _line("needs_triage", outcome, _skip_reason(outcome, skip))
+        if skip.item_positions or skip.offset_names:
+            advice = {"action": ReviewAction.keyword, "advice": "Add a keyword for its items."}
+        elif skip.reason == YOU_SET_IT:
+            advice = {"advice": "You set the category of its transaction yourself."}
+        else:
+            advice = {"advice": f"It does not apply: {skip.reason}."}
+        lines.append(replace(line, **advice))
     return lines
+
+
+def _advice(session: Session, status: MatchStatus, outcome: MatchOutcome) -> dict[str, Any]:
+    """What you can do about a receipt that waits, in plain words. A receipt that one or more of
+    your transactions may be asks you to check their category, until you have chosen it."""
+    candidates = tuple(outcome.candidate_ids)
+    if status in (MatchStatus.unknown_payer, MatchStatus.ambiguous) and candidates:
+        chosen = _manual_categories(session, candidates)
+        if chosen:
+            return {"advice": "You set the category of its transaction yourself."}
+        if len(candidates) == 1:
+            keepable = _keepable(session, candidates[0])
+            return {
+                "action": ReviewAction.check,
+                "candidate_ids": candidates,
+                "keepable": keepable,
+                "advice": "The receipt names no card, but one transaction of yours fits. If it is "
+                "this one, check its category, and keep it or change it."
+                if status is MatchStatus.unknown_payer
+                else "One transaction of yours fits. Check its category.",
+            }
+        return {
+            "action": ReviewAction.pick,
+            "candidate_ids": candidates,
+            "advice": f"{len(candidates)} transactions of yours fit equally well. Open them, and "
+            "set the category of the right one yourself.",
+        }
+    if status is MatchStatus.unknown_payer:
+        return {"advice": "No transaction of yours fits. A card you do not track paid it."}
+    if status is MatchStatus.unmatched:
+        return {
+            "advice": "No transaction of yours has this amount. Another card, a gift balance, or "
+            "an account you do not import paid it."
+        }
+    if status is MatchStatus.changed_since_applied:
+        return {
+            "advice": "The receipt changed after it was applied. Undo that apply to apply it again."
+        }
+    reason = (outcome.reason or "").lower()
+    if "gift card" in reason and "only" not in reason:
+        return {
+            "advice": "A gift card paid part of it, and Amazon does not say how much. Set the "
+            "category of the card's charge yourself."
+        }
+    if "without a card" in reason or "only with a gift card" in reason:
+        return {"advice": "No card paid it, so there is no charge to split."}
+    return {"advice": "omsync cannot tell which charge paid it."}
+
+
+def _manual_categories(session: Session, txn_ids: tuple[int, ...]) -> bool:
+    """True when you chose the category of one of these transactions, or of one of its splits."""
+    own = session.scalar(
+        select(Transaction.id)
+        .where(Transaction.id.in_(txn_ids), Transaction.category_origin == CategoryOrigin.manual)
+        .limit(1)
+    )
+    split = session.scalar(
+        select(Split.id)
+        .where(Split.transaction_id.in_(txn_ids), Split.category_origin == CategoryOrigin.manual)
+        .limit(1)
+    )
+    return own is not None or split is not None
+
+
+def _keepable(session: Session, txn_id: int) -> bool:
+    """The transaction has a whole category that a keyword or a rule gave it."""
+    txn = session.get(Transaction, txn_id)
+    split = session.scalar(select(Split.id).where(Split.transaction_id == txn_id).limit(1))
+    return txn is not None and txn.category_id is not None and split is None
 
 
 def _unknown_payer_reason(session: Session, outcome: MatchOutcome) -> str:
@@ -258,13 +366,25 @@ def _unknown_payer_reason(session: Session, outcome: MatchOutcome) -> str:
     return f"{reason}; it may be {named}"
 
 
-def _describe_skip(outcome: MatchOutcome, skip: ApplySkip) -> str:
+def _skip_reason(outcome: MatchOutcome, skip: ApplySkip) -> str:
     """The skip reason, naming the receipt items and other payments that need a category."""
     names = [
         item.description for item in outcome.receipt.items if item.position in skip.item_positions
     ] + list(skip.offset_names)
-    detail = f"{skip.reason}: {', '.join(names)}" if names else skip.reason
-    return _describe(outcome, detail)
+    return f"{skip.reason}: {', '.join(names)}" if names else skip.reason
+
+
+def _line(kind: str, outcome: MatchOutcome, reason: str) -> ReviewLine:
+    receipt = outcome.receipt
+    return ReviewLine(
+        kind,
+        _describe(outcome, reason),
+        on=receipt.purchased_on,
+        amount_cents=_amount(outcome.charge, receipt),
+        receipt_id=receipt.receipt_id,
+        vendor_login=receipt.vendor_login,
+        reason=reason,
+    )
 
 
 def _describe(outcome: MatchOutcome, reason: str) -> str:

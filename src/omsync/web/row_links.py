@@ -60,6 +60,12 @@ def link_items(transaction_id: int, links: list[RowLink]) -> list[LinkItem]:
     return items
 
 
+def receipt_href(vendor_key: str, receipt_id: str) -> str:
+    """The vendor's own page for a receipt, or omsync's page for it when the vendor has none."""
+    url = get_vendor(vendor_key).receipt_url(receipt_id)
+    return url or f"/receipts/{quote(vendor_key)}/{quote(receipt_id)}"
+
+
 def _receipt_item(receipt_ref: str, icon: str) -> LinkItem:
     vendor_key, _, receipt_id = receipt_ref.partition(":")
     try:

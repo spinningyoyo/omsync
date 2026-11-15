@@ -4,6 +4,7 @@ import calendar
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from sqlalchemy import func, or_, select
@@ -16,6 +17,7 @@ from omsync.ledger.links import Link, LinkKind
 from omsync.ledger.sources import Account, account_digits
 from omsync.ledger.transactions import Transaction
 from omsync.receipts.service import ServiceReport, apply_digest, registered_vendors, run_vendor
+from omsync.receipts.vendors import get_vendor
 from omsync.reconcile.decisions import coverage
 from omsync.reconcile.engine import run
 from omsync.reconcile.history import MANUAL_RULE, UNKNOWN_RULE, rule_tally
@@ -23,6 +25,7 @@ from omsync.reconcile.model import Draft, Explained, NotMatched, Queue, signatur
 from omsync.reconcile.rules.base import DESCRIPTIONS
 from omsync.web.amounts import money_html
 from omsync.web.contacts_view import ChoiceGroup, counterparty_choices
+from omsync.web.row_links import pair_href, receipt_href
 
 DEFAULT_LAST_DAYS = 90
 CANDIDATE_LIMIT = 25
@@ -128,8 +131,17 @@ class VendorView:
     files: int
     receipts: int
     counts: tuple[tuple[str, int], ...]
-    review: tuple[str, ...]
+    review: tuple["ReviewRow", ...]
     to_apply: int
+
+    @property
+    def needs_you(self) -> tuple["ReviewRow", ...]:
+        return tuple(row for row in self.review if row.needs_you)
+
+    @property
+    def nothing_to_do(self) -> tuple["ReviewRow", ...]:
+        return tuple(row for row in self.review if not row.needs_you)
+
     apply_key: str
     apply_digest: str  # what the page shows: apply refuses if the operation now differs
 
@@ -213,6 +225,17 @@ class Results:
     linked: tuple[LinkRow, ...]
     tally: tuple[TallyRow, ...]
 
+    @property
+    def tabs(self) -> list["Tab"]:
+        return result_tabs(self)
+
+    def active_tab(self, requested: str) -> str:
+        return active_tab(self.tabs, requested)
+
+    @property
+    def paused_rules(self) -> tuple[str, ...]:
+        return tuple(row.rule for row in self.tally if row.paused)
+
 
 # Ranges
 
@@ -235,6 +258,79 @@ def presets(today: date) -> tuple[Preset, ...]:
         Preset("last-90", "Last 90 days", today - timedelta(days=DEFAULT_LAST_DAYS - 1), today),
         Preset("ytd", "Year to date", date(today.year, 1, 1), today),
     )
+
+
+CUSTOM = "custom"
+
+
+def period_options(
+    today: date, start: date, end: date, *, custom: bool, tab: str
+) -> list[dict[str, object]]:
+    """The period menu's choices: the presets, then Custom, which shows the two dates. Each keeps
+    the open tab."""
+    active = None if custom else active_preset(today, start, end)
+    options: list[dict[str, object]] = [
+        {
+            "label": preset.label,
+            "href": "/reconcile?"
+            + urlencode({"start": preset.start, "end": preset.end, "tab": tab}),
+            "active": preset.key == active,
+        }
+        for preset in presets(today)
+    ]
+    options.append(
+        {
+            "label": "Custom",
+            "href": "/reconcile?"
+            + urlencode({"period": CUSTOM, "start": start, "end": end, "tab": tab}),
+            "active": active is None,
+        }
+    )
+    return options
+
+
+def period_label(today: date, start: date, end: date, *, custom: bool) -> str:
+    """The period in words: its preset's name, or its two dates."""
+    key = None if custom else active_preset(today, start, end)
+    for preset in presets(today):
+        if preset.key == key:
+            return preset.label
+    return f"{start.isoformat()} to {end.isoformat()}"
+
+
+@dataclass(frozen=True)
+class Tab:
+    """One task on the page. count is what waits for you in it."""
+
+    id: str
+    label: str
+    count: int
+
+
+LINKED_TAB = "linked"
+
+
+def result_tabs(results: "Results") -> list[Tab]:
+    """The tasks that have something in them, in the order you would do them. Linked is always
+    there, so a range with nothing to do still shows what is done."""
+    tabs = []
+    proposals = sum(len(group.rows) for group in results.groups)
+    if proposals:
+        tabs.append(Tab("review", "To review", proposals))
+    if results.not_matched:
+        tabs.append(Tab("not-matched", "Not matched", len(results.not_matched)))
+    for vendor in results.vendors:
+        waiting = vendor.to_apply + len(vendor.needs_you)
+        if vendor.files and waiting:
+            tabs.append(Tab(vendor.key, vendor.title, waiting))
+    tabs.append(Tab(LINKED_TAB, "Linked", len(results.linked)))
+    return tabs
+
+
+def active_tab(tabs: list[Tab], requested: str) -> str:
+    """The tab you asked for while it is still there, else the first one."""
+    ids = [tab.id for tab in tabs]
+    return requested if requested in ids else ids[0]
 
 
 def default_range(today: date) -> tuple[date, date]:
@@ -396,9 +492,71 @@ def plain_amount(cents: int) -> str:
 # Receipts
 
 
-def vendor_view(report: ServiceReport, title: str) -> VendorView:
+REVIEW_LABELS = {
+    "ambiguous": "Several fit",
+    "unmatched": "No transaction",
+    "unknown_payer": "Unknown card",
+    "insufficient": "Not enough data",
+    "changed_since_applied": "Changed",
+    "needs_triage": "Waits for a category",
+    "parse_error": "Cannot read",
+}
+
+
+@dataclass(frozen=True)
+class ReviewRow:
+    """One receipt that needs you, as the vendor's tab lists it. A file that cannot be read has
+    only its kind and text."""
+
+    kind: str
+    text: str
+    on: str = ""
+    amount: str = ""
+    receipt: str = ""
+    url: str | None = None
+    external: bool = False
+    reason: str = ""
+    action: str = "none"
+    advice: str = ""
+    candidates_href: str = ""
+    candidate_id: int | None = None  # the one transaction Keep category keeps
+    keyword_href: str = ""
+
+    @property
+    def needs_you(self) -> bool:
+        return self.action != "none"
+
+
+def vendor_view(
+    report: ServiceReport, title: str, *, start: date | None = None, end: date | None = None
+) -> VendorView:
+    """The vendor's tab. Its review lists the receipts dated in the period, and every file that
+    cannot be read."""
     counts = tuple((COUNT_LABELS.get(key, key), report.counts.get(key, 0)) for key in COUNT_LABELS)
-    review = tuple(f"{line.kind.replace('_', ' ')}: {line.text}" for line in report.review)
+    vendor = get_vendor(report.vendor_key)
+    review = tuple(
+        ReviewRow(
+            kind=REVIEW_LABELS.get(line.kind, line.kind.replace("_", " ")),
+            text=line.text,
+            on="" if line.on is None else line.on.isoformat(),
+            amount="" if line.amount_cents is None else money.format_cents(line.amount_cents),
+            receipt=line.receipt_id or "",
+            url=None
+            if line.receipt_id is None
+            else receipt_href(report.vendor_key, line.receipt_id),
+            external=line.receipt_id is not None
+            and vendor.receipt_url(line.receipt_id) is not None,
+            reason=line.reason or "",
+            action=line.action.value,
+            advice=line.advice or line.text,
+            candidates_href=pair_href(*line.candidate_ids) if line.candidate_ids else "",
+            candidate_id=line.candidate_ids[0] if line.keepable else None,
+            keyword_href="/settings/categories?"
+            + urlencode({"tab": "triage", "source": report.vendor_key}),
+        )
+        for line in report.review
+        if line.on is None or start is None or end is None or start <= line.on <= end
+    )
     return VendorView(
         key=report.vendor_key,
         title=title,
@@ -628,6 +786,8 @@ def results_for(
         vendor_view(
             run_vendor(session, settings, vendor.key, today=today, start=start, end=end),
             vendor.key.title(),
+            start=start,
+            end=end,
         )
         for vendor in registered_vendors()
     )
