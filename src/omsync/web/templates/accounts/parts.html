@@ -23,14 +23,14 @@
     <p class="flex flex-wrap items-baseline gap-x-2 text-sm text-secondary">
       {%- if s.latest %}
       <span class="text-2xl font-medium tabular-nums text-primary">{{ s.latest.cents|money }}</span>
-      <span>as of {{ s.latest.as_of.strftime("%b %-d, %Y") }}</span>
+      <span>as of {{ s.latest.as_of | long_day }}</span>
       {%- else %}
       <span>No balance yet</span>
       {%- endif %}
     </p>
     <p class="text-xs text-secondary">
       {{ detail.transaction_count }} transaction{% if detail.transaction_count != 1 %}s{% endif %}
-      {%- if detail.first_posted %}, {{ detail.first_posted.strftime("%b %-d, %Y") }} to {{ detail.last_posted.strftime("%b %-d, %Y") }}{% endif %}
+      {%- if detail.first_posted %}, {{ detail.first_posted | long_day }} to {{ detail.last_posted | long_day }}{% endif %}
     </p>
   </div>
   <div class="flex flex-wrap items-center gap-2">
@@ -102,7 +102,7 @@
     {%- for number in numbers %}
     <li class="flex items-center justify-between gap-3 py-2">
       <span class="flex items-center gap-2 text-sm tabular-nums text-primary">••{{ number.last4 }}{% if number.current %} {{ pill("Current", tone="green") }}{% endif %}</span>
-      <span class="text-xs text-secondary">{% if number.latest %}Statements to {{ number.latest.strftime("%b %-d, %Y") }}{% elif number.receipts_only %}Receipts only{% else %}No statements yet{% endif %}</span>
+      <span class="text-xs text-secondary">{% if number.latest %}Statements to {{ number.latest | long_day }}{% elif number.receipts_only %}Receipts only{% else %}No statements yet{% endif %}</span>
     </li>
     {%- endfor %}
   </ul>

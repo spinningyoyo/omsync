@@ -10,6 +10,7 @@ from pathlib import Path
 
 from sqlalchemy.engine import Engine
 
+from omsync.core.logs import close_logging, setup_logging
 from omsync.demo import is_demo_dir
 
 # The made-up person the demo signs in as. It is shown in the user menu.
@@ -25,15 +26,18 @@ class DemoSite:
     def reset(self, engine: Engine, data_dir: Path) -> None:
         """Replace the working data with a fresh copy of the pristine tree.
 
-        The engine is disposed first so no connection holds the database file. Raises ValueError
-        when data_dir is not a demo directory, and writes nothing in that case.
+        The engine and the log file are closed first, so no open file blocks the delete on
+        Windows. Raises ValueError when data_dir is not a demo directory, and writes nothing in
+        that case.
         """
         if not is_demo_dir(data_dir):
             raise ValueError(f"{data_dir} is not a demo directory; refusing to reset it")
         engine.dispose()
+        close_logging()
         for child in data_dir.iterdir():
             if child.is_dir() and not child.is_symlink():
                 shutil.rmtree(child)
             else:
                 child.unlink()
         shutil.copytree(self.pristine, data_dir, dirs_exist_ok=True)
+        setup_logging(data_dir)

@@ -1,6 +1,7 @@
 """Chrome sessions, page requests, and waits."""
 
 import contextlib
+import os
 import platform
 import socket
 import subprocess
@@ -30,16 +31,25 @@ class BrowserError(ConnectorError):
     """Chrome could not be started or attached. The message names the fix and holds no secrets."""
 
 
-def build_manual_chrome_debug_command(port: int, profile_dir: Path) -> str:
-    """The command that starts Chrome for chrome-manual, shown when it is not running."""
+def chrome_binary() -> str:
+    """Where Chrome is on this machine. On Windows, the first install that exists, else the
+    system-wide path."""
     sysname = platform.system().lower()
     if "darwin" in sysname:
-        chrome_bin = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-    elif "windows" in sysname:
-        chrome_bin = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-    else:
-        chrome_bin = "google-chrome"
-    return f'"{chrome_bin}" --remote-debugging-port={port} --user-data-dir="{profile_dir}"'
+        return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    if "windows" not in sysname:
+        return "google-chrome"
+    roots = [os.environ.get(name) for name in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
+    candidates = [
+        Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe" for root in roots if root
+    ]
+    found = next((path for path in candidates if path.exists()), None)
+    return str(found) if found else r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+
+
+def build_manual_chrome_debug_command(port: int, profile_dir: Path) -> str:
+    """The command that starts Chrome for chrome-manual, shown when it is not running."""
+    return f'"{chrome_binary()}" --remote-debugging-port={port} --user-data-dir="{profile_dir}"'
 
 
 class BrowserSession:
@@ -185,17 +195,7 @@ class BrowserSession:
         )
 
     def _start_debug_chrome(self, port: int = 0) -> subprocess.Popen[bytes]:
-        sysname = platform.system().lower()
-        if "darwin" in sysname:
-            cmd = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
-        elif "windows" in sysname:
-            chrome_bin = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-            if not Path(chrome_bin).exists():
-                chrome_bin = r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
-            cmd = [chrome_bin]
-        else:
-            cmd = ["google-chrome"]
-
+        cmd = [chrome_binary()]
         profile_dir = self._profile_dir
         if profile_dir is None:
             raise BrowserError("prepare() must run before Chrome is launched")

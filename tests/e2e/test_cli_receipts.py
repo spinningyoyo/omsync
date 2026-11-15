@@ -4,7 +4,6 @@ The database is migrated and seeded with synthetic transactions. The Amazon fixt
 into <data_dir>/receipts/AMAZON. The data directory comes from the environment, so these tests
 never touch ~/omsync-data."""
 
-import fcntl
 import shutil
 import sqlite3
 from collections.abc import Iterator
@@ -19,6 +18,7 @@ from typer.testing import CliRunner
 from omsync import cli
 from omsync.cli import receipts as cli_receipts
 from omsync.core.db import database_url, make_engine
+from omsync.core.locks import LockBusy, exclusive_lock
 from omsync.core.settings import load_settings
 from omsync.ingest.sync import SYNC_LOCK_NAME
 from omsync.ledger.categories import Category, Keyword
@@ -207,14 +207,11 @@ class FakeFetch:
 
     def __call__(self, settings, prompt, *, start: date, end: date) -> list[Path]:
         self.calls.append((start, end))
-        with (self.data_dir / SYNC_LOCK_NAME).open("a") as handle:
-            try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                self.lock_was_held = True
-            else:
+        try:
+            with exclusive_lock(self.data_dir / SYNC_LOCK_NAME):
                 self.lock_was_held = False
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        except LockBusy:
+            self.lock_was_held = True
         if self.error is not None:
             raise self.error
         return self.saved

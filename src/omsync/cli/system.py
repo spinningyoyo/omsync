@@ -24,7 +24,7 @@ from omsync.core import backups
 from omsync.core.db import database_url, make_engine
 from omsync.core.doctor import run_checks
 from omsync.core.locks import SERVE_LOCK_NAME, LockBusy, exclusive_lock
-from omsync.core.logs import setup_logging
+from omsync.core.logs import close_logging, setup_logging
 from omsync.core.schema import alembic_config, head_revision
 from omsync.core.settings import Settings, load_settings
 from omsync.demo import is_demo_dir
@@ -123,11 +123,14 @@ def _serve_demo(settings: Settings) -> None:
             fail("the demo copy is not a demo directory; refusing to serve it")
         setup_logging(demo_settings.data_dir)
         site = DemoSite(pristine=pristine)
-        uvicorn.run(
-            create_app(demo_settings, vault=DemoVault(), demo=site),
-            host=settings.host,
-            port=settings.port,
-        )
+        try:
+            uvicorn.run(
+                create_app(demo_settings, vault=DemoVault(), demo=site),
+                host=settings.host,
+                port=settings.port,
+            )
+        finally:
+            close_logging()
 
 
 @contextmanager

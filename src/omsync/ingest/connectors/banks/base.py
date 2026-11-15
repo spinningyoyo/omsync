@@ -195,8 +195,11 @@ class BankConnector(BrowserSession):
         self._listed = None
 
         # A fresh scratch directory per fetch. It is deleted when this block ends, after the
-        # finished files have been moved into dest.
-        with tempfile.TemporaryDirectory(prefix="omsync-bank-") as scratch:
+        # finished files have been moved into dest. A Chrome left open can still hold a file in it
+        # on Windows; that must not replace the fetch's result or error.
+        with tempfile.TemporaryDirectory(
+            prefix="omsync-bank-", ignore_cleanup_errors=True
+        ) as scratch:
             self.prepare(download_dir=Path(scratch), profile_dir=self._profile_from_settings())
             failed = True  # a browser left open for the person is one a fetch failed in
             try:

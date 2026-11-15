@@ -35,6 +35,7 @@ from omsync.web.brand import mascot_svg
 from omsync.web.categories_view import TYPE_OPTIONS
 from omsync.web.errors import install_error_pages
 from omsync.web.filter_forms import FIELD_LABELS, field_choices, op_choices
+from omsync.web.formats import long_day
 from omsync.web.fragments import undo_url
 from omsync.web.icons import category_icon_name, icon_svg
 from omsync.web.institution_logos import institution_logo_url
@@ -132,6 +133,7 @@ def create_app(
     templates.env.filters["money"] = money_html
     templates.env.filters["sensitive"] = sensitive
     templates.env.filters["money_text"] = format_cents
+    templates.env.filters["long_day"] = long_day
     templates.env.globals["icon_svg"] = icon_svg
     templates.env.globals["link_items"] = link_items
     templates.env.globals["undo_url"] = undo_url

@@ -98,4 +98,5 @@ def connector_label(connector_key: str | None, enabled: bool) -> str:
 
 def local_time(moment: datetime) -> str:
     """A stored time is naive UTC. It is shown in this machine's time zone."""
-    return moment.replace(tzinfo=UTC).astimezone().strftime("%b %-d, %Y %H:%M")
+    local = moment.replace(tzinfo=UTC).astimezone()
+    return f"{long_day(local)} {local:%H:%M}"

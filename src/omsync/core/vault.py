@@ -7,6 +7,7 @@ environment. They never appear in argv, in os.environ, in an exception message, 
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import time
 from collections.abc import Callable, Mapping
@@ -72,11 +73,14 @@ class BitwardenCLI:
         env["BITWARDENCLI_APPDATA_DIR"] = str(self._appdata_dir)
         env.update(secrets)
         try:
+            # Windows starts only an .exe by bare name; npm installs bw as bw.cmd.
+            executable = shutil.which(self._executable) or self._executable
             completed = subprocess.run(
-                [self._executable, *args],
+                [executable, *args],
                 env=env,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=self._timeout,
                 input=input,
                 check=False,

@@ -453,7 +453,7 @@ def _trend_points(days: tuple[TrendDay, ...]) -> list[dict[str, Any]]:
     return [
         {
             "day": index + 1,
-            "label": point.day.strftime("%b %-d"),
+            "label": f"{point.day:%b} {point.day.day}",
             "cents": point.cents,
             "text": format_cents(point.cents),
         }

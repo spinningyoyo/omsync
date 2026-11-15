@@ -8,6 +8,13 @@ numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- omsync runs on Windows. Before, every command stopped with `No module named 'fcntl'`, and the
+  Home and Accounts pages failed with `Invalid format string`. Sign-in also works with a `bw`
+  installed through npm and with a login or password that has accented letters. The demo resets
+  and stops cleanly, and bank sync finds Chrome installed for one user only.
+
 ## [0.1.0] - 2026-11-14
 
 ### Added

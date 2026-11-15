@@ -24,8 +24,8 @@ def money_or_dash(cents: int | None) -> str:
 
 
 def long_day(day: date) -> str:
-    """A date such as Jan 5, 2026. Unlike fmt_date, strftime pads a year before 1000."""
-    return day.strftime("%b %-d, %Y")
+    """A date such as Jan 5, 2026. Unlike fmt_date, %Y pads a year before 1000."""
+    return f"{day:%b} {day.day}, {day:%Y}"
 
 
 def short_day(day: date) -> str:

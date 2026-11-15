@@ -25,6 +25,7 @@ _REAL_HOME = Path.home()
 _PLAYWRIGHT_CACHES = (
     _REAL_HOME / "Library" / "Caches" / "ms-playwright",
     _REAL_HOME / ".cache" / "ms-playwright",
+    _REAL_HOME / "AppData" / "Local" / "ms-playwright",
 )
 
 
@@ -42,7 +43,9 @@ def _isolated_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest
             if cache.is_dir():
                 monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(cache))
                 break
-    monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
+    home = str(tmp_path_factory.mktemp("home"))
+    monkeypatch.setenv("HOME", home)
+    monkeypatch.setenv("USERPROFILE", home)  # Path.home() on Windows
     for name in [name for name in os.environ if name.startswith("OMSYNC_")]:
         monkeypatch.delenv(name)
     for name in ("get_password", "set_password", "delete_password"):

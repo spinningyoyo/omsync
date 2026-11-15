@@ -41,9 +41,15 @@ def _run(command: list[str], env: dict[str, str] | None = None) -> subprocess.Co
 
 
 def _isolated_env(home: Path, uv_cache: str) -> dict[str, str]:
+    # Windows needs SYSTEMROOT to start Python and its sockets, and reads the home from USERPROFILE.
+    system = {
+        name: os.environ[name] for name in ("SYSTEMROOT", "TEMP", "TMP") if name in os.environ
+    }
     return {
+        **system,
         "PATH": os.environ.get("PATH", ""),
         "HOME": str(home),
+        "USERPROFILE": str(home),
         "UV_CACHE_DIR": uv_cache,
         "OMSYNC_DATA_DIR": str(home / "data"),
         "OMSYNC_CONFIG": str(home / "absent.toml"),
@@ -93,13 +99,14 @@ def test_wheel_installs_migrates_and_serves(tmp_path: Path) -> None:
 
     venv = tmp_path / "venv"
     _run([uv, "venv", "--python", sys.executable, str(venv)])
-    python = str(venv / "bin" / "python")
-    _run([uv, "pip", "install", "--python", python, str(wheel), _nursery_requirement()])
+    _run([uv, "pip", "install", "--python", str(venv), str(wheel), _nursery_requirement()])
 
     home = tmp_path / "home"
     home.mkdir()
     env = _isolated_env(home, uv_cache)
-    omsync = str(venv / "bin" / "omsync")
+    # which() adds the .exe that Windows gives the script.
+    omsync = shutil.which("omsync", path=venv / ("Scripts" if os.name == "nt" else "bin"))
+    assert omsync is not None, "the wheel installed no omsync script"
 
     upgrade = _run([omsync, "db", "upgrade"], env)
     assert (home / "data" / "omsync.db").is_file(), upgrade.stdout

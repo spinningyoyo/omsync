@@ -171,7 +171,9 @@ def fetch_receipts(settings: Settings, prompt: Prompt, *, start: date, end: date
     if start > end:
         raise ValueError("start must not be after end")
     root = settings.receipts_dir / RECEIPTS_FOLDER
-    with tempfile.TemporaryDirectory(prefix="omsync-costco-") as scratch:
+    with tempfile.TemporaryDirectory(
+        prefix="omsync-costco-", ignore_cleanup_errors=True
+    ) as scratch:
         session = BrowserSession()
         session.prepare(download_dir=Path(scratch), profile_dir=settings.browser_profile_dir)
         try:

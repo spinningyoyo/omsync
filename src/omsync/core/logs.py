@@ -40,17 +40,37 @@ def log_path(data_dir: Path) -> Path:
     return data_dir / LOG_DIR_NAME / LOG_FILE_NAME
 
 
-def setup_logging(data_dir: Path) -> None:
-    """Send omsync's log records to a size-capped file in data_dir. A second call moves the file."""
+class _RotatingFile(RotatingFileHandler):
+    def doRollover(self) -> None:
+        try:
+            super().doRollover()
+        except PermissionError:
+            # On Windows a file that another omsync process has open cannot be renamed. Keep
+            # writing to it; a later record tries the rollover again.
+            if self.stream is None:
+                self.stream = self._open()
+
+
+def close_logging() -> None:
+    """Stop writing the log file, so its directory can be deleted. Windows refuses to delete an
+    open file."""
     root = logging.getLogger("omsync")
     for handler in list(root.handlers):
         if getattr(handler, "_omsync_file", False):
             root.removeHandler(handler)
             handler.close()
+
+
+def setup_logging(data_dir: Path) -> None:
+    """Send omsync's log records to a size-capped file in data_dir. A second call moves the file."""
+    close_logging()
+    root = logging.getLogger("omsync")
     path = log_path(data_dir)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        handler = RotatingFileHandler(path, maxBytes=MAX_BYTES, backupCount=BACKUPS, delay=True)
+        handler = _RotatingFile(
+            path, maxBytes=MAX_BYTES, backupCount=BACKUPS, encoding="utf-8", delay=True
+        )
     except OSError:
         return  # a log that cannot be written must not stop the app
     handler._omsync_file = True  # type: ignore[attr-defined]
