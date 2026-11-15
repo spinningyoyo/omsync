@@ -22,10 +22,11 @@
 {% from "components/menu.html" import menu %}
 {% from "components/popover.html" import popover with context %}
 
-{# options: the period links, each with label, href and active. #}
-{% macro period_menu(options, id="period-menu") -%}
+{# options: the period links, each with label, href and active. label and icon_name name the menu,
+   so the same menu can pick a view instead of a period. #}
+{% macro period_menu(options, id="period-menu", label="Period", icon_name="calendar") -%}
 {%- set current = (options | selectattr("active") | first) -%}
-{%- call popover(id, "Period", icon_name="calendar", trigger_text=current.label if current else "Period", panel_class="w-52 p-1") %}
+{%- call popover(id, label, icon_name=icon_name, trigger_text=current.label if current else label, panel_class="w-52 p-1") %}
 <ul class="flex flex-col">
   {%- for option in options %}
   <li>

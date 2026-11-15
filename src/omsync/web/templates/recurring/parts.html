@@ -29,13 +29,43 @@
 <label class="form-field"><span class="form-field__label">{{ label }}</span>{{ caller() }}</label>
 {%- endmacro %}
 
-{# The view switch. Each view is its own page, so the URL names it and Back works. #}
-{% macro view_switcher(view) -%}
-{{ segmented_control([
-  {"label": "Overview", "active": view == "overview", "href": "/recurring"},
-  {"label": "Calendar", "active": view == "calendar", "href": "/recurring?view=calendar"},
-  {"label": "All bills", "active": view == "all", "href": "/recurring?view=all"},
-], label="Recurring views") }}
+{# The page header, inside the body region so its words and counts follow each change: the view in
+   words under the title, then Review when possible bills wait, the calendar's month stepper, the view
+   menu, and Add bill. Each view is its own page, so the URL names it and Back works. #}
+{% macro recurring_header(body) -%}
+{% from "layouts/shell_parts.html" import page_header %}
+{% from "components/view_controls.html" import period_menu with context %}
+{% from "components/icon.html" import icon with context %}
+{%- if body.view == "overview" and body.overview and not body.overview.empty %}
+{%- set o = body.overview %}
+{%- set summary = o.month ~ " · " ~ (o.totals.left_to_pay_cents|money_text) ~ " left to pay (" ~ o.totals.left_to_pay_count ~ ") · " ~ (o.totals.paid_cents|money_text) ~ " paid · " ~ (o.totals.income_expected_cents|money_text) ~ " income expected" %}
+{%- elif body.view == "calendar" %}
+{%- set summary = body.month_title %}
+{%- elif body.view == "all" and body.status == "active" and body.series %}
+{%- set summary = body.series|length ~ " active bill" ~ ("" if body.series|length == 1 else "s") ~ " · " ~ (body.monthly_cents|money_text) ~ " a month" %}
+{%- else %}
+{%- set summary = "Bills, subscriptions, and other charges that repeat on a schedule." %}
+{%- endif %}
+{% call page_header("Recurring", summary) %}
+  {%- if body.review_count %}
+  {{ button("Review " ~ body.review_count, variant="primary", size="sm", attrs={"hx-get": "/recurring/review?index=0", "hx-target": "#recurring-drawer-body", "hx-swap": "innerHTML", "data-action": "page-dialogs#openDialog", "data-dialog-id": "recurring-drawer", "title": body.review_count ~ " possible bills, not counted yet"}) }}
+  {%- endif %}
+  {%- if body.view == "calendar" %}
+  <div class="flex items-center gap-1">
+    {{ link_button(none, href="/recurring?view=calendar&month=" ~ body.previous_key, variant="ghost", size="sm", icon="chevron-left", attrs={"aria-label": "Previous month"}) }}
+    {%- if not body.is_current_month %}
+    {{ link_button("This month", href="/recurring?view=calendar", variant="ghost", size="sm") }}
+    {%- endif %}
+    {{ link_button(none, href="/recurring?view=calendar&month=" ~ body.next_key, variant="ghost", size="sm", icon="chevron-right", attrs={"aria-label": "Next month"}) }}
+  </div>
+  {%- endif %}
+  {{ period_menu([
+    {"label": "Overview", "href": "/recurring", "active": body.view == "overview"},
+    {"label": "Calendar", "href": "/recurring?view=calendar", "active": body.view == "calendar"},
+    {"label": "All bills", "href": "/recurring?view=all", "active": body.view == "all"},
+  ], id="recurring-view-menu", label="View", icon_name="layout-dashboard") }}
+  {{ button("Add bill", variant="outline", size="sm", icon="plus", attrs={"hx-get": "/recurring/bills/new", "hx-target": "#recurring-drawer-body", "hx-swap": "innerHTML", "data-action": "page-dialogs#openDialog", "data-dialog-id": "recurring-drawer"}) }}
+{% endcall %}
 {%- endmacro %}
 
 {% macro stat(label, cents, count=none) -%}
@@ -61,27 +91,11 @@
 </form>
 {%- endmacro %}
 
-{# One occurrence, as a button that opens the bill's drawer. #}
-{% macro occurrence_button(occ) -%}
-<button type="button" class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-surface-hover focus-ring" hx-get="/recurring/series/{{ occ.series_id }}/drawer?due={{ occ.due_on.isoformat() }}" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">
-  <span class="flex min-w-0 flex-col">
-    <span class="truncate text-sm text-primary">{{ occ.name }}</span>
-    <span class="text-xs text-secondary">{{ occ.due_text }}</span>
-  </span>
-  <span class="flex shrink-0 items-center gap-3">
-    {%- if occ.is_transfer %}
-    <span class="text-xs text-secondary">Not in totals</span>
-    {%- endif %}
-    {{ state_chip(occ) }}
-    <span class="text-sm tabular-nums text-primary">{{ occ.shown_text }}</span>
-  </span>
-</button>
-{%- endmacro %}
-
 {# The page's one region for the view. Its URL names the view, the month, and the All bills filter, so
    a reload shows the same thing. #}
 {% macro body_region(body) -%}
-<div id="recurring-body" class="flex flex-col gap-4" hx-get="/recurring/body?view={{ body.view }}&amp;status={{ body.status }}&amp;month={{ body.month_key }}" hx-trigger="recurring-changed from:body" hx-swap="outerHTML">
+<div id="recurring-body" class="fill-chain flex flex-col gap-4" hx-get="/recurring/body?view={{ body.view }}&amp;status={{ body.status }}&amp;month={{ body.month_key }}" hx-trigger="recurring-changed from:body" hx-swap="outerHTML">
+  {{ recurring_header(body) }}
   {%- if body.view == "overview" %}{{ overview_view(body.overview) }}
   {%- elif body.view == "calendar" %}{{ calendar_view(body) }}
   {%- else %}{{ all_view(body) }}
@@ -89,95 +103,115 @@
 </div>
 {%- endmacro %}
 
-{# The Overview, top to bottom: this month's totals, the review prompt, Needs attention, what is due this
-   month, and each bill's first charge next month. With no bills, nothing to review, and nothing to attend
-   to, it is one empty state. #}
+{# One occurrence in a month's list, on one line: the day, the name, a mark for its state, and the
+   amount. A transfer is muted and marked, because it is not in the totals. It opens the bill's drawer. #}
+{% macro month_row(occ) -%}
+{% from "components/icon.html" import icon with context %}
+<button type="button" class="flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-surface-hover focus-ring{% if occ.is_transfer %} text-secondary{% else %} text-primary{% endif %}" title="{{ occ.name }}{% if occ.is_transfer %}. Moves money between your accounts, so it isn't counted as a bill.{% endif %}" hx-get="/recurring/series/{{ occ.series_id }}/drawer?due={{ occ.due_on.isoformat() }}" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">
+  <span class="w-12 shrink-0 tabular-nums text-secondary">{{ occ.due_on.strftime("%b") }} {{ occ.due_on.day }}</span>
+  <span class="min-w-0 flex-1 truncate">{{ occ.name }}</span>
+  {%- if occ.is_transfer %}<span class="shrink-0 rounded-full bg-surface-inset px-2 py-0.5 text-xs text-secondary" title="Moves money between your accounts, so it isn't counted as a bill.">Transfer</span>{% endif %}
+  {%- if occ.chip_kind == "paid" %}
+  <span class="shrink-0" aria-label="Paid">{{ icon("check", 16, "text-success") }}</span>
+  {%- elif occ.chip_kind != "upcoming" %}
+  {{ state_chip(occ) }}
+  {%- endif %}
+  <span class="w-24 shrink-0 text-right tabular-nums">{{ occ.shown_text }}</span>
+</button>
+{%- endmacro %}
+
+{# One month's card: its title and totals, then its list, which scrolls on its own from lg. This month
+   shows how much is paid, and a Today line between what is done and what is coming. #}
+{% macro month_card(title_id, title, rows, empty_text, today=none, totals=none, paid_share=none) -%}
+<section aria-labelledby="{{ title_id }}" class="flex min-h-0 flex-1 flex-col rounded-xl bg-container shadow-border-xs">
+  <div class="flex flex-col gap-2 border-b border-divider px-4 py-3">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h2 id="{{ title_id }}" class="font-medium text-primary">{{ title }}</h2>
+      {%- if totals %}
+      <p class="text-sm text-secondary">
+        {%- if paid_share is not none %}<span class="tabular-nums text-primary">{{ totals.left_to_pay_count }}</span> left · <span class="tabular-nums text-primary">{{ totals.left_to_pay_cents|money }}</span>
+        {%- else %}<span class="tabular-nums text-primary">{{ totals.left_to_pay_cents|money }}</span> out · <span class="tabular-nums text-primary">{{ totals.income_expected_cents|money }}</span> in{% endif %}
+      </p>
+      {%- endif %}
+    </div>
+    {%- if paid_share is not none %}
+    <div class="h-1.5 w-full overflow-hidden rounded-full bg-surface-inset" role="progressbar" aria-label="Paid this month" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ paid_share }}">
+      <div class="h-full rounded-full bg-success" style="width: {{ paid_share }}%"></div>
+    </div>
+    {%- endif %}
+  </div>
+  {%- if rows %}
+  <ul class="month-list flex flex-col divide-y divide-subdued py-1">
+    {%- set ns = namespace(marked=false) %}
+    {%- for occ in rows %}
+    {%- if today and not ns.marked and occ.due_on >= today and not loop.first %}
+    {%- set ns.marked = true %}
+    <li class="flex items-center gap-2 px-4 py-1 text-xs font-medium text-link" aria-label="Today">
+      <span class="h-px flex-1 bg-current opacity-40"></span>Today, {{ today.strftime("%b") }} {{ today.day }}<span class="h-px flex-1 bg-current opacity-40"></span>
+    </li>
+    {%- elif today and occ.due_on >= today %}{% set ns.marked = true %}
+    {%- endif %}
+    <li>{{ month_row(occ) }}</li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="px-4 py-3 text-sm text-secondary">{{ empty_text }}</p>
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{# The Overview: Needs attention, then this month and next month side by side, each list scrolling on
+   its own. With no bills, nothing to review, and nothing to attend to, it is one empty state. #}
 {% macro overview_view(o) -%}
+{% from "components/tabs.html" import tabs %}
 {%- if o.empty %}
 {{ empty_state("No bills yet.", "Possible bills appear here once your transactions repeat on a schedule.") }}
 {%- else %}
-<section aria-labelledby="recurring-totals-title" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs">
-  <h2 id="recurring-totals-title" class="text-sm font-medium text-secondary">{{ o.month }}</h2>
-  <dl class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
-    {{ stat("Left to pay", o.totals.left_to_pay_cents, o.totals.left_to_pay_count) }}
-    {{ stat("Paid", o.totals.paid_cents) }}
-    {{ stat("Income expected", o.totals.income_expected_cents) }}
-  </dl>
-</section>
-{%- if o.review_count %}
-<div class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-container px-5 py-3 shadow-border-xs">
-  <p class="text-sm text-secondary">{{ o.review_count }} possible bill{{ "s" if o.review_count != 1 else "" }} found. Not counted yet.</p>
-  {{ button("Review", variant="outline", size="sm", attrs={"hx-get": "/recurring/review?index=0", "hx-target": "#recurring-drawer-body", "hx-swap": "innerHTML", "data-action": "page-dialogs#openDialog", "data-dialog-id": "recurring-drawer"}) }}
-</div>
-{%- endif %}
 {%- if o.attention %}
 <section aria-labelledby="recurring-attention-title" class="flex flex-col gap-2">
   <h2 id="recurring-attention-title" class="text-sm font-medium text-secondary">Needs attention</h2>
-  <ul class="flex flex-col divide-y divide-subdued rounded-xl bg-container shadow-border-xs">
+  <ul class="flex max-h-48 flex-col divide-y divide-subdued overflow-y-auto rounded-xl bg-container shadow-border-xs">
     {%- for row in o.attention %}
-    <li class="flex flex-col gap-2 px-4 py-3">
-      <button type="button" class="w-fit text-left text-sm text-primary hover:underline focus-ring rounded-sm" hx-get="{{ row.drawer_href }}" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.text }}</button>
+    <li class="flex flex-col gap-2 px-4 py-2">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <button type="button" class="min-w-0 text-left text-sm text-primary hover:underline focus-ring rounded-sm" hx-get="{{ row.drawer_href }}" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.text }}</button>
+        {%- if row.actions %}
+        <div class="flex flex-wrap gap-2">
+          {%- for action in row.actions|reverse %}
+          {{ action_form(action) }}
+          {%- endfor %}
+        </div>
+        {%- endif %}
+      </div>
       {%- for charge in row.charges %}
       <div class="flex flex-wrap items-center justify-between gap-2 border-l-2 border-subdued pl-3 text-sm">
         <span class="text-secondary">{{ charge.text }}</span>
         {{ action_form(charge.action) }}
       </div>
       {%- endfor %}
-      {%- if row.actions %}
-      <div class="flex flex-wrap gap-2">
-        {%- for action in row.actions %}
-        {{ action_form(action) }}
-        {%- endfor %}
-      </div>
-      {%- endif %}
     </li>
     {%- endfor %}
   </ul>
 </section>
 {%- endif %}
-<section aria-labelledby="recurring-this-month-title" class="flex flex-col gap-2">
-  <h2 id="recurring-this-month-title" class="text-sm font-medium text-secondary">This month</h2>
-  {%- if o.this_month %}
-  <ul class="flex flex-col divide-y divide-subdued rounded-xl bg-container shadow-border-xs">
-    {%- for occ in o.this_month %}
-    <li>{{ occurrence_button(occ) }}</li>
-    {%- endfor %}
-  </ul>
-  {%- else %}
-  <p class="text-sm text-secondary">Nothing else due this month.</p>
-  {%- endif %}
-</section>
-<section aria-labelledby="recurring-next-month-title" class="flex flex-col gap-2">
-  <h2 id="recurring-next-month-title" class="text-sm font-medium text-secondary">Next month</h2>
-  {%- if o.next_month %}
-  <ul class="flex flex-col divide-y divide-subdued rounded-xl bg-container shadow-border-xs">
-    {%- for occ in o.next_month %}
-    <li>{{ occurrence_button(occ) }}</li>
-    {%- endfor %}
-  </ul>
-  {%- else %}
-  <p class="text-sm text-secondary">Nothing scheduled for next month yet.</p>
-  {%- endif %}
-</section>
+{%- set this_body %}{{ month_card("recurring-this-month-title", "This month", o.this_month, "Nothing else due this month.", today=o.today, totals=o.totals, paid_share=o.paid_share) }}{% endset %}
+{%- set next_body %}{{ month_card("recurring-next-month-title", "Next month", o.next_month, "Nothing scheduled for next month yet.", totals=o.next_totals) }}{% endset %}
+{{ tabs("recurring-months", [
+  {"id": "this", "label": "This month", "body": this_body},
+  {"id": "next", "label": "Next month", "body": next_body},
+], "this", "Months", fill=true, class_="month-pair") }}
 {%- endif %}
 {%- endmacro %}
 
 {% macro calendar_chip(occ) -%}
-<button type="button" class="block w-full truncate rounded px-1.5 py-0.5 text-left text-xs hover:opacity-80 focus-ring {{ CHIP_CLASSES[occ.chip_kind] }}" title="{{ occ.name }}, {{ occ.chip_label }}, {{ occ.shown_text }}{% if occ.is_transfer %}, Not in totals{% endif %}" hx-get="/recurring/series/{{ occ.series_id }}/drawer?due={{ occ.due_on.isoformat() }}" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">
-  <span class="sr-only">{{ occ.chip_label }}:</span> {{ occ.name }} <span class="tabular-nums">{{ occ.shown_text }}</span>{% if occ.is_transfer %} <span class="opacity-75">Not in totals</span>{% endif %}
+<button type="button" class="block w-full truncate rounded px-1.5 py-0.5 text-left text-xs hover:opacity-80 focus-ring {{ CHIP_CLASSES[occ.chip_kind] }}" title="{{ occ.name }}, {{ occ.chip_label }}, {{ occ.shown_text }}{% if occ.is_transfer %}, transfer, not counted as a bill{% endif %}" hx-get="/recurring/series/{{ occ.series_id }}/drawer?due={{ occ.due_on.isoformat() }}" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">
+  <span class="sr-only">{{ occ.chip_label }}:</span> {{ occ.name }} <span class="tabular-nums">{{ occ.shown_text }}</span>{% if occ.is_transfer %} <span class="opacity-75">Transfer</span>{% endif %}
 </button>
 {%- endmacro %}
 
 {% macro calendar_view(body) -%}
 <section aria-labelledby="recurring-calendar-title" class="flex flex-col gap-4">
-  <div class="flex flex-wrap items-center gap-2">
-    {{ link_button("Previous", href="/recurring?view=calendar&month=" ~ body.previous_key, variant="outline", size="sm", attrs={"aria-label": "Previous month"}) }}
-    {{ link_button("Next", href="/recurring?view=calendar&month=" ~ body.next_key, variant="outline", size="sm", attrs={"aria-label": "Next month"}) }}
-    <h2 id="recurring-calendar-title" class="ml-2 text-lg font-medium text-primary">{{ body.month_title }}</h2>
-    {%- if not body.is_current_month %}
-    {{ link_button("This month", href="/recurring?view=calendar", variant="ghost", size="sm") }}
-    {%- endif %}
-  </div>
+  <h2 id="recurring-calendar-title" class="sr-only">{{ body.month_title }}</h2>
   <div class="overflow-x-auto">
     <div class="min-w-[640px] rounded-xl border-l border-t border-subdued bg-container shadow-border-xs">
       <div class="grid grid-cols-7 text-xs font-medium uppercase text-secondary">
@@ -206,14 +240,13 @@
    filter and the region matches it. Active bills are confirmed, ended ones can be resumed, and dismissed
    ones can be restored. Add bill opens the drawer with the add form. #}
 {% macro all_view(body) -%}
-<section aria-label="All bills" class="flex flex-col gap-4">
+<section aria-label="All bills" class="fill-chain flex flex-col gap-4">
   <div class="flex flex-wrap items-center justify-between gap-3">
     {{ segmented_control([
       {"label": "Active", "active": body.status == "active", "href": "/recurring?view=all", "attrs": {"hx-get": "/recurring/body?view=all&status=active", "hx-target": "#recurring-body", "hx-swap": "outerHTML", "hx-push-url": "/recurring?view=all"}},
       {"label": "Ended", "active": body.status == "ended", "href": "/recurring?view=all&status=ended", "attrs": {"hx-get": "/recurring/body?view=all&status=ended", "hx-target": "#recurring-body", "hx-swap": "outerHTML", "hx-push-url": "/recurring?view=all&status=ended"}},
       {"label": "Dismissed", "active": body.status == "dismissed", "href": "/recurring?view=all&status=dismissed", "attrs": {"hx-get": "/recurring/body?view=all&status=dismissed", "hx-target": "#recurring-body", "hx-swap": "outerHTML", "hx-push-url": "/recurring?view=all&status=dismissed"}},
     ], label="Bill status") }}
-    {{ button("Add bill", variant="primary", size="sm", attrs={"hx-get": "/recurring/bills/new", "hx-target": "#recurring-drawer-body", "hx-swap": "innerHTML", "data-action": "page-dialogs#openDialog", "data-dialog-id": "recurring-drawer"}) }}
   </div>
   {%- if not body.series %}
   {%- if body.status == "dismissed" %}
@@ -234,19 +267,19 @@
 {%- endmacro %}
 
 {# The active bills, largest monthly cost first. A bill that is not monthly shows its monthly equivalent
-   under its amount. A transfer is marked Not in totals, and the footer leaves it out. #}
+   under its amount. A transfer is marked as one, and the footer leaves it out. #}
 {% macro bills_table(body) -%}
-<div class="overflow-x-auto rounded-xl bg-container shadow-border-xs">
+<div class="table-scroll fill-region rounded-xl shadow-border-xs focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Bills">
   <table class="w-full border-separate border-spacing-0 text-sm text-primary">
     <thead>
       <tr>
-        <th scope="col" class="border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
-        <th scope="col" class="border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
-        <th scope="col" class="border-b border-divider px-3 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
-        <th scope="col" class="border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Next due</th>
-        <th scope="col" class="border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Category</th>
-        <th scope="col" class="border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
-        <th scope="col" class="border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary"><span class="sr-only">Transactions</span></th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Next due</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Category</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-3 py-3 text-left text-xs font-medium uppercase text-secondary"><span class="sr-only">Transactions</span></th>
       </tr>
     </thead>
     <tbody>
@@ -256,7 +289,7 @@
         <td class="px-3 py-3{{ rule }}">
           <button type="button" class="line-clamp-2 max-w-[18rem] min-w-[8rem] wrap-anywhere text-left font-medium text-primary hover:underline focus-ring rounded-sm" title="{{ row.name }}" hx-get="/recurring/series/{{ row.id }}/drawer" hx-target="#recurring-drawer-body" hx-swap="innerHTML" data-action="page-dialogs#openDialog" data-dialog-id="recurring-drawer">{{ row.name }}</button>
           {%- if row.transfer %}
-          <span class="block text-xs text-secondary">Not in totals</span>
+          <span class="block text-xs text-secondary" title="Moves money between your accounts, so it isn't counted as a bill.">Transfer</span>
           {%- endif %}
         </td>
         <td class="px-3 py-3{{ rule }}">{{ row.cadence }}</td>
@@ -275,14 +308,14 @@
     </tbody>
     <tfoot>
       <tr>
-        <th scope="row" colspan="2" class="border-t border-divider px-3 py-3 text-left font-medium text-secondary">Bills per month</th>
-        <td class="border-t border-divider px-3 py-3 text-right tabular-nums font-medium text-primary">{{ body.monthly_cents|money }}</td>
-        <td colspan="4" class="border-t border-divider"></td>
+        <th scope="row" colspan="2" class="sticky bottom-10 bg-container border-t border-divider px-3 py-2 text-left font-medium text-secondary">Bills per month</th>
+        <td class="sticky bottom-10 bg-container border-t border-divider px-3 py-2 text-right tabular-nums font-medium text-primary">{{ body.monthly_cents|money }}</td>
+        <td colspan="4" class="sticky bottom-10 bg-container border-t border-divider"></td>
       </tr>
       <tr>
-        <th scope="row" colspan="2" class="px-3 py-3 text-left font-medium text-secondary">Bills per year</th>
-        <td class="px-3 py-3 text-right tabular-nums font-medium text-primary">{{ body.yearly_cents|money }}</td>
-        <td colspan="4"></td>
+        <th scope="row" colspan="2" class="sticky bottom-0 h-10 bg-container px-3 py-2 text-left font-medium text-secondary">Bills per year</th>
+        <td class="sticky bottom-0 h-10 bg-container px-3 py-2 text-right tabular-nums font-medium text-primary">{{ body.yearly_cents|money }}</td>
+        <td colspan="4" class="sticky bottom-0 h-10 bg-container"></td>
       </tr>
     </tfoot>
   </table>
@@ -291,16 +324,16 @@
 
 {# The ended bills, with the day each stopped. Resume makes one active again. #}
 {% macro ended_table(rows) -%}
-<div class="overflow-x-auto rounded-xl bg-container shadow-border-xs">
+<div class="table-scroll fill-region rounded-xl shadow-border-xs focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Bills">
   <table class="w-full border-separate border-spacing-0 text-sm text-primary">
     <thead>
       <tr>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Ended</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary"><span class="sr-only">Actions</span></th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Ended</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary"><span class="sr-only">Actions</span></th>
       </tr>
     </thead>
     <tbody>
@@ -326,15 +359,15 @@
 {%- endmacro %}
 
 {% macro dismissed_table(rows) -%}
-<div class="overflow-x-auto rounded-xl bg-container shadow-border-xs">
+<div class="table-scroll fill-region rounded-xl shadow-border-xs focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Bills">
   <table class="w-full border-separate border-spacing-0 text-sm text-primary">
     <thead>
       <tr>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
-        <th scope="col" class="border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary"><span class="sr-only">Actions</span></th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Name</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Cadence</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary">Amount</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-left text-xs font-medium uppercase text-secondary">Account</th>
+        <th scope="col" class="sticky top-0 z-10 bg-container border-b border-divider px-4 py-3 text-right text-xs font-medium uppercase text-secondary"><span class="sr-only">Actions</span></th>
       </tr>
     </thead>
     <tbody>

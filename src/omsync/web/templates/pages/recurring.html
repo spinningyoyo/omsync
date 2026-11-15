@@ -1,17 +1,17 @@
 {% extends "layouts/shell.html" %}
 {% from "layouts/shell_parts.html" import page_header %}
 {% from "components/button.html" import button %}
-{% from "recurring/parts.html" import view_switcher, body_region %}
+{% from "recurring/parts.html" import body_region %}
+{% set fill_viewport = true %}
 
 {% block page %}
 {# The page root listens for dialog and htmx events. The body region reloads itself on recurring-changed,
    which a successful write sends (routes/recurring.py). The drawer and the toast sit outside the region,
    so a reload never removes them. A bill started from a transaction (add_from) opens the drawer on load
    with the add form, filled from that transaction; the page-dialogs controller opens the dialog marked
-   data-open-on-load, and the hidden element loads the form into the drawer body. #}
-<div class="flex flex-col gap-6" data-controller="page-dialogs" data-action="close-dialogs@window->page-dialogs#closeDialogs htmx:afterSettle->page-dialogs#settled">
-  {{ page_header("Recurring", "Bills, subscriptions, and other charges that repeat on a schedule.") }}
-  {{ view_switcher(body.view) }}
+   data-open-on-load, and the hidden element loads the form into the drawer body. The header is part
+   of the region, so its counts follow each change. #}
+<div class="fill-chain flex flex-col gap-6" data-controller="page-dialogs" data-action="close-dialogs@window->page-dialogs#closeDialogs htmx:afterSettle->page-dialogs#settled">
   {{ body_region(body) }}
 
   <dialog id="recurring-drawer" class="m-auto w-full max-w-lg bg-transparent p-0 text-primary backdrop:bg-overlay" aria-label="Bill details" data-action="close->page-dialogs#restoreFocus"{% if add_from %} data-open-on-load{% endif %}>

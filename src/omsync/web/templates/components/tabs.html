@@ -10,12 +10,12 @@
    active tab's id, so a request that includes it can keep the tab when the region reloads.
    url_param: the query parameter that names the active tab. Choosing a tab writes it into the
    address, and into the links to this page that already carry it, so a reload or a period link
-   opens the same tab. #}
+   opens the same tab. class_ adds classes to the wrapper. #}
 
-{% macro tabs(id, items, active, label, fill=false, field="", url_param="") -%}
+{% macro tabs(id, items, active, label, fill=false, field="", url_param="", class_="") -%}
 {%- set active_class = "tab-item-active text-primary shadow-sm" -%}
 {%- set inactive_class = "text-secondary hover:bg-surface-inset-hover" -%}
-<div{% if fill %} class="fill-chain"{% endif %} data-controller="tabs" data-tabs-active-value="{{ active }}" data-tabs-active-class="{{ active_class }}" data-tabs-inactive-class="{{ inactive_class }}"{% if url_param %} data-tabs-url-param-value="{{ url_param }}"{% endif %}>
+<div{% if fill or class_ %} class="{{ 'fill-chain ' if fill }}{{ class_ }}"{% endif %} data-controller="tabs" data-tabs-active-value="{{ active }}" data-tabs-active-class="{{ active_class }}" data-tabs-inactive-class="{{ inactive_class }}"{% if url_param %} data-tabs-url-param-value="{{ url_param }}"{% endif %}>
   {%- if field %}
   <input type="hidden" id="{{ id }}-active" name="{{ field }}" value="{{ active }}" data-tabs-target="field">
   {%- endif %}

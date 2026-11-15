@@ -37,6 +37,8 @@ def test_only_a_repeated_charge_is_suggested_and_confirming_it_changes_no_money(
 ) -> None:
     total = subscribed.total_cents()
     client = web_client(subscribed.data_dir)
+    for view in ("overview", "calendar", "all"):  # the header offers the review in every view
+        assert "Review 1" in plain(client.get("/recurring", params={"view": view}).text)
     drawer = client.get("/recurring/review").text
 
     assert "ACME STREAMING" in drawer and "1 of 1" in drawer  # power and coffee are not offered
@@ -51,7 +53,9 @@ def test_only_a_repeated_charge_is_suggested_and_confirming_it_changes_no_money(
     assert subscribed.query("SELECT cadence, status FROM recurring_series") == [
         ("monthly", "confirmed")
     ]
-    assert "ACME STREAMING" in plain(client.get("/recurring").text)
+    overview = plain(client.get("/recurring").text)
+    assert "ACME STREAMING" in overview
+    assert "Review 1" not in overview
     assert subscribed.total_cents() == total  # a bill is a plan, not ledger money
     assert "ACME STREAMING" not in client.get("/recurring/review").text  # asked once
 

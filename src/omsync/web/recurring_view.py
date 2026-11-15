@@ -337,15 +337,23 @@ class OverviewView:
     this_month: tuple[OccurrenceView, ...]  # this month's occurrences, except the missed ones
     next_month: tuple[OccurrenceView, ...]  # each series' first occurrence next month
     empty: bool  # no confirmed bill, nothing to review, and nothing to attend to
+    next_month_title: str = ""
+    next_totals: MonthTotals | None = None  # every occurrence next month, not only the first
+    today: date | None = None
+
+    @property
+    def paid_share(self) -> int:
+        """How much of this month's outflows is paid, in whole percent."""
+        total = self.totals.paid_cents + self.totals.left_to_pay_cents
+        return 100 if total == 0 else round(self.totals.paid_cents * 100 / total)
 
 
 def build_overview(db: Session, today: date) -> OverviewView:
     start = first_of_month(today)
     following = shift_month_start(start, 1)
     this_month = upcoming(db, start=start, end=month_end(start), today=today)
-    next_month = first_per_series(
-        upcoming(db, start=following, end=month_end(following), today=today)
-    )
+    following_all = upcoming(db, start=following, end=month_end(following), today=today)
+    next_month = first_per_series(following_all)
     review_count = len(review_queue(db, today=today))
     attention = attention_rows(db, needs_attention(db, today=today))
     has_bills = (
@@ -368,6 +376,9 @@ def build_overview(db: Session, today: date) -> OverviewView:
         ),
         next_month=tuple(occurrence_view(item) for item in next_month),
         empty=not has_bills and review_count == 0 and not attention,
+        next_month_title=month_title(following),
+        next_totals=month_totals(following_all),
+        today=today,
     )
 
 
@@ -540,6 +551,7 @@ class BodyView:
     calendar: list[list[CalendarDay]]
     series: list[SeriesRow]  # the bills the All bills filter shows
     monthly_cents: int  # the outflow bills per month, for the active footer
+    review_count: int = 0  # possible bills waiting for review, in every view
 
     @property
     def month_key(self) -> str:
@@ -595,7 +607,10 @@ def build_body(db: Session, today: date, view: str, month_start: date, status: s
                 select(RecurringSeries).where(RecurringSeries.status == SeriesStatus.confirmed)
             ),
         )
-    return BodyView(view, status, month_start, today, overview, grid, rows, monthly)
+    review_count = (
+        overview.review_count if overview is not None else len(review_queue(db, today=today))
+    )
+    return BodyView(view, status, month_start, today, overview, grid, rows, monthly, review_count)
 
 
 # Drawers

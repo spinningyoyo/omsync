@@ -1,0 +1,27 @@
+/* The Overview's two months. Below lg they are two tabs, one month at a time. From lg they sit side
+ * by side as two columns that fill the window, the tab strip is not shown, and each month's list
+ * scrolls on its own (see the fill mode in shell.css). */
+@media (min-width: 1024px) {
+  .fill-viewport .month-pair.fill-chain:not(.hidden) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
+    gap: 1rem;
+  }
+
+  .month-pair > [role="tablist"] {
+    display: none;
+  }
+
+  .month-pair > [role="tabpanel"],
+  .month-pair > [role="tabpanel"].hidden {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .month-pair .month-list {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
