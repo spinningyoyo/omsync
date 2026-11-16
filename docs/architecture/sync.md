@@ -9,7 +9,8 @@ and import are separate, so a bank's website change never changes import rules.
 
 ```mermaid
 flowchart LR
-    Vault[Bitwarden vault] --> Connector
+    Vault[Bitwarden vault, optional] --> Connector
+    You[You sign in by hand] -.->|no vault| Connector
     Bank[Bank website in Chrome] <--> Connector
     Connector --> Files["statements/INSTITUTION/"]
     Files --> Import
@@ -24,8 +25,11 @@ flowchart LR
 ```mermaid
 flowchart TD
     Start[Sync a provider] --> Lock[Take the operation lock]
-    Lock --> Vault[Read the bank login from the vault]
+    Lock --> HasVault{Vault?}
+    HasVault -->|Yes| Vault[Read the bank login and type it]
+    HasVault -->|No| Manual[You sign in, then select I have signed in]
     Vault --> SignIn[Sign in]
+    Manual --> Fetch
     SignIn --> Fetch[Download each account's statements]
     Fetch --> Keep[Keep the files]
     Keep --> Import[Import each file]
@@ -33,7 +37,7 @@ flowchart TD
     Auto --> Done[Release the lock]
 ```
 
-### Sign-in
+### Sign-in with a vault
 
 ```mermaid
 stateDiagram-v2
@@ -58,6 +62,8 @@ stateDiagram-v2
 
 - **Sign-in is complete when the bank returns the account list.** omsync does not read the sign-in
   state from the page. A redesign cannot hide a sign-in or show a false one.
+- **Without a vault, you tell omsync that you signed in.** omsync then asks the bank for the
+  account list, as after a typed login.
 - **Files are kept as the bank sent them.** omsync never converts or merges them, because merged
   files caused duplicates in maneko.
 - **Each download overlaps the one before it.** Banks post some transactions late with an earlier
@@ -71,7 +77,7 @@ stateDiagram-v2
 
 ## Terms
 
-- **Provider:** one bank login, its connector, and the accounts it fetches. One bank can have
+- **Provider:** one bank sign-in, its connector, and the accounts it fetches. One bank can have
   several providers.
 - **Connector:** the scraper for one bank.
 - **Sync all:** each enabled provider in turn. A failure does not stop the next one. Cancel does.

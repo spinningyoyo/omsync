@@ -1,6 +1,6 @@
 """FastAPI application factory."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -19,11 +19,12 @@ import omsync.models  # noqa: F401 -- every table on Base.metadata
 from omsync import __version__
 from omsync.core.db import database_url, make_engine, make_session_factory
 from omsync.core.money import format_cents
+from omsync.core.owner import OwnerCheck, system_owner_check
 from omsync.core.sessions import LoginRateLimiter, SessionStore
 from omsync.core.settings import Settings, load_settings
-from omsync.core.vault import BitwardenCLI, SystemKeychain, Vault
+from omsync.core.vault import Vault
+from omsync.core.vaults import open_vault
 from omsync.demo.site import DemoSite
-from omsync.demo.vault import DemoVault
 from omsync.ledger.categories import TYPE_LABELS
 from omsync.ledger.categorize import list_name
 from omsync.ledger.payment_methods import METHOD_LABELS
@@ -70,6 +71,7 @@ from omsync.web.routes.demo import router as demo_router
 from omsync.web.routes.settings import router as settings_router
 from omsync.web.routes.settings_providers import router as settings_providers_router
 from omsync.web.routes.settings_rental import router as settings_rental_router
+from omsync.web.routes.settings_vault import router as settings_vault_router
 from omsync.web.routes.settings_wizard import router as settings_wizard_router
 from omsync.web.row_links import link_items
 from omsync.web.scenes import nursery_scenes
@@ -85,18 +87,21 @@ STATIC_DIR = WEB_DIR / "static"
 def create_app(
     settings: Settings | None = None,
     *,
-    vault: Vault | DemoVault | None = None,
+    vault: Vault | None = None,
+    owner_check: OwnerCheck | None = None,
     sessions: SessionStore | None = None,
     demo: DemoSite | None = None,
+    vault_opener: Callable[..., Vault | None] | None = None,
 ) -> FastAPI:
     """Build the app. Without explicit settings, they are loaded from the environment and TOML.
 
-    `vault` and `sessions` can be injected for tests. Otherwise the vault wraps the real `bw`
-    CLI and the keychain, and sessions go in a new in-memory store. Building the app never opens
-    the database, so tests can point it at a temporary data directory.
+    `vault`, `owner_check` and `sessions` can be injected for tests. Otherwise the vault is the one
+    the vault setting names (none by default), sign-in uses the computer's owner check, and
+    sessions go in a new in-memory store. Building the app never opens the database, so tests can
+    point it at a temporary data directory.
 
     `demo` turns on demo mode: the demo sign-in, the Reset demo action, and the Demo pill. Pass it
-    with DemoVault, which keeps the Bitwarden vault out of the demo.
+    with DemoVault, which keeps any real vault out of the demo.
     """
     if settings is None:
         settings = load_settings()
@@ -116,12 +121,10 @@ def create_app(
     app.state.engine = engine
     app.state.session_factory = make_session_factory(engine)
     if vault is None:
-        vault = Vault(
-            BitwardenCLI(appdata_dir=settings.data_dir / "bitwarden"),
-            SystemKeychain(),
-            settings.vault_idle_minutes,
-        )
+        vault = open_vault(settings)
     app.state.vault = vault
+    app.state.vault_opener = vault_opener or open_vault
+    app.state.owner_check = owner_check if owner_check is not None else system_owner_check()
     app.state.demo = demo
     app.state.sync_runner = SyncRunner(app.state.session_factory, vault, settings)
     app.state.sessions = sessions if sessions is not None else SessionStore()
@@ -155,6 +158,7 @@ def create_app(
     templates.env.globals["register_page_sizes"] = PAGE_SIZES
     templates.env.globals["new_key"] = lambda: uuid4().hex
     templates.env.globals["demo_mode"] = demo is not None
+    templates.env.globals["has_vault"] = vault is not None
     app.state.templates = templates
 
     install_guard(app)
@@ -208,6 +212,7 @@ def create_app(
     app.include_router(counterparty.router)
     app.include_router(settings_router)
     app.include_router(settings_providers_router)
+    app.include_router(settings_vault_router)
     app.include_router(settings_wizard_router)
     app.include_router(settings_rental_router)
     app.include_router(guides.router)

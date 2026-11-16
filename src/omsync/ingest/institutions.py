@@ -116,11 +116,12 @@ def provider_group(
     return None
 
 
-def sync_refusal(provider: ProviderLine) -> str | None:
-    """Why this provider cannot be synced from the page, or None when it can."""
+def sync_refusal(provider: ProviderLine, *, has_vault: bool) -> str | None:
+    """Why this provider cannot be synced from the page, or None when it can. Without a vault,
+    you sign in at the bank, so no vault login is needed."""
     if not provider.connector_enabled:
         return f"{provider.key} is turned off, so it does not sync."
-    if provider.vault_item_id is None:
+    if has_vault and provider.vault_item_id is None:
         return f"{provider.key} has no vault login. Edit it to choose one."
     if not provider.account_ids:
         return f"{provider.key} fetches no accounts yet. Edit it to choose accounts."

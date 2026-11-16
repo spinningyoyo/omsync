@@ -36,8 +36,8 @@ def about_page(request: Request, db: DbSession) -> HTMLResponse:
         page_title="About",
         version=__version__,
         data_dir=str(settings.data_dir),
-        # The demo reads no Bitwarden CLI or keychain entry (docs/architecture/access.md), and its
-        # data directory is a temporary one, so the checks for a real ledger do not apply.
+        # The demo reads no vault CLI or keychain entry, and its data directory is a temporary
+        # one, so the checks for a real ledger do not apply.
         checks=[] if request.app.state.demo is not None else run_checks(settings),
     )
     return request.app.state.templates.TemplateResponse(request, ABOUT_PAGE, context)

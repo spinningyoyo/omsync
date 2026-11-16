@@ -17,7 +17,7 @@ DEFAULT_WINDOW_SECONDS = 60.0
 
 @dataclass(frozen=True)
 class AppSession:
-    email: str
+    name: str  # who is signed in, as the computer names its account
     last_seen: float
 
 
@@ -39,11 +39,11 @@ class SessionStore:
         self._clock = clock
         self._sessions: dict[str, AppSession] = {}
 
-    def create(self, email: str) -> str:
-        """Start a session for `email` and return its token. The token is 43 URL-safe characters."""
+    def create(self, name: str) -> str:
+        """Start a session for `name` and return its token. The token is 43 URL-safe characters."""
         self._expire_idle()
         token = secrets.token_urlsafe(32)
-        self._sessions[token] = AppSession(email=email, last_seen=self._clock())
+        self._sessions[token] = AppSession(name=name, last_seen=self._clock())
         return token
 
     def get(self, token: str) -> AppSession | None:

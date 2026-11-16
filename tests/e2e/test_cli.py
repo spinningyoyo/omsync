@@ -80,3 +80,32 @@ def test_db_upgrade_backs_up_an_existing_database_first(db_home: Path) -> None:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master")}
     assert "alembic_version" not in tables  # the backup is the pre-upgrade file
     assert _revision(db_home / "omsync.db") == _head()
+
+
+def test_config_show_and_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_file = tmp_path / "omsync.toml"
+    monkeypatch.setenv("OMSYNC_CONFIG", str(config_file))
+    runner = CliRunner()
+
+    show = runner.invoke(cli.app, ["config", "show"])
+    assert show.exit_code == 0
+    assert "vault" in show.output
+    assert "(default)" in show.output
+
+    set_vault = runner.invoke(cli.app, ["config", "set", "vault", "bitwarden"])
+    assert set_vault.exit_code == 0
+    assert "vault = bitwarden" in set_vault.output
+
+    set_email = runner.invoke(cli.app, ["config", "set", "email", "test@example.com"])
+    assert set_email.exit_code == 0
+    assert "email = test@example.com" in set_email.output
+
+    show_after = runner.invoke(cli.app, ["config", "show"])
+    assert show_after.exit_code == 0
+    assert "bitwarden" in show_after.output
+    assert "test@example.com" in show_after.output
+    assert "(omsync.toml)" in show_after.output
+
+    invalid = runner.invoke(cli.app, ["config", "set", "vault", "invalid"])
+    assert invalid.exit_code == 1
+    assert "vault must be one of" in invalid.output

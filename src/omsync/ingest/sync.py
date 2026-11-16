@@ -124,7 +124,7 @@ def sync_provider(
     settings: Settings,
     *,
     provider_key: str,
-    vault: Vault,
+    vault: Vault | None,
     prompt: Prompt,
     period: DateRange | None = None,
 ) -> SyncResult:
@@ -150,7 +150,7 @@ def sync_all(
     session: Session,
     settings: Settings,
     *,
-    vault: Vault,
+    vault: Vault | None,
     prompt: Prompt,
     period: DateRange | None = None,
     on_progress: ProgressCallback | None = None,
@@ -188,7 +188,7 @@ def _sync_one(
     settings: Settings,
     key: str,
     *,
-    vault: Vault,
+    vault: Vault | None,
     prompt: Prompt,
     period: DateRange | None,
 ) -> ProviderSync:
@@ -215,7 +215,7 @@ def _sync(
     settings: Settings,
     *,
     provider_key: str,
-    vault: Vault,
+    vault: Vault | None,
     prompt: Prompt,
     period: DateRange | None,
 ) -> SyncResult:
@@ -251,7 +251,7 @@ def _run(
     plan: _Plan,
     *,
     window: DateRange,
-    vault: Vault,
+    vault: Vault | None,
     prompt: Prompt,
 ) -> SyncResult:
     partial: PartialFetch | None = None

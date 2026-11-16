@@ -109,7 +109,7 @@
   <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
     <dt class="text-secondary">Method</dt>
     <dd class="min-w-0 break-words text-primary">{{ card.connector }}</dd>
-    <dt class="text-secondary">Vault login</dt>
+    <dt class="text-secondary">{{ "Vault login" if has_vault else "Sign-in" }}</dt>
     <dd class="min-w-0 break-words text-primary">{{ card.vault }}</dd>
     <dt class="text-secondary">Last sync</dt>
     <dd class="min-w-0 break-words text-primary">
@@ -138,6 +138,7 @@
 {% macro provider_edit(card, locked, logins=none, query="", unlock_message="", message="") -%}
 <div id="provider-edit-{{ card.key }}" class="flex flex-col gap-4">
   <div class="flex flex-col gap-3">
+    {%- if has_vault %}
     <p class="text-sm text-primary">Vault login: <span class="text-secondary">{{ card.vault }}</span></p>
     <label class="form-field">
       <span class="form-field__label">Search logins to use another</span>
@@ -146,6 +147,9 @@
     <div id="provider-vault-results-{{ card.key }}" aria-live="polite" class="flex flex-col gap-2">
       {{ vault_results(locked, logins, unlock_message, "", unlock_action="/settings/providers/" ~ card.key ~ "/edit/unlock", unlock_target="#provider-edit-" ~ card.key, form_id="provider-edit-form-" ~ card.key, choice_required=false) }}
     </div>
+    {%- else %}
+    <p class="text-sm text-primary">Sign-in: <span class="text-secondary">{{ card.vault }}</span></p>
+    {%- endif %}
     <p class="text-xs text-secondary">To change banks, add a new provider.</p>
   </div>
   <form id="provider-edit-form-{{ card.key }}" class="flex flex-col gap-4" hx-post="/settings/providers/{{ card.key }}/edit" hx-target="#provider-edit-status-{{ card.key }}" hx-swap="innerHTML">

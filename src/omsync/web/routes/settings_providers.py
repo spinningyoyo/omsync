@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
 from omsync.core.batches import BatchError
+from omsync.core.vault import is_locked
 from omsync.ingest.connectors.config import enabled_provider_keys
 from omsync.ingest.institutions import bank_sync_groups, provider_group, sync_refusal
 from omsync.ingest.providers import ProviderSetupError, edit_provider, remove_provider
@@ -57,6 +58,7 @@ def providers_page(request: Request, db: DbSession) -> HTMLResponse:
         groups=groups,
         sync=sync_status_view(request.app.state.sync_runner.view()),
         vault_status=vault_status_view(request.app.state.vault),
+        vault_email=request.app.state.settings.email or "",
     )
     return request.app.state.templates.TemplateResponse(request, PAGE, context)
 
@@ -86,16 +88,11 @@ def sync_unlock_route(
     """Unlock the vault for the sync its form was shown for, then start that sync. The password is
     not echoed, stored, or logged. A failure shows the unlock form again with the vault's
     message."""
-    keys, refusal = _sync_plan(db, scope)
+    keys, refusal = _sync_plan(db, scope, has_vault=request.app.state.vault is not None)
     if refusal is not None:
         return _sync_reply(request, db, status=422, notice=refusal)
     try:
-        unlock_vault(
-            request.app.state.vault,
-            request.app.state.login_limiter,
-            request.state.session.email,
-            password,
-        )
+        unlock_vault(request.app.state.vault, request.app.state.login_limiter, password)
     except VaultActionError as exc:
         return _sync_reply(request, db, status=422, unlock_scope=scope, unlock_message=exc.message)
     return _start_sync(request, db, scope, keys, unlocked=UNLOCKED_POLLS)
@@ -157,7 +154,7 @@ def search_edit_logins(
     query = q.strip()
     logins = None
     message = ""
-    if vault.is_unlocked() and query:
+    if vault is not None and vault.is_unlocked() and query:
         try:
             logins = search_logins(vault, query, request.app.state.login_names)
         except VaultActionError as exc:
@@ -166,7 +163,7 @@ def search_edit_logins(
         request,
         "frag_provider_vault",
         key=provider_key,
-        locked=not vault.is_unlocked(),
+        locked=is_locked(vault),
         logins=logins,
         unlock_message="",
         message=message,
@@ -185,7 +182,7 @@ def unlock_for_edit(
     vault = request.app.state.vault
     unlock_message = ""
     try:
-        unlock_vault(vault, request.app.state.login_limiter, request.state.session.email, password)
+        unlock_vault(vault, request.app.state.login_limiter, password)
     except VaultActionError as exc:
         unlock_message = exc.message
     card = _card(request, db, provider_key)
@@ -194,7 +191,7 @@ def unlock_for_edit(
         "frag_provider_edit",
         status=422 if unlock_message else 200,
         card=card,
-        locked=not vault.is_unlocked(),
+        locked=is_locked(vault),
         logins=None,
         query="",
         unlock_message=unlock_message,
@@ -353,7 +350,7 @@ def _saved(request: Request, db: Session, batch: Batch, *, message: str) -> HTML
     )
 
 
-def _sync_plan(db: Session, scope: str) -> tuple[list[str], str | None]:
+def _sync_plan(db: Session, scope: str, *, has_vault: bool) -> tuple[list[str], str | None]:
     """The provider keys a sync of scope runs, and why it cannot start, or None when it can. An
     unknown provider is a 404."""
     if scope == ALL:
@@ -362,16 +359,16 @@ def _sync_plan(db: Session, scope: str) -> tuple[list[str], str | None]:
     found = provider_group(db, scope)
     if found is None:
         raise HTTPException(status_code=404, detail="No such provider")
-    return [scope], sync_refusal(found[1])
+    return [scope], sync_refusal(found[1], has_vault=has_vault)
 
 
 def _sync_request(request: Request, db: Session, scope: str) -> HTMLResponse:
     """Start a sync, or show why it cannot start. A locked vault shows the unlock form instead, and
     the sync starts once that form succeeds."""
-    keys, refusal = _sync_plan(db, scope)
+    keys, refusal = _sync_plan(db, scope, has_vault=request.app.state.vault is not None)
     if refusal is not None:
         return _sync_reply(request, db, status=422, notice=refusal)
-    if not request.app.state.vault.is_unlocked():
+    if is_locked(request.app.state.vault):
         return _sync_reply(request, db, unlock_scope=scope)
     return _start_sync(request, db, scope, keys)
 
@@ -424,7 +421,7 @@ def _sync_reply(
 def _group_views(request: Request, db: Session) -> list[InstitutionGroupView]:
     vault = request.app.state.vault
     names = request.app.state.login_names
-    locked = not vault.is_unlocked()
+    locked = is_locked(vault)
     busy = request.app.state.sync_runner.view().phase is JobPhase.running
     views: list[InstitutionGroupView] = []
     for group in bank_sync_groups(db):
@@ -446,7 +443,7 @@ def _card(request: Request, db: Session, provider_key: str) -> ProviderCardView:
         group,
         provider,
         vault_login_name(vault, provider, group, request.app.state.login_names),
-        locked=not vault.is_unlocked(),
+        locked=is_locked(vault),
         busy=request.app.state.sync_runner.view().phase is JobPhase.running,
     )
 

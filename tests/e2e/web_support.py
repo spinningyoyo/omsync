@@ -1,10 +1,12 @@
-"""Helpers shared by the web tests: a fake vault, a fake clock and the sign-in call.
+"""Helpers shared by the web tests: a fake vault, a fake owner check, a fake clock and the
+sign-in call.
 
-Nothing here runs `bw`, reads the keychain, or touches the real data directory.
+Nothing here runs `bw`, shows a system prompt, reads the keychain, or touches the real data
+directory.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from fastapi.testclient import TestClient
 
@@ -18,17 +20,15 @@ MakeClient = Callable[..., TestClient]
 
 @dataclass
 class FakeVault:
-    """Stands in for the Bitwarden vault. It accepts one email and password and records calls."""
+    """Stands in for a vault. It accepts one master password and records calls."""
 
     unlocked: bool = False
     idle_minutes: int = 15
-    unlock_calls: list[str] = field(default_factory=list)  # emails only, never passwords
+    unlock_calls: int = 0
     lock_calls: int = 0
 
-    def unlock(self, email: str, password: str) -> None:
-        self.unlock_calls.append(email)
-        if email != EMAIL:
-            raise VaultError("Email does not match this vault")
+    def unlock(self, password: str) -> None:
+        self.unlock_calls += 1
         if password != PASSWORD:
             raise VaultError("Incorrect master password")
         self.unlocked = True
@@ -37,8 +37,23 @@ class FakeVault:
         self.lock_calls += 1
         self.unlocked = False
 
+    def disconnect(self) -> None:
+        self.lock()
+
     def is_unlocked(self) -> bool:
         return self.unlocked
+
+
+@dataclass
+class FakeOwnerCheck:
+    """Stands in for the computer's owner check. passes decides the answer; calls counts prompts."""
+
+    passes: bool = True
+    calls: int = 0
+
+    def confirm(self, reason: str) -> bool:
+        self.calls += 1
+        return self.passes
 
 
 class FakeClock:
@@ -53,9 +68,5 @@ class FakeClock:
 
 
 def sign_in(client: TestClient, next_path: str = "/") -> None:
-    response = client.post(
-        "/sign-in",
-        data={"email": EMAIL, "password": PASSWORD, "next": next_path},
-        follow_redirects=False,
-    )
+    response = client.post("/sign-in", data={"next": next_path}, follow_redirects=False)
     assert response.status_code == 303, response.text

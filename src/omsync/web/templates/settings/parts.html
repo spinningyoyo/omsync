@@ -147,11 +147,12 @@
 {%- endmacro %}
 
 {# Step 2: the vault login. Its search is debounced; saving adds the provider with this login as one
-   batch. #}
+   batch. Without a vault, the step only says that you sign in at the bank. #}
 {% macro login_step(state, form_key, locked, logins, query, message="", unlock_message="") -%}
 <div id="wizard-step" class="flex flex-col gap-6">
+  {%- if has_vault %}
   {{ step_heading(2, "Vault login") }}
-  <p class="text-sm text-secondary">Pick the Bitwarden login for {{ state.name }}. The password is never stored.</p>
+  <p class="text-sm text-secondary">Pick the vault login for {{ state.name }}. The password is never stored.</p>
   <label class="form-field">
     <span class="form-field__label">Search logins</span>
     <input type="search" name="q" value="{{ query }}" autocomplete="off" class="form-field__input" aria-controls="vault-results" hx-get="/settings/providers/new/logins" hx-trigger="input changed delay:300ms, search" hx-target="#vault-results" hx-include="#login-form">
@@ -159,6 +160,10 @@
   <div id="vault-results" aria-live="polite" class="flex flex-col gap-2">
     {{ vault_results(locked, logins, unlock_message, "", unlock_action="/settings/providers/new/unlock", unlock_target="#wizard-step", unlock_hidden=state_fields(state)) }}
   </div>
+  {%- else %}
+  {{ step_heading(2, "Sign-in") }}
+  <p class="text-sm text-secondary">At each sync, you sign in to {{ state.name }} in the browser window that opens.</p>
+  {%- endif %}
   <form id="login-form" class="flex flex-col gap-4" hx-post="/settings/providers/new/login" hx-target="#wizard-step" hx-swap="outerHTML">
     {{ state_fields(state, form_key) }}
     {{ step_error(message) }}

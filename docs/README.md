@@ -12,7 +12,7 @@ Every diagram that has such a step defines the style `waits`.
 - [System](architecture/system.md): scope, boundaries, and code layers.
 - [Ledger](architecture/ledger.md): the data model, evidence, and who sets a category.
 - [Changes, undo, and backups](architecture/changes.md): batches, undo, backup, and restore.
-- [Access and vault](architecture/access.md): sign-in and the Bitwarden vault.
+- [Access and vault](architecture/access.md): sign-in and the optional Bitwarden vault.
 - [Interface and settings](architecture/interface.md): pages, edits, and where each setting
   lives.
 

@@ -13,8 +13,9 @@ from pathlib import Path
 import keyring
 from keyring.errors import KeyringError
 
+from omsync.core.bitwarden import CLIENT_ID_ENTRY, CLIENT_SECRET_ENTRY
 from omsync.core.settings import Settings, resolve_config_path
-from omsync.core.vault import CLIENT_ID_ENTRY, CLIENT_SECRET_ENTRY, KEYCHAIN_SERVICE
+from omsync.core.vault import KEYCHAIN_SERVICE
 
 KEYCHAIN_ITEMS = (CLIENT_ID_ENTRY, CLIENT_SECRET_ENTRY)
 
@@ -33,10 +34,19 @@ class Check:
 
 
 def run_checks(settings: Settings) -> list[Check]:
-    """Every check, in the order `omsync doctor` prints them. Read-only."""
-    checks = [_config_check(settings), _data_dir_check(settings), _bw_check()]
-    checks += [_keychain_check(item) for item in KEYCHAIN_ITEMS]
+    """Every check, in the order `omsync doctor` prints them. Read-only. The vault's own checks run
+    only when a vault is set."""
+    checks = [_config_check(settings), _data_dir_check(settings), _vault_check(settings)]
+    if settings.vault == "bitwarden":
+        checks.append(_bw_check())
+        checks += [_keychain_check(item) for item in KEYCHAIN_ITEMS]
     return checks
+
+
+def _vault_check(settings: Settings) -> Check:
+    if settings.vault == "none":
+        return Check("vault", True, "none; you sign in at each bank")
+    return Check("vault", True, settings.vault)
 
 
 def _config_check(settings: Settings) -> Check:

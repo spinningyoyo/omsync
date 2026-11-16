@@ -14,6 +14,8 @@ from omsync.ingest.institutions import InstitutionGroup, ProviderLine
 SEARCH_MAX = 100
 SEARCH_LIMIT = 20
 TOO_MANY_ATTEMPTS = "Too many failed attempts. Wait a minute, then try again."
+NO_VAULT = "No vault is connected. Connect one with the vault button on the Bank sync page."
+MANUAL_SIGN_IN = "You sign in at the bank"
 
 
 @dataclass(frozen=True)
@@ -25,8 +27,11 @@ class VaultStatusView:
     detail: str  # when it locks, or what unlocks it
 
 
-def vault_status_view(vault: Vault) -> VaultStatusView:
-    """Reading the state locks a vault whose idle timeout has passed, so this is never stale."""
+def vault_status_view(vault: Vault | None) -> VaultStatusView | None:
+    """Reading the state locks a vault whose idle timeout has passed, so this is never stale. No
+    vault has no status to show."""
+    if vault is None:
+        return None
     if not vault.is_unlocked():
         return VaultStatusView(False, "Vault locked", "A sync asks for your master password.")
     minutes = vault.idle_minutes
@@ -46,13 +51,15 @@ class VaultActionError(Exception):
         self.message = message
 
 
-def unlock_vault(vault: Vault, limiter: LoginRateLimiter, email: str, password: str) -> None:
-    """Unlock the vault for the signed-in email. A failure counts toward the sign-in limit, so this
-    form cannot be used to guess the master password faster than sign-in allows."""
+def unlock_vault(vault: Vault | None, limiter: LoginRateLimiter, password: str) -> None:
+    """Unlock the vault. A failure counts toward the sign-in limit, so this form cannot be used to
+    guess the master password fast."""
+    if vault is None:
+        raise VaultActionError(NO_VAULT)
     if limiter.is_blocked():
         raise VaultActionError(TOO_MANY_ATTEMPTS)  # 422: htmx swaps 422 bodies, not 429
     try:
-        vault.unlock(email, password)
+        vault.unlock(password)
     except VaultError as exc:
         limiter.record_failure()
         raise VaultActionError(str(exc)) from None
@@ -60,9 +67,9 @@ def unlock_vault(vault: Vault, limiter: LoginRateLimiter, email: str, password: 
 
 class LoginNames:
     """Vault login names by item ID, kept while the vault stays unlocked. Every lookup runs the
-    Bitwarden CLI, which takes seconds, and the Bank sync list is drawn after each change, so
+    vault CLI, which takes seconds, and the Bank sync list is drawn after each change, so
     without this each save would wait on searches for every provider. A name is only a label: it
-    can be out of date after a rename in Bitwarden until the vault locks. A login not found is
+    can be out of date after a rename in the vault until the vault locks. A login not found is
     remembered too, until the vault locks or the person searches the vault again."""
 
     def __init__(self) -> None:
@@ -91,7 +98,7 @@ class LoginNames:
 
 
 def vault_login_name(
-    vault: Vault,
+    vault: Vault | None,
     provider: ProviderLine,
     institution: InstitutionGroup,
     names: LoginNames,
@@ -99,6 +106,8 @@ def vault_login_name(
     """The name of the provider's vault login, or why there is none to show. The vault has no
     lookup by ID that does not also fetch the password, so a name is found by searching, and every
     login a search returns is remembered in names."""
+    if vault is None:
+        return MANUAL_SIGN_IN
     if provider.vault_item_id is None:
         return "No vault login"
     if not vault.is_unlocked():

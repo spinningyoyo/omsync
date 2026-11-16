@@ -13,10 +13,10 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
+from web_support import FakeOwnerCheck
 
 from omsync import cli
 from omsync.core.settings import Settings
-from omsync.core.vault import VaultError
 from omsync.web.app import create_app
 
 CARD = "credit_card"
@@ -161,37 +161,11 @@ def batch_id(output: str) -> int:
     return int(match.group(1))
 
 
-class FakeVault:
-    """Accepts one email and password. Never runs bw."""
-
-    idle_minutes = 15
-
-    def __init__(self) -> None:
-        self.unlocked = False
-
-    def unlock(self, email: str, password: str) -> None:
-        if (email, password) != (EMAIL, PASSWORD):
-            raise VaultError("Incorrect master password")
-        self.unlocked = True
-
-    def lock(self) -> None:
-        self.unlocked = False
-
-    def is_unlocked(self) -> bool:
-        return self.unlocked
-
-
-EMAIL = "ana@example.test"
-PASSWORD = "correct-horse-battery"
-
-
 def web_client(data_dir: Path) -> TestClient:
     """The web app on a data directory the CLI has already migrated, signed in through the real
-    sign-in route with a fake vault."""
-    client = TestClient(create_app(Settings(data_dir=data_dir), vault=FakeVault()))
-    response = client.post(
-        "/sign-in", data={"email": EMAIL, "password": PASSWORD, "next": "/"}, follow_redirects=False
-    )
+    sign-in route with a fake owner check and no vault."""
+    client = TestClient(create_app(Settings(data_dir=data_dir), owner_check=FakeOwnerCheck()))
+    response = client.post("/sign-in", data={"next": "/"}, follow_redirects=False)
     assert response.status_code == 303, response.text
     return client
 

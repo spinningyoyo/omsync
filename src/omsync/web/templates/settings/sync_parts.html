@@ -7,6 +7,49 @@
 {% from "components/icon.html" import icon %}
 {% from "components/password_field.html" import password_field %}
 {% from "settings/parts.html" import step_error %}
+{% from "components/popover.html" import popover %}
+{% from "components/vault_status.html" import vault_status as vault_status_line, VAULT_STATUS_PAGE %}
+
+{# The vault button in the page header: the vault's status, or No vault, with a panel that connects
+   or disconnects Bitwarden. The status line inside it polls and redraws itself; the panel is
+   outside that line, so a poll never wipes what is being typed. The demo shows the status alone. #}
+{% macro vault_control(status, email) -%}
+{%- if demo_mode %}
+{{ vault_status_line(status, VAULT_STATUS_PAGE) }}
+{%- else %}
+{%- set trigger -%}
+{%- if status %}{{ vault_status_line(status, VAULT_STATUS_PAGE, poll=true) }}{% else %}<span class="whitespace-nowrap">No vault</span>{% endif -%}
+{%- endset %}
+{% call popover(id="vault-popover", label="Vault", trigger_html=trigger, value=status.label if status else "No vault", panel_class="w-80 max-w-[calc(100vw-2rem)] p-4") %}
+{{ vault_panel(email) }}
+{% endcall %}
+{%- endif %}
+{%- endmacro %}
+
+{# The panel's content. With a vault, its account and Disconnect; without one, the Connect form.
+   A refused change redraws the panel with its reason; a done one reloads the page. #}
+{% macro vault_panel(email, message="") -%}
+<div id="vault-panel" class="flex flex-col gap-3" hx-target="#vault-panel" hx-swap="outerHTML">
+  <p class="text-sm font-medium text-primary">Bitwarden</p>
+  {{ step_error(message) }}
+  {%- if has_vault %}
+  <div class="flex items-center justify-between gap-3">
+    <span class="min-w-0 truncate text-sm text-secondary">{{ email }}</span>
+    {{ button("Disconnect", variant="outline", size="sm", attrs={"hx-post": "/settings/providers/vault/disconnect", "hx-confirm": "Disconnect the vault? You then sign in at each bank yourself."}) }}
+  </div>
+  {%- else %}
+  <p class="text-xs text-secondary">Fills in bank logins at each sync. The master password is not stored.</p>
+  <form class="flex flex-col gap-3" hx-post="/settings/providers/vault/connect" hx-disabled-elt="find button[type='submit']">
+    <label class="form-field">
+      <span class="form-field__label">Email</span>
+      <input type="email" name="email" value="{{ email }}" required autocomplete="email" class="form-field__input">
+    </label>
+    {{ password_field() }}
+    <div class="flex justify-end">{{ button("Connect", variant="primary", size="sm", type="submit", busy_text="Connecting…") }}</div>
+  </form>
+  {%- endif %}
+</div>
+{%- endmacro %}
 
 {# The Sync all button. oob=true swaps it in place when a job starts or ends. #}
 {% macro sync_all_control(busy, oob=false) -%}
@@ -91,7 +134,13 @@
     <p class="text-xs text-secondary">The sync goes on by itself once you approve.</p>
   </section>
   {%- endif %}
-  {%- if question is not none %}
+  {%- if question is not none and question.button %}
+  <form id="sync-answer-form" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" hx-post="/settings/providers/sync/answer" hx-target="#sync-status" hx-swap="outerHTML">
+    <input type="hidden" name="answer" value="confirmed">
+    <p class="text-sm font-medium text-primary">{{ question.text }}</p>
+    <div class="flex justify-end">{{ button(question.button, variant="primary", type="submit") }}</div>
+  </form>
+  {%- elif question is not none %}
   <form id="sync-answer-form" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" hx-post="/settings/providers/sync/answer" hx-target="#sync-status" hx-swap="outerHTML"{% if question.digits %} data-controller="auto-submit" data-auto-submit-length-value="{{ question.digits }}" data-action="htmx:afterRequest->auto-submit#done"{% endif %}>
     <label class="form-field">
       <span class="form-field__label">{{ question.text }}</span>

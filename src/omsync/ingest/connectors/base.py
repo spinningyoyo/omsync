@@ -51,6 +51,11 @@ class Prompt(Protocol):
         answer as soon as it is complete. Raises SyncCancelled when you cancel while it waits."""
         ...
 
+    def confirm(self, question: str, *, button: str) -> bool:
+        """Wait until you select button, such as after you sign in at the bank yourself. False when
+        the wait timed out. Raises SyncCancelled when you cancel while it waits."""
+        ...
+
     def show(self, message: str, *, image: str | None = None) -> None:
         """Show a message that needs no answer, such as what to do on your phone, until the next
         show or ask. image is a data: URL, such as a QR to scan. An empty message hides it."""
@@ -108,7 +113,7 @@ class Connector(Protocol):
         self,
         accounts: list[ConnectorAccount],
         period: DateRange,
-        vault: Vault,
+        vault: Vault | None,
         prompt: Prompt,
         dest: Path,
         *,
@@ -119,8 +124,9 @@ class Connector(Protocol):
         dest is statements/<INSTITUTION>/, and account subfolders go under it. Write nothing
         outside dest, and never import. Return only the files this call fetched: the sync
         imports exactly those. vault_item_id names the vault login for this institution, or is
-        None if none is configured. Raise NeedsUserAction when a person must act, and
-        ConnectorError for any other failure. A browser connector that fails leaves its browser open
-        on the page it stopped on, so the person can look at it, and closes it otherwise.
+        None if none is configured. Without a vault, you sign in at the bank yourself. Raise
+        NeedsUserAction when a person must act, and ConnectorError for any other failure. A browser
+        connector that fails leaves its browser open on the page it stopped on, so the person can
+        look at it, and closes it otherwise.
         """
         ...

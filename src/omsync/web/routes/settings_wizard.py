@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
+from omsync.core.vault import is_locked
 from omsync.ingest.discovery import scan_statement_files, suggested_account
 from omsync.ingest.institutions import institution_accounts
 from omsync.ingest.pipeline import ImportReport, import_institution
@@ -117,7 +118,7 @@ def choose_connector(
     return _step(
         request,
         "frag_step_login",
-        **_login_context(state, locked=not vault.is_unlocked(), form_key=uuid4().hex),
+        **_login_context(state, locked=is_locked(vault), form_key=uuid4().hex),
     )
 
 
@@ -138,11 +139,11 @@ def search_vault(
     vault = request.app.state.vault
     state = _state(institution, name, connector, provider)
     query = q.strip()
-    if not vault.is_unlocked():
+    if is_locked(vault):
         return _fragment(
             request, "frag_vault_results", state=state, locked=True, logins=None, query=query
         )
-    if not query:
+    if vault is None or not query:
         return _fragment(
             request, "frag_vault_results", state=state, locked=False, logins=None, query=query
         )
@@ -172,17 +173,12 @@ def unlock(
     provider: Annotated[str, Form()] = "",
     password: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """Unlock the vault with the master password. The email is the signed-in one. The password is
-    not echoed, stored, or logged, and a failure shows the vault's own message."""
+    """Unlock the vault with the master password. The password is not echoed, stored, or logged,
+    and a failure shows the vault's own message."""
     vault = request.app.state.vault
     state = _state(institution, name, connector, provider)
     try:
-        unlock_vault(
-            vault,
-            request.app.state.login_limiter,
-            request.state.session.email,
-            password,
-        )
+        unlock_vault(vault, request.app.state.login_limiter, password)
     except VaultActionError as exc:
         return _step(
             request,
@@ -190,7 +186,7 @@ def unlock(
             422,
             **_login_context(
                 state,
-                locked=not vault.is_unlocked(),
+                locked=is_locked(vault),
                 form_key=uuid4().hex,
                 unlock_message=exc.message,
             ),
@@ -225,6 +221,7 @@ def save_login(
             provider=provider,
             connector=connector,
             vault_login=vault_item_id or None,
+            has_vault=request.app.state.vault is not None,
             idempotency_key=idempotency_key or uuid4().hex,
         )
     except ProviderSetupError as exc:
@@ -235,7 +232,7 @@ def save_login(
             422,
             **_login_context(
                 state,
-                locked=not vault.is_unlocked(),
+                locked=is_locked(vault),
                 form_key=uuid4().hex,
                 message=str(exc),
             ),

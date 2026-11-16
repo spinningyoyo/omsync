@@ -12,7 +12,7 @@ You need Python 3.12 or later and [uv](https://docs.astral.sh/uv/).
 
 ### Try the demo
 
-The demo needs no ledger, no Bitwarden account and no bank login. It is a made-up person's year of
+The demo needs no ledger and no bank login. It is a made-up person's year of
 money. omsync builds it in a temporary directory and deletes the directory when the server stops.
 
 ```sh
@@ -27,34 +27,17 @@ shows the demo while there is no ledger.
 
 ### Use your own ledger
 
-You also need the Bitwarden CLI (`bw`), access to the macOS keychain, and Chrome. Chrome is for the
-bank connectors.
+You also need Chrome for the bank connectors. Create the ledger, check the setup and start the
+server:
 
-1. Install `bw`. With Homebrew, run `brew install bitwarden-cli`. Other ways to install it are in
-   the [Bitwarden CLI documentation](https://bitwarden.com/help/cli/).
-2. Get your Bitwarden personal API key. Sign in to the Bitwarden web vault. Open **Settings**, then
-   **Security**, then **Keys**. Click **View API key** and enter your master password. The page
-   shows a `client_id` and a `client_secret`.
-3. Store both in the macOS keychain. Each command asks for the value:
+```sh
+uv run omsync db upgrade
+uv run omsync doctor
+uv run omsync serve
+```
 
-   ```sh
-   uv run keyring set omsync bitwarden-client-id
-   uv run keyring set omsync bitwarden-client-secret
-   ```
-
-4. Create the ledger, check the setup and start the server:
-
-   ```sh
-   uv run omsync db upgrade
-   uv run omsync doctor
-   uv run omsync serve
-   ```
-
-`omsync doctor` lists what is missing. Do not put credentials in a config file or in command
-arguments.
-
-Open `http://127.0.0.1:8765` and sign in with your Bitwarden email and master password. omsync has
-no password of its own. After the first sign-in:
+Open `http://127.0.0.1:8765` and select **Sign in**. Your computer asks for Touch ID, its login
+password or Windows Hello. omsync has no password of its own. After the first sign-in:
 
 1. Go to **Settings**, then **Guides**, for five short guides to the app.
 2. To fetch statements from a bank, add a provider in **Settings**, then **Bank sync**.
@@ -63,6 +46,28 @@ no password of its own. After the first sign-in:
 
 Your data lives in `~/omsync-data`, outside the repository.
 
+### Bitwarden, optional
+
+Without a vault, you sign in at each bank yourself during a sync. With Bitwarden, omsync types the
+bank logins for you.
+
+1. Install the Bitwarden CLI (`bw`). With Homebrew, run `brew install bitwarden-cli`. Other ways to
+   install it are in the [Bitwarden CLI documentation](https://bitwarden.com/help/cli/).
+2. Get your Bitwarden personal API key. Sign in to the Bitwarden web vault. Open **Settings**, then
+   **Security**, then **Keys**. Click **View API key** and enter your master password. The page
+   shows a `client_id` and a `client_secret`.
+3. Store both in the system keychain. Each command asks for the value:
+
+   ```sh
+   uv run keyring set omsync bitwarden-client-id
+   uv run keyring set omsync bitwarden-client-secret
+   ```
+
+4. On the **Bank sync** page, select **No vault**, then connect with your email and master
+   password.
+
+Do not put credentials in a config file or in command arguments.
+
 ### Config file
 
 The config file is optional. It is `~/.config/omsync/omsync.toml`:
@@ -70,17 +75,19 @@ The config file is optional. It is `~/.config/omsync/omsync.toml`:
 ```toml
 data_dir = "~/omsync-data"
 port = 8765
+vault = "bitwarden"   # or "none", the default
 email = "you@example.com"
 vault_idle_minutes = 15
 ```
 
-`OMSYNC_CONFIG` selects another file. `OMSYNC_*` settings override its values. See
+`omsync config show` lists each setting and its source. `omsync config set <key> <value>` writes
+one. `OMSYNC_CONFIG` selects another file. `OMSYNC_*` settings override its values. See
 [interface and settings](docs/architecture/interface.md) for where each setting lives.
 
 ## Security model
 
-The server listens on `127.0.0.1` only, and sign-in uses your Bitwarden account. Secrets stay in
-memory and in the macOS keychain. See [access and vault](docs/architecture/access.md) and
+The server listens on `127.0.0.1` only, and sign-in uses your computer's owner check. Secrets stay
+in memory and in the system keychain. See [access and vault](docs/architecture/access.md) and
 [sync](docs/architecture/sync.md).
 
 ## Development

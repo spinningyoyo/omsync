@@ -1,5 +1,5 @@
 {# The vault's status: a dot, green when unlocked and gray when locked, and its label. Each user menu
-   shows one under the email, with when it locks or what unlocks it under the label. The Bank sync
+   shows one under who is signed in, with when it locks or what unlocks it under the label. The Bank sync
    page shows the label alone beside the Sync status title, which redraws it with every reply; an
    unlock reply sends the menu lines out of band, so all of them change at once. The demo has no
    vault, so it says that instead. See vault_status_view in web/vault_logins.py. #}
@@ -12,6 +12,7 @@
    the label alone. poll rechecks the vault every minute, because it locks itself after its idle
    timeout without any request. #}
 {% macro vault_status(status, id, compact=false, poll=false, oob=false) -%}
+{%- if status or demo_mode %}
 {%- set unlocked = status.unlocked and not demo_mode -%}
 {%- set label = "No vault in the demo" if demo_mode else status.label -%}
 {%- set detail = "Bank sync is off." if demo_mode else status.detail -%}
@@ -23,6 +24,7 @@
   <span class="pl-4 text-xs text-secondary">{{ detail }}</span>
   {%- endif %}
 </div>
+{%- endif %}
 {%- endmacro %}
 
 {# The status lines out of band: the user menus' and, unless page=false, the Bank sync page's. A

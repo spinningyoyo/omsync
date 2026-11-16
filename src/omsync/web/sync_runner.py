@@ -29,9 +29,11 @@ logger = logging.getLogger(__name__)
 # The scope of a sync of every enabled provider. Not a valid provider key, so it cannot collide.
 ALL = "*"
 PROMPT_TIMEOUT_SECONDS = 600.0
+CONFIRMED = "confirmed"  # the answer a button-only question's form sends
 ANSWER_LIMIT = 200
 BUSY_MESSAGE = "Another sync is running in a terminal. Try again when it finishes."
 ALREADY_RUNNING = "A sync is already running. Wait for it to finish."
+VAULT_IN_USE = "A sync is running. Change the vault when it finishes."
 NO_QUESTION = "No question is waiting for an answer."
 NOT_RUNNING = "No sync is running."
 EMPTY_ANSWER = "Type the answer first."
@@ -69,6 +71,7 @@ class Question:
     text: str
     secret: bool
     digits: int | None  # the digits of a one-time code, so the page can send it once complete
+    button: str | None = None  # a question answered by this button alone, with no text
 
 
 @dataclass(frozen=True)
@@ -140,7 +143,13 @@ class WebPrompt:
         self._timeout = timeout
 
     def ask(self, question: str, *, secret: bool = False, digits: int | None = None) -> str:
-        pending = self._runner._open_question(self._job, question, secret, digits)
+        return self._wait(Question(0, "", question, secret, digits))
+
+    def confirm(self, question: str, *, button: str) -> bool:
+        return self._wait(Question(0, "", question, False, None, button)) == CONFIRMED
+
+    def _wait(self, asked: Question) -> str:
+        pending = self._runner._open_question(self._job, asked)
         pending.event.wait(self._timeout)
         answer = self._runner._close_question(self._job, pending)
         if self.cancelled():
@@ -161,7 +170,7 @@ class SyncRunner:
     def __init__(
         self,
         session_factory: Callable[[], Session],
-        vault: Vault,
+        vault: Vault | None,
         settings: Settings,
         *,
         prompt_timeout: float = PROMPT_TIMEOUT_SECONDS,
@@ -173,6 +182,14 @@ class SyncRunner:
         self._lock = threading.Lock()
         self._job: _Job | None = None
         self._questions = 0  # questions and notices, so each has its own number
+
+    def use_vault(self, vault: Vault | None, settings: Settings) -> None:
+        """Run later syncs with this vault and settings. Raises SyncRefused while a job runs."""
+        with self._lock:
+            if self._job is not None and self._job.phase is JobPhase.running:
+                raise SyncRefused(VAULT_IN_USE)
+            self._vault = vault
+            self._settings = settings
 
     def start(self, scope: str, provider_keys: list[str]) -> None:
         """Start a job that syncs the providers, in this order, as scope (ALL or one key). Returns
@@ -309,11 +326,11 @@ class SyncRunner:
                 if progress.phase is ProviderPhase.queued:
                     _update(job, key, phase=ProviderPhase.cancelled)
 
-    def _open_question(self, job: _Job, text: str, secret: bool, digits: int | None) -> _Pending:
+    def _open_question(self, job: _Job, asked: Question) -> _Pending:
         with self._lock:
             self._questions += 1
             key = job.current or job.scope
-            pending = _Pending(Question(self._questions, key, text, secret, digits))
+            pending = _Pending(replace(asked, number=self._questions, provider_key=key))
             job.pending = pending
             job.notice = None
             if job.cancel.is_set():

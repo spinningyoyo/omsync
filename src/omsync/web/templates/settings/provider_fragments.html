@@ -15,6 +15,12 @@
 {%- endif %}
 {% endblock %}
 
+{# The vault panel with why a connect or disconnect was refused (routes/settings_vault.py). #}
+{% block frag_vault_panel %}
+{% from "settings/sync_parts.html" import vault_panel %}
+{{ vault_panel(email, message) }}
+{% endblock %}
+
 {# The vault's status lines, as the Bank sync page's poll sends them. #}
 {% block frag_vault_status %}
 {% from "components/vault_status.html" import vault_status as vault_status_line, vault_status_oob, VAULT_STATUS_PAGE %}
