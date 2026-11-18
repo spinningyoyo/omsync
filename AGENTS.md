@@ -16,6 +16,9 @@ sections.
   Never query or write `~/omsync-data` directly.
 - When code contradicts its architecture page, raise it with the owner. Do not treat the code as
   the design.
+- During a feature or a bug fix, do not change the documentation: `docs/`, the in-app guides,
+  `README.md` and `CHANGELOG.md`. When the code work is complete, ask the owner if you can update
+  the documentation.
 - Tests are end-to-end only, in `tests/e2e/`. Do not write unit tests. A test drives the CLI, an HTTP route or a
   Playwright journey from the outside. Do not add tests unless the owner asks. Update an existing
   test when the behavior that it covers changes.
@@ -46,7 +49,8 @@ Check these rules by hand:
   link to docs.
 - Tests use synthetic data in `tmp_path`. They fake external binaries such as `bw` through
   `shutil.which`. Related cases are parametrized.
-- A behavior change updates its architecture page in the same diff.
+- A behavior change updates its architecture page when the owner approves the documentation
+  work.
 
 ## Commands
 

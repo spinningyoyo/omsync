@@ -24,6 +24,10 @@ dependencies = [
     "selenium>=4.20",
     "openpyxl>=3.1.5",
     "omsync-nursery>=0.2,<0.3",
+    "pyobjc-framework-localauthentication>=13.0 ; sys_platform == 'darwin'",
+    "winrt-runtime>=4.1.0 ; sys_platform == 'win32'",
+    "winrt-windows-foundation>=4!10.0.28000.2957 ; sys_platform == 'win32'",
+    "winrt-windows-security-credentials-ui>=4!10.0.28000.2957 ; sys_platform == 'win32'",
 ]
 
 [project.urls]
@@ -108,7 +112,8 @@ max-complexity = 10  # ruff's default; split a function that grows past it, do n
 "src/omsync/ingest/connectors/banks/*.py" = ["S105"]
 # The Bitwarden CLI runs with a fixed argument list and no shell (S603); `input` is the stdin
 # argument of subprocess.run (A002); the entry names and the env variable are not secrets (S105).
-"src/omsync/core/vault.py" = ["S105", "S603", "A002"]
+"src/omsync/core/bitwarden.py" = ["S105", "S603", "A002"]
+"src/omsync/core/owner.py" = ["N817"]  # LA is Apple's own name for the LocalAuthentication framework
 "src/omsync/ingest/connectors/banks/browser.py" = ["S603", "N812"]  # Chrome with fixed arguments; EC is selenium's own alias
 "src/omsync/reconcile/rules/base.py" = ["A002"]  # `credits` is the domain word, not site.credits (A001 in transfers.py)
 "src/omsync/core/logs.py" = ["N802"]  # overrides logging.Formatter.formatException

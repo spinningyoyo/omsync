@@ -19,13 +19,13 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 
 def shell_context(request: Request, db: Session, *, active: str, title: str) -> dict[str, Any]:
-    """The values every shell page needs: the rail, the user's email and the vault's status for the
+    """The values every shell page needs: the rail, who is signed in and the vault's status for the
     user menu, and the accounts panel."""
     return {
         "active": active,
         "title": title,
         "nav_groups": NAV_GROUPS,
-        "email": request.state.session.email,
+        "user_name": request.state.session.name,
         "vault_status": vault_status_view(request.app.state.vault),
         "account_groups": account_groups(db),
         "accounts_grouping": panel_grouping(db),

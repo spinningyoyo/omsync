@@ -1,6 +1,6 @@
 """`omsync sync`, through the CLI in a tmp data dir.
 
-The vault is a fake that accepts one email and password, and the connector is a fake that copies
+The vault is a fake that accepts one master password, and the connector is a fake that copies
 synthetic fixtures. Nothing runs bw, reads the keychain, or touches ~/omsync-data. The password
 must never appear in output. Providers are made with the domain functions, because the web page
 that edits them is not part of the CLI."""
@@ -22,23 +22,20 @@ from omsync.ingest.connectors.config import create_provider, update_provider
 from omsync.ledger.accounts import find_account
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "statements"
-EMAIL = "ana@example.test"
 PASSWORD = "correct-horse-battery"
 OFX_ACCOUNT = "000012345678"
 CARD_ACCOUNT = "000098765432"
 
 
 class FakeVault:
-    """Accepts one email and password, and records the emails it was asked to unlock with."""
+    """Accepts one master password, and counts unlocks and locks."""
 
     def __init__(self) -> None:
-        self.unlock_calls: list[str] = []
+        self.unlock_calls = 0
         self.lock_calls = 0
 
-    def unlock(self, email: str, password: str) -> None:
-        self.unlock_calls.append(email)
-        if email != EMAIL:
-            raise VaultError("Email does not match this vault")
+    def unlock(self, password: str) -> None:
+        self.unlock_calls += 1
         if password != PASSWORD:
             raise VaultError("Incorrect master password")
 
@@ -80,14 +77,14 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     data = tmp_path / "data"
     monkeypatch.setenv("OMSYNC_DATA_DIR", str(data))
     monkeypatch.setenv("OMSYNC_CONFIG", str(tmp_path / "absent.toml"))
-    monkeypatch.setenv("OMSYNC_EMAIL", EMAIL)
+    monkeypatch.setenv("OMSYNC_EMAIL", "ana@example.test")
     return data
 
 
 @pytest.fixture
 def vault(monkeypatch: pytest.MonkeyPatch) -> FakeVault:
     fake = FakeVault()
-    monkeypatch.setattr(cli_sync, "make_vault", lambda settings: fake)
+    monkeypatch.setattr(cli_sync, "make_vault", lambda settings, email: fake)
     return fake
 
 
@@ -194,7 +191,7 @@ def test_sync_asks_for_the_password_then_fetches_and_imports(
     assert "ofx1_checking.ofx  account ••5678  joined 0, created 5, review 0" in result.output
     assert "ofx2_card.ofx  account ••5432  joined 0, created 4, review 0" in result.output
     assert PASSWORD not in result.output
-    assert vault.unlock_calls == [EMAIL]
+    assert vault.unlock_calls == 1
     assert vault.lock_calls == 1
     assert fake.calls[0]["vault_item_id"] == "item-1"
     assert fake.calls[0]["last4"] == ["5678", "5432"]

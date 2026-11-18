@@ -37,7 +37,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    Bank[Institution and bank] --> Login[Vault login]
+    Bank[Institution and bank] --> Login[Vault login, when a vault is connected]
     Login --> Accounts[Accounts to fetch]
     Accounts --> Sync[Sync, then find files]
     Sync --> Map[Match statement accounts]
@@ -48,6 +48,7 @@ flowchart LR
 
 - **Each setting has one location.** Machine settings are in `omsync.toml`. Tracked data is in the
   database. The look on each device is in browser storage. For secrets, see [access](access.md).
+- **The vault is set where it is used, on the Bank sync page.** It has no Settings page of its own.
 - **Privacy mode blurs amounts on the screen.** It is not access control. Exports are not blurred.
 - **Pages show only the last four digits of an account number.** The full number does not go to the
   browser. Account mapping uses short-lived tokens.

@@ -65,9 +65,7 @@ def _web_address(uri: str, display_name: str) -> str:
     except ValueError:
         parts = None
     if parts is None or parts.scheme not in ("http", "https") or not parts.hostname:
-        raise ConnectorError(
-            f"the Bitwarden item's first URI for {display_name} is not a web address"
-        )
+        raise ConnectorError(f"the vault item's first URI for {display_name} is not a web address")
     return candidate
 
 
@@ -168,24 +166,18 @@ class BankConnector(BrowserSession):
         self,
         accounts: list[ConnectorAccount],
         period: DateRange,
-        vault: Vault,
+        vault: Vault | None,
         prompt: Prompt,
         dest: Path,
         *,
         vault_item_id: str | None,
     ) -> list[Path]:
-        if vault_item_id is None:
-            raise ConnectorError(
-                f"no Bitwarden login is set for {self.display_name}; choose one on the "
-                "Bank sync page"
-            )
-        login = vault.get_login(vault_item_id)
-        if not login.username:
-            raise ConnectorError(f"the Bitwarden login for {self.display_name} has no username")
-
+        login = None if vault is None else self._vault_login(vault, vault_item_id)
         self._accounts = list(accounts)
         self._login = login
-        self._sign_in_url = self._resolve_sign_in_url(login)
+        self._sign_in_url = (
+            self.fallback_sign_in_url if login is None else self._resolve_sign_in_url(login)
+        )
         self._prompt = prompt
         self._period = period
         self._todate = datetime.combine(period.end, datetime.min.time())
@@ -230,6 +222,16 @@ class BankConnector(BrowserSession):
         # The same omsync.toml and OMSYNC_* settings the CLI reads.
         return load_settings().browser_profile_dir
 
+    def _vault_login(self, vault: Vault, vault_item_id: str | None) -> LoginCredentials:
+        if vault_item_id is None:
+            raise ConnectorError(
+                f"no vault login is set for {self.display_name}; choose one on the Bank sync page"
+            )
+        login = vault.get_login(vault_item_id)
+        if not login.username:
+            raise ConnectorError(f"the vault login for {self.display_name} has no username")
+        return login
+
     def _resolve_sign_in_url(self, login: LoginCredentials) -> str:
         """The sign-in page: the item's first URI when it has one, otherwise the built-in fallback.
 
@@ -237,7 +239,7 @@ class BankConnector(BrowserSession):
         """
         if login.uris:
             url = _web_address(login.uris[0], self.display_name)
-            source = "the first URI of the Bitwarden item"
+            source = "the first URI of the vault item"
         else:
             url = self.fallback_sign_in_url
             source = "the built-in sign-in URL"
@@ -247,8 +249,12 @@ class BankConnector(BrowserSession):
     def _sign_in_and_download(self) -> None:
         with timed(self.key, "sign-in"):
             self.get_driver(self.browser_mode)
-            self.login()
-            needs_code = self._await_sign_in(watch_mfa=True)
+            if self._login is None:
+                self._manual_sign_in()
+                needs_code = False
+            else:
+                self.login()
+                needs_code = self._await_sign_in(watch_mfa=True)
         if needs_code:
             if self.request_auth() is Check.approval:
                 self._await_approval()
@@ -256,6 +262,17 @@ class BankConnector(BrowserSession):
                 self._enter_code(self._ask_code())
         with timed(self.key, "download"):
             self.get_account_activity()
+
+    def _manual_sign_in(self) -> None:
+        """Open the bank's sign-in page and wait until the person says they signed in. The download
+        then asks the bank for the account list itself."""
+        self.driver.get(self._sign_in_url)
+        signed_in = self._the_prompt().confirm(
+            f"Sign in to {self.display_name} in the browser window, then select I have signed in.",
+            button="I have signed in",
+        )
+        if not signed_in:
+            raise NeedsUserAction(f"{self.display_name} was not signed in in time; sync again")
 
     def _enter_code(self, code: str) -> None:
         """Enter the code, then let the page say whether it worked. Submitting can navigate the

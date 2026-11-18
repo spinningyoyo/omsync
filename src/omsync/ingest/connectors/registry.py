@@ -54,7 +54,7 @@ class DropFolder:
         self,
         accounts: list[ConnectorAccount],
         period: DateRange,
-        vault: Vault,
+        vault: Vault | None,
         prompt: Prompt,
         dest: Path,
         *,

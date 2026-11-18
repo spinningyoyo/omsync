@@ -11,7 +11,7 @@ and goals.
 ```mermaid
 flowchart LR
     Banks[Bank websites] --> Connectors
-    Vault[Bitwarden vault] --> Connectors
+    Vault[Bitwarden vault, optional] --> Connectors
     Connectors --> Files[Statement files on disk]
     Files --> Import
     Import --> Ledger[(SQLite ledger)]
@@ -39,7 +39,7 @@ flowchart TD
     Receipts --> Ingest[ingest]
     Ingest --> Reconcile[reconcile]
     Reconcile --> Ledger[ledger]
-    Ledger --> Core[core: database, settings, vault]
+    Ledger --> Core[core: database, settings, owner check, vault]
 ```
 
 ### Server start

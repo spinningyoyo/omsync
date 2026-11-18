@@ -3,15 +3,14 @@
 {% from "components/alert.html" import alert with context %}
 {% from "components/button.html" import link_button %}
 {% from "settings/provider_parts.html" import provider_list %}
-{% from "settings/sync_parts.html" import sync_all_control, sync_region, sync_question %}
-{% from "components/vault_status.html" import vault_status as vault_status_line, VAULT_STATUS_PAGE %}
+{% from "settings/sync_parts.html" import sync_all_control, sync_region, sync_question, vault_control %}
 
 {% block settings_page %}
 {% if demo_mode %}
 {{ alert("Demo: bank sync is off.", variant="info") }}
 {% endif %}
 {% call page_header(page_title, summary) %}
-  {{ vault_status_line(vault_status, VAULT_STATUS_PAGE, poll=true) }}
+  {{ vault_control(vault_status, vault_email) }}
   {{ sync_all_control(sync.running) }}
   {{ link_button("Add provider", href="/settings/providers/new", variant="primary", icon="plus") }}
 {% endcall %}

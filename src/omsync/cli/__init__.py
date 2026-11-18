@@ -6,6 +6,7 @@ from omsync.cli import (  # noqa: F401 -- each module registers its commands
     backup,
     batches,
     categorize,
+    config,
     exports,
     imports,
     providers,

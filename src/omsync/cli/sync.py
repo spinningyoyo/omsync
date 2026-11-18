@@ -1,7 +1,8 @@
 """`omsync sync` and `omsync sync-log`: fetch statements through providers, and read the sync log.
 
-Sync unlocks the vault first, asking for the master password with a hidden prompt, then runs each
-provider's connector. The password is passed to the vault and never printed or stored.
+With a vault, sync unlocks it first, asking for the master password with a hidden prompt, then runs
+each provider's connector. The password is passed to the vault and never printed or stored. Without
+a vault, you sign in at each bank yourself.
 """
 
 from typing import Annotated
@@ -12,8 +13,10 @@ from sqlalchemy import select
 from omsync.cli.common import fail, load_settings_or_exit, parse_period, ready_session
 from omsync.cli.groups import app
 from omsync.cli.imports import echo_import_report
+from omsync.core.bitwarden import MISSING_EMAIL
 from omsync.core.settings import Settings
-from omsync.core.vault import BitwardenCLI, SystemKeychain, Vault, VaultError
+from omsync.core.vault import Vault, VaultError
+from omsync.core.vaults import open_vault
 from omsync.ingest.connectors.base import ConnectorError, DateRange
 from omsync.ingest.models import SyncRun, SyncStatus
 from omsync.ingest.sync import SyncBusy, SyncResult, sync_all, sync_provider
@@ -26,6 +29,10 @@ class TyperPrompt:
     def ask(self, question: str, *, secret: bool = False, digits: int | None = None) -> str:
         return typer.prompt(question, hide_input=secret)
 
+    def confirm(self, question: str, *, button: str) -> bool:
+        typer.prompt(f"{question} Press Enter for {button}", default="", show_default=False)
+        return True
+
     def show(self, message: str, *, image: str | None = None) -> None:
         if message:
             typer.echo(f"{message} The QR is in the Chrome window." if image else message)
@@ -34,13 +41,9 @@ class TyperPrompt:
         return False
 
 
-def make_vault(settings: Settings) -> Vault:
-    """The vault the CLI unlocks. It shares Bitwarden state and keychain entries with the app."""
-    return Vault(
-        BitwardenCLI(appdata_dir=settings.data_dir / "bitwarden"),
-        SystemKeychain(),
-        settings.vault_idle_minutes,
-    )
+def make_vault(settings: Settings, email: str | None) -> Vault | None:
+    """The vault the CLI unlocks, or None without one. It shares state with the app's vault."""
+    return open_vault(settings, email=email)
 
 
 @app.command("sync")
@@ -60,13 +63,14 @@ def sync_command(
     email: Annotated[
         str | None,
         typer.Option(
-            "--email", help="Your Bitwarden email. Default: email in omsync.toml or OMSYNC_EMAIL."
+            "--email", help="Your vault email. Default: email in omsync.toml or OMSYNC_EMAIL."
         ),
     ] = None,
 ) -> None:
     """Fetch statement files with a provider's connector, then import them, one batch per file.
 
-    Give a provider key or --all, not both. Asks for the vault master password first. With --all,
+    Give a provider key or --all, not both. With a vault, asks for its master password first.
+    Without one, asks you to sign in at each bank. With --all,
     a provider that fails does not stop the others. Exits 1 if any sync failed or needs you, or
     another is running.
     """
@@ -74,14 +78,14 @@ def sync_command(
     period = _period(from_date, to_date)
     settings = load_settings_or_exit()
     address = (email or settings.email or "").strip()
-    if not address:
-        fail("no vault email: pass --email, or set email in omsync.toml or OMSYNC_EMAIL")
-
-    vault = make_vault(settings)
+    vault = make_vault(settings, address or None)
+    if vault is not None and not address:
+        fail(MISSING_EMAIL)
     # The database is checked before the password is asked for, so a missing one costs no prompt.
     with ready_session() as (_settings, session):
         try:
-            _unlock(vault, address)
+            if vault is not None:
+                _unlock(vault)
             if all_providers:
                 outcomes = sync_all(
                     session, settings, vault=vault, prompt=TyperPrompt(), period=period
@@ -100,7 +104,8 @@ def sync_command(
         except ConnectorError as exc:
             fail(str(exc))
         finally:
-            vault.lock()
+            if vault is not None:
+                vault.lock()
 
     if not all_providers:
         _report_one(result, provider.strip().lower())
@@ -161,10 +166,10 @@ def _report_all(outcomes: list) -> None:
         fail(f"{len(failed)} of {len(outcomes)} providers did not sync: {', '.join(failed)}")
 
 
-def _unlock(vault: Vault, address: str) -> None:
+def _unlock(vault: Vault) -> None:
     password = typer.prompt("Master password", hide_input=True)
     try:
-        vault.unlock(address, password)
+        vault.unlock(password)
     except VaultError as exc:
         fail(str(exc))
 

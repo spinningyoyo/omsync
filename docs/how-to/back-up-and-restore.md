@@ -91,13 +91,13 @@ needs no pre-restore archive, because it holds no financial data to save.
 3. Keep or create the machine config for that destination. Do not assume the archived paths suit
    the new Mac.
 4. Run `uv run omsync doctor`.
-5. Enter the API credentials at the secret prompts:
+5. If you use Bitwarden, enter the API credentials at the secret prompts, then connect the vault on
+   the Bank sync page:
 
 ```sh
 uv run keyring set omsync bitwarden-client-id
 uv run keyring set omsync bitwarden-client-secret
 ```
 
-Unlock the vault when omsync asks. Sign in to the institution and Costco websites again in the
-dedicated browser profile. The archive does not carry those sessions. A backup never holds your
+Sign in to the institution and Costco websites again in the dedicated browser profile. The archive does not carry those sessions. A backup never holds your
 master password.

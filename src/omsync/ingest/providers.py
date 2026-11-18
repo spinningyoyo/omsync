@@ -158,19 +158,21 @@ def add_provider(
     provider: str,
     connector: str,
     vault_login: str | None,
+    has_vault: bool,
     idempotency_key: str,
 ) -> Batch:
     """Add a provider with its vault login, creating the institution first when it is new, as one
-    batch. A double submit returns the batch the first one made."""
+    batch. Without a vault there is no login, because you sign in at the bank. A double submit
+    returns the batch the first one made."""
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
         return replay
     setup = provider_setup(
         session, institution=institution, name=name, provider=provider, connector=connector
     )
-    if not vault_login:
+    if has_vault and not vault_login:
         raise ProviderSetupError("Choose a login from the search results.")
-    login = vault_item_id(vault_login)
+    login = vault_item_id(vault_login) if has_vault and vault_login else None
     return _provider_write(
         lambda: create_provider(
             session,

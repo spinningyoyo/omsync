@@ -29,6 +29,7 @@ export_app = typer.Typer(help="Excel exports: a year's transactions, or the rent
 rental_app = typer.Typer(
     help="Rental properties: mark accounts as rentals, and set the categories that count as rental."
 )
+config_app = typer.Typer(help="Settings: show them, or write one to omsync.toml.")
 
 app.add_typer(db_app, name="db")
 app.add_typer(accounts_app, name="accounts")
@@ -41,3 +42,4 @@ receipts_app.add_typer(fetch_app, name="fetch")
 app.add_typer(backup_app, name="backup")
 app.add_typer(export_app, name="export")
 app.add_typer(rental_app, name="rental")
+app.add_typer(config_app, name="config")

@@ -3,7 +3,8 @@ reach ~/omsync-data, ~/.config/omsync, or real credentials. A test that needs a 
 monkeypatches keyring itself, which overrides the guard.
 
 The fixtures also build an empty ledger for the CLI tests, and an app on a temporary data
-directory with a fake vault for the HTTP tests. Nothing here runs `bw`."""
+directory with a fake vault and a fake owner check for the HTTP tests. Nothing here runs `bw` or
+shows a system prompt."""
 
 import os
 from pathlib import Path
@@ -13,7 +14,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ledgerkit import Ledger
-from web_support import FakeVault, MakeClient, sign_in
+from web_support import FakeOwnerCheck, FakeVault, MakeClient, sign_in
 
 import omsync.ledger.models  # noqa: F401  registers every table on Base.metadata
 from omsync.core.db import Base
@@ -67,11 +68,18 @@ def vault() -> FakeVault:
 
 
 @pytest.fixture
-def make_client(tmp_path: Path, vault: FakeVault) -> MakeClient:
+def owner_check() -> FakeOwnerCheck:
+    return FakeOwnerCheck()
+
+
+@pytest.fixture
+def make_client(tmp_path: Path, vault: FakeVault, owner_check: FakeOwnerCheck) -> MakeClient:
     """Build a client on a fresh app with the schema created in a temporary database."""
 
     def build(sessions: SessionStore | None = None) -> TestClient:
-        app = create_app(Settings(data_dir=tmp_path), vault=vault, sessions=sessions)
+        app = create_app(
+            Settings(data_dir=tmp_path), vault=vault, owner_check=owner_check, sessions=sessions
+        )
         Base.metadata.create_all(app.state.engine)
         return TestClient(app)
 

@@ -8,12 +8,21 @@ numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Bank sync without a password manager.
+- Connect and disconnect controls for Bitwarden on the Bank sync page.
+- `omsync config show` and `omsync config set` commands to view and update settings.
+
+### Changed
+
+- Sign-in uses the computer's owner check (Touch ID, Windows Hello, or login password) instead of a Bitwarden account.
+- The Bitwarden vault is optional.
+
 ### Fixed
 
-- omsync runs on Windows. Before, every command stopped with `No module named 'fcntl'`, and the
-  Home and Accounts pages failed with `Invalid format string`. Sign-in also works with a `bw`
-  installed through npm and with a login or password that has accented letters. The demo resets
-  and stops cleanly, and bank sync finds Chrome installed for one user only.
+- Support for Windows.
+- Windows sign-in falls back to the computer account password when Windows Hello is unavailable.
 
 ## [0.1.0] - 2026-11-14
 
@@ -33,5 +42,6 @@ numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Reports, account pages, backup and restore.
 - Sign-in scenes from the `omsync-nursery` package.
 
-[Unreleased]: https://github.com/spinningyoyo/omsync/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/spinningyoyo/omsync/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/spinningyoyo/omsync/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/spinningyoyo/omsync/releases/tag/v0.1.0
