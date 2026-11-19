@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from omsync.core.batches import BatchError
 from omsync.core.locks import SYNC_LOCK_NAME, LockBusy, exclusive_lock
 from omsync.core.settings import Settings
+from omsync.core.sync_models import SyncKind, SyncRun, SyncStatus
 from omsync.core.vault import Vault, VaultError, VaultLocked
 from omsync.ingest.connectors.base import (
     Connector,
@@ -40,7 +41,6 @@ from omsync.ingest.connectors.config import enabled_provider_keys
 from omsync.ingest.connectors.registry import get_connector
 from omsync.ingest.discovery import scan_statement_files, suggested_account
 from omsync.ingest.dropfolder import PendingFile, location_of
-from omsync.ingest.models import SyncRun, SyncStatus
 from omsync.ingest.pipeline import ImportReport, import_files
 from omsync.ingest.timing import timed
 from omsync.ledger.accounts import AccountError, add_alias
@@ -224,11 +224,15 @@ def _sync(
         session, [account.account_id for account in plan.accounts], date.today()
     )
     run = SyncRun(
+        kind=SyncKind.bank,
+        target_key=plan.provider_key,
+        connector_key=plan.connector.key,
+        source_key=plan.institution_key,
         institution_key=plan.institution_key,
         provider_key=plan.provider_key,
-        connector_key=plan.connector.key,
         started_at=_utc_now(),
         status=SyncStatus.running,
+        items_fetched=0,
         files_fetched=0,
     )
     session.add(run)
@@ -465,6 +469,7 @@ def _finish(
 ) -> SyncResult:
     run.status = status
     run.finished_at = _utc_now()
+    run.items_fetched = files_fetched
     run.files_fetched = files_fetched
     run.message = _clip(message)
     session.commit()

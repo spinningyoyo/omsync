@@ -36,10 +36,12 @@ The message never includes the row's contents.
 """
 
 import csv
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass, fields
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlencode
 
 from omsync.core import money
@@ -119,14 +121,18 @@ class AmazonVendor(BaseVendor):
     key = VENDOR_KEY
 
     def discover(self, root: Path) -> list[Path]:
-        return sorted(root.rglob(ORDER_FILE)) + sorted(root.rglob(REFUND_FILE))
+        jsons = sorted(path for path in root.rglob("*.json") if path.is_file())
+        csvs = sorted(root.rglob(ORDER_FILE)) + sorted(root.rglob(REFUND_FILE))
+        return jsons + csvs
 
     def parse(self, path: Path) -> list[Receipt]:
-        login = path.parent.parent.name
+        if path.suffix == ".json":
+            return list(_parse_json_receipt(path))
+        account = path.parent.parent.name
         if path.name == ORDER_FILE:
-            return list(_order_receipts(path, login))
+            return list(_order_receipts(path, account))
         if path.name == REFUND_FILE:
-            return list(_refund_receipts(path, login))
+            return list(_refund_receipts(path, account))
         raise AmazonFileError(f"{path.name} is not an Amazon order or refund file")
 
     def is_vendor_payee(self, payee: str) -> bool:
@@ -150,6 +156,25 @@ class AmazonVendor(BaseVendor):
         if _shipments(receipt) > 1:
             return ChargeResult("needs_transactions")
         start, end = _observed_window(receipt)
+        card_tenders = [
+            t for t in receipt.tenders if t.kind == "card" and t.amount_cents is not None
+        ]
+        if len(card_tenders) > 1:
+            charges = tuple(
+                Charge(
+                    receipt_key=charge_key(VENDOR_KEY, receipt.receipt_id, idx),
+                    amount_cents=-t.amount_cents,
+                    window_start=start,
+                    window_end=end,
+                    card_last4=t.last4,
+                    item_positions=None,
+                    observed=True,
+                    anchor=min(receipt.ship_dates, default=None),
+                )
+                for idx, t in enumerate(card_tenders)
+                if t.amount_cents != 0
+            )
+            return ChargeResult("observed", charges, infer_if_unmatched=True)
         charge = Charge(
             receipt_key=charge_key(VENDOR_KEY, receipt.receipt_id, 0),
             amount_cents=-receipt.total_cents,
@@ -267,10 +292,146 @@ def _date(value: str, path: Path, line: int, column: str) -> date:
 
 
 def _parse_date(value: str) -> date | None:
+    cleaned = value.strip()
     try:
-        return datetime.fromisoformat(value).date()
+        return datetime.fromisoformat(cleaned).date()
     except ValueError:
-        return None
+        pass
+    for fmt in ("%b %d, %Y", "%B %d, %Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(cleaned, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _json_items_and_quantities(
+    raw_items: list[dict[str, Any]], total_cents: int
+) -> tuple[list[ReceiptItem], list[int]]:
+    items: list[ReceiptItem] = []
+    quantities: list[int] = []
+    for idx, it in enumerate(raw_items, start=1):
+        desc = str(it.get("description") or it.get("title") or "Amazon Item").strip()
+        amt = int(
+            it.get("amount_cents")
+            if it.get("amount_cents") is not None
+            else (it.get("unit_price_cents", 0) * it.get("quantity", 1))
+        )
+        qty = int(it.get("quantity", 1))
+        items.append(ReceiptItem(position=idx, description=desc, amount_cents=amt, taxable=False))
+        quantities.append(qty)
+
+    if not items and total_cents > 0:
+        items.append(
+            ReceiptItem(
+                position=1, description="Amazon Order", amount_cents=total_cents, taxable=False
+            )
+        )
+        quantities.append(1)
+    return items, quantities
+
+
+def _json_tenders(charges_data: list[dict[str, Any]], total_cents: int) -> tuple[Tender, ...]:
+    tenders: list[Tender] = []
+    for c in charges_data:
+        last4 = c.get("card_last4")
+        c_amt = int(c.get("amount_cents", total_cents))
+        tenders.append(Tender(kind="card", last4=last4, amount_cents=c_amt))
+    if not tenders:
+        tenders.append(Tender(kind="card", last4=None, amount_cents=total_cents))
+    return tuple(tenders)
+
+
+def _json_refund_receipts(
+    data: dict[str, Any],
+    order_receipt: AmazonReceipt,
+    order_id: str,
+    account: str,
+) -> list[AmazonReceipt]:
+    receipts: list[AmazonReceipt] = []
+    for r in data.get("refunds", []):
+        r_amt = int(r.get("amount_cents", 0))
+        if r_amt <= 0:
+            continue
+        r_date = _parse_date(r.get("date", "")) or order_receipt.purchased_on
+        r_last4 = r.get("card_last4") or _card(order_receipt)
+        r_reason = str(r.get("reason") or "Customer Return").strip()
+        r_receipt_id = f"{order_id}{REFUND_ID_PART}{r_date.isoformat()}-{r_amt}"
+
+        r_items = _refund_items(order_receipt, r_amt) or (
+            ReceiptItem(
+                position=1,
+                description=f"Refund: {r_reason}",
+                amount_cents=r_amt,
+                taxable=False,
+            ),
+        )
+
+        refund_receipt = make_receipt(
+            vendor_key=VENDOR_KEY,
+            receipt_id=r_receipt_id,
+            purchased_on=r_date,
+            account=account,
+            items=r_items,
+            tax_cents=0,
+            total_cents=r_amt,
+            tenders=() if r_last4 is None else (Tender("card", r_last4, r_amt),),
+            is_refund=True,
+            refund_of=order_id,
+        )
+        receipts.append(_as_amazon(refund_receipt))
+    return receipts
+
+
+def _parse_json_receipt(path: Path) -> list[AmazonReceipt]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise AmazonFileError(f"{path.name} is not a readable JSON file") from exc
+
+    order_id = str(data.get("order_id") or path.stem).strip()
+    if not order_id:
+        raise AmazonFileError(f"{path.name} has no order_id")
+
+    parts = path.parts
+    try:
+        amazon_idx = parts.index("AMAZON")
+        account = parts[amazon_idx + 1] if len(parts) > amazon_idx + 2 else "default"
+    except ValueError:
+        account = path.parent.parent.name or "default"
+
+    charges_data = data.get("charges", [])
+    raw_date = data.get("order_date")
+    order_date = _parse_date(raw_date) if raw_date else None
+    if order_date is None and charges_data:
+        order_date = _parse_date(charges_data[0].get("date", ""))
+    order_date = order_date or date.today()
+
+    tax_cents = int(data.get("tax_cents") or 0)
+    total_cents = int(data.get("total_cents") or 0)
+    if total_cents <= 0 and charges_data:
+        total_cents = sum(int(c.get("amount_cents", 0)) for c in charges_data)
+
+    items, quantities = _json_items_and_quantities(data.get("items", []), total_cents)
+    if total_cents <= 0:
+        total_cents = sum(it.amount_cents for it in items)
+
+    tenders = _json_tenders(charges_data, total_cents)
+
+    base = make_receipt(
+        vendor_key=VENDOR_KEY,
+        receipt_id=order_id,
+        purchased_on=order_date,
+        account=account,
+        items=items,
+        tax_cents=tax_cents,
+        total_cents=total_cents,
+        tenders=tenders,
+        is_refund=False,
+        ship_dates=(order_date,),
+    )
+    order_receipt = _as_amazon(base, shipments=1, quantities=tuple(quantities))
+    return [order_receipt, *_json_refund_receipts(data, order_receipt, order_id, account)]
 
 
 def _blank(value: str) -> bool:
@@ -302,7 +463,7 @@ def _tenders(payment_method: str, total_cents: int) -> tuple[Tender, ...]:
 # Orders
 
 
-def _order_receipts(path: Path, login: str) -> list[AmazonReceipt]:
+def _order_receipts(path: Path, account: str) -> list[AmazonReceipt]:
     grouped: dict[str, list[tuple[int, dict[str, str]]]] = {}
     for line, row in _read_rows(path, _ORDER_COLUMNS):
         order_id = row["Order ID"]
@@ -318,14 +479,14 @@ def _order_receipts(path: Path, login: str) -> list[AmazonReceipt]:
 
     receipts: list[AmazonReceipt] = []
     for order_id, group in grouped.items():
-        receipt = _build_order(path, login, order_id, group)
+        receipt = _build_order(path, account, order_id, group)
         if receipt is not None:
             receipts.append(receipt)
     return receipts
 
 
 def _build_order(
-    path: Path, login: str, order_id: str, group: list[tuple[int, dict[str, str]]]
+    path: Path, account: str, order_id: str, group: list[tuple[int, dict[str, str]]]
 ) -> AmazonReceipt | None:
     """One order from its rows. Cancelled orders and orders that total nothing are skipped."""
     _, first = group[0]
@@ -366,7 +527,7 @@ def _build_order(
         vendor_key=VENDOR_KEY,
         receipt_id=order_id,
         purchased_on=_date(first["Order Date"], path, group[0][0], "Order Date"),
-        vendor_login=login,
+        account=account,
         items=items,
         tax_cents=tax,
         total_cents=total,
@@ -433,8 +594,8 @@ def _split_window(receipt: Receipt) -> tuple[date, date]:
 # Refunds
 
 
-def _refund_receipts(path: Path, login: str) -> list[AmazonReceipt]:
-    orders = _orders_by_id(path, login)
+def _refund_receipts(path: Path, account: str) -> list[AmazonReceipt]:
+    orders = _orders_by_id(path, account)
     seen: set[tuple[str, int, date]] = set()
     receipts: list[AmazonReceipt] = []
     for line, row in _read_rows(path, _REFUND_COLUMNS):
@@ -457,19 +618,19 @@ def _refund_receipts(path: Path, login: str) -> list[AmazonReceipt]:
                 refund_date,
                 refund_cents,
                 row["Reversal Reason"],
-                login,
+                account,
                 orders.get(order_id),
             )
         )
     return receipts
 
 
-def _orders_by_id(refund_path: Path, login: str) -> dict[str, Receipt]:
-    """The same login's order receipts, keyed by order ID, when the order history is present."""
+def _orders_by_id(refund_path: Path, account: str) -> dict[str, Receipt]:
+    """The same account's order receipts, keyed by order ID, when the order history is present."""
     order_path = refund_path.parent.parent / ORDERS_FOLDER / ORDER_FILE
     if not order_path.is_file():
         return {}
-    return {receipt.receipt_id: receipt for receipt in _order_receipts(order_path, login)}
+    return {receipt.receipt_id: receipt for receipt in _order_receipts(order_path, account)}
 
 
 def _refund_receipt(
@@ -477,7 +638,7 @@ def _refund_receipt(
     refund_date: date,
     refund_cents: int,
     reason: str,
-    login: str,
+    account: str,
     order: Receipt | None,
 ) -> AmazonReceipt:
     items = _refund_items(order, refund_cents) if order is not None else None
@@ -489,7 +650,7 @@ def _refund_receipt(
         vendor_key=VENDOR_KEY,
         receipt_id=f"{order_id}{REFUND_ID_PART}{refund_date.isoformat()}-{refund_cents}",
         purchased_on=refund_date,
-        vendor_login=login,
+        account=account,
         items=items,
         tax_cents=0,
         total_cents=refund_cents,

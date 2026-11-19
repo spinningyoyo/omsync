@@ -21,7 +21,7 @@ SIGNED_IN_KEYS = ("AccessToken", "multiAccountMetaData", "PartnerConfig")
 @register
 class FidelityConnector(BankConnector):
     key = "fidelity"
-    label = "Fidelity Rewards: QFX from the website"
+    label = "Fidelity Rewards: QFX statement"
     display_name = "Fidelity"
     fallback_sign_in_url = "https://login.fidelityrewards.com/"
     username_id = "input_aw-personal-id"

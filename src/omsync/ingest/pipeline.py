@@ -16,6 +16,7 @@ and every sync share it. A sync of several providers links once per provider, si
 import hashlib
 import json
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
@@ -209,9 +210,25 @@ class _Run:
             item.stored = staged[sha256]
             return True
         stage = stage_external if self.apply else _preview_destination
+        account_id = (
+            pending.statement_account_id or item.statement.statement_account_id or "default"
+        )
+        statement_year = (
+            item.statement.period_end.year
+            if item.statement.period_end
+            else (
+                item.statement.period_start.year
+                if item.statement.period_start
+                else date.today().year
+            )
+        )
         try:
             target = stage(
-                pending.path, self.settings, item.institution, pending.statement_account_id
+                pending.path,
+                self.settings,
+                item.institution,
+                account_id,
+                year=statement_year,
             )
         except (OSError, ValueError) as exc:
             name = pending.path.name
@@ -293,10 +310,14 @@ class _Run:
 
 
 def _preview_destination(
-    path: Path, settings: Settings, institution_key: str, statement_account_id: str | None
+    path: Path,
+    settings: Settings,
+    institution_key: str,
+    statement_account_id: str | None,
+    year: int | str | None = None,
 ) -> Path:
     """The preview's stand-in for stage_external: the same destination, without the copy."""
-    return destination_for(settings, path, institution_key, statement_account_id)
+    return destination_for(settings, path, institution_key, statement_account_id, year=year)
 
 
 def _last4(account: Account | None) -> str | None:

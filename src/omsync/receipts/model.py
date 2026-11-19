@@ -50,7 +50,7 @@ class Receipt:
     receipt_id: str
     revision: str
     purchased_on: date
-    vendor_login: str
+    account: str
     items: tuple[ReceiptItem, ...]
     tax_cents: int
     total_cents: int
@@ -131,7 +131,7 @@ def receipt_revision(receipt: Receipt) -> str:
         "vendor_key": receipt.vendor_key,
         "receipt_id": receipt.receipt_id,
         "purchased_on": receipt.purchased_on.isoformat(),
-        "vendor_login": receipt.vendor_login,
+        "account": receipt.account,
         "items": [
             {
                 "position": item.position,
@@ -163,7 +163,7 @@ def make_receipt(
     vendor_key: str,
     receipt_id: str,
     purchased_on: date,
-    vendor_login: str,
+    account: str,
     items: Iterable[ReceiptItem],
     tax_cents: int,
     total_cents: int,
@@ -202,7 +202,7 @@ def make_receipt(
         receipt_id=receipt_id,
         revision="",
         purchased_on=purchased_on,
-        vendor_login=vendor_login,
+        account=account,
         items=item_tuple,
         tax_cents=tax_cents,
         total_cents=total_cents,

@@ -3,8 +3,9 @@
    itself while a job runs. The slot sits outside it and is replaced only when its question or
    notice changes, so a poll never wipes an answer being typed. See routes/settings_providers.py and
    web/sync_runner.py. #}
-{% from "components/button.html" import button %}
+{% from "components/button.html" import button, link_button %}
 {% from "components/icon.html" import icon %}
+{% from "components/institution_logo.html" import institution_logo with context %}
 {% from "components/password_field.html" import password_field %}
 {% from "settings/parts.html" import step_error %}
 {% from "components/popover.html" import popover %}
@@ -18,7 +19,10 @@
 {{ vault_status_line(status, VAULT_STATUS_PAGE) }}
 {%- else %}
 {%- set trigger -%}
-{%- if status %}{{ vault_status_line(status, VAULT_STATUS_PAGE, poll=true) }}{% else %}<span class="whitespace-nowrap">No vault</span>{% endif -%}
+<span class="flex items-center gap-2">
+  {{ institution_logo("bitwarden", "Bitwarden", 18) }}
+  {%- if status %}{{ vault_status_line(status, VAULT_STATUS_PAGE, poll=true) }}{% else %}<span class="whitespace-nowrap">No vault</span>{% endif -%}
+</span>
 {%- endset %}
 {% call popover(id="vault-popover", label="Vault", trigger_html=trigger, value=status.label if status else "No vault", panel_class="w-80 max-w-[calc(100vw-2rem)] p-4") %}
 {{ vault_panel(email) }}
@@ -30,7 +34,10 @@
    A refused change redraws the panel with its reason; a done one reloads the page. #}
 {% macro vault_panel(email, message="") -%}
 <div id="vault-panel" class="flex flex-col gap-3" hx-target="#vault-panel" hx-swap="outerHTML">
-  <p class="text-sm font-medium text-primary">Bitwarden</p>
+  <div class="flex items-center gap-2">
+    {{ institution_logo("bitwarden", "Bitwarden", 20) }}
+    <p class="text-sm font-medium text-primary">Bitwarden</p>
+  </div>
   {{ step_error(message) }}
   {%- if has_vault %}
   <div class="flex items-center justify-between gap-3">
@@ -51,16 +58,37 @@
 </div>
 {%- endmacro %}
 
-{# The Sync all button. oob=true swaps it in place when a job starts or ends. #}
+{# The Sync all button at the top right of the page header. oob=true swaps it in place when a job starts or ends. #}
 {% macro sync_all_control(busy, oob=false) -%}
 <div id="sync-all-control"{% if oob %} hx-swap-oob="true"{% endif %}>
-  {{ button("Sync all", variant="outline", icon="rotate-ccw", disabled=busy, attrs={"hx-post": "/settings/providers/sync_all", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
+  {{ button("Sync all", variant="primary", icon="rotate-ccw", disabled=busy, attrs={"hx-post": "/settings/providers/sync_all", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
+</div>
+{%- endmacro %}
+
+{# The controls in the Banks tab header: Sync banks and Add provider. oob=true swaps it in place when a job starts or ends. #}
+{% macro sync_banks_control(busy, oob=false) -%}
+<div id="sync-banks-control" class="flex items-center gap-2"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {{ button("Sync banks", variant="outline", icon="banknote-arrow-down", disabled=busy, attrs={"hx-post": "/settings/providers/sync_banks", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
+  {{ link_button("Add provider", href="/settings/providers/new", variant="outline", icon="plus") }}
+</div>
+{%- endmacro %}
+
+{# The controls in the Vendors tab header: Fetch receipts and Add vendor. oob=true swaps it in place when a job starts or ends. #}
+{% macro sync_vendors_control(busy, oob=false) -%}
+<div id="sync-vendors-control" class="flex items-center gap-2"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {{ button("Fetch receipts", variant="outline", icon="receipt-text", disabled=busy, attrs={"hx-post": "/settings/providers/sync_receipts", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
+  {{ link_button("Add vendor", href="/settings/vendors/new", variant="outline", icon="plus") }}
 </div>
 {%- endmacro %}
 
 {# A provider card's Sync button: an icon, named on hover. #}
 {% macro sync_button(key, busy) -%}
 {{ button(variant="icon", size="sm", icon="rotate-ccw", aria_label="Sync", disabled=busy, class_="icon-tip", attrs={"data-tip": "Sync", "hx-post": "/settings/providers/" ~ key ~ "/sync", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
+{%- endmacro %}
+
+{# A vendor card's Fetch button: an icon, named on hover. #}
+{% macro sync_vendor_button(key, busy) -%}
+{{ button(variant="icon", size="sm", icon="rotate-ccw", aria_label="Fetch receipts", disabled=busy, class_="icon-tip", attrs={"data-tip": "Fetch receipts", "hx-post": "/settings/providers/vendor/" ~ key ~ "/sync", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
 {%- endmacro %}
 
 {# The status region. It is empty until a sync has something to say: while a job runs, after it
@@ -124,8 +152,7 @@
    as a QR to scan. A secret answer is a password field. The container is swapped out of band, so the
    region can be replaced without touching it. #}
 {% macro sync_question(question, notice=none, oob=false) -%}
-<div id="sync-question"{% if oob %} hx-swap-oob="true"{% endif %}>
-  {%- if question is none and notice is not none %}
+<div id="sync-question" class="empty:hidden"{% if oob %} hx-swap-oob="true"{% endif %}>{%- if question is none and notice is not none %}
   <section class="flex flex-col items-center gap-3 rounded-xl bg-container p-5 text-center shadow-border-xs" aria-label="{{ notice.provider_key }} needs you">
     <p class="text-sm font-medium text-primary">{{ notice.text }}</p>
     {%- if notice.image %}
@@ -153,6 +180,6 @@
     <p class="text-xs text-secondary">Sent to the bank, not stored.{% if question.digits %} Sends once all {{ question.digits }} digits are in.{% endif %}</p>
     <div class="flex justify-end">{{ button("Send answer", variant="primary", type="submit") }}</div>
   </form>
-  {%- endif %}
+  {%- endif -%}
 </div>
 {%- endmacro %}

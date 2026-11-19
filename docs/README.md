@@ -23,6 +23,8 @@ Every diagram that has such a step defines the style `waits`.
 - [Bank requests](architecture/bank-requests/README.md): [Bank of America](architecture/bank-requests/boa.md),
   [Chase](architecture/bank-requests/chase.md), [Citi](architecture/bank-requests/citi.md), and
   [Fidelity Rewards](architecture/bank-requests/fidelity.md).
+- [Vendor requests](architecture/vendor-requests/README.md): [Amazon](architecture/vendor-requests/amazon.md) and
+  [Costco](architecture/vendor-requests/costco.md).
 - [Receipts](architecture/receipts.md)
 
 ## Explaining transactions
@@ -50,7 +52,7 @@ Every diagram that has such a step defines the style `waits`.
 | `ledger/` | [ledger](architecture/ledger.md), [transactions](architecture/transactions.md), [categories](architecture/categories.md), [accounts](architecture/accounts.md), [contacts](architecture/contacts.md) |
 | `migrations/` | Alembic revisions. Never edit a revision that has run; add a new one. |
 | `reconcile/` | [reconciliation](architecture/reconciliation.md) |
-| `receipts/` | [receipts](architecture/receipts.md) |
+| `receipts/` | [receipts](architecture/receipts.md), [vendor requests](architecture/vendor-requests/README.md) |
 | `plan/` | [plan](architecture/plan.md), [recurring](architecture/recurring.md) |
 | `reports/` | [dashboard](architecture/dashboard.md), [reports](architecture/reports.md) |
 | `web/`, `cli/` | [interface](architecture/interface.md), and the page of the feature |

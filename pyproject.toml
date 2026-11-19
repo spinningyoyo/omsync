@@ -108,13 +108,14 @@ max-complexity = 10  # ruff's default; split a function that grows past it, do n
 # The end-to-end tests assert (S101), build SQL from fixed test strings (S608), use fake secrets
 # (S105), draw fake data (S311), bind a test port (S104), and run the built wheel (S310, S603).
 "tests/**" = ["S101", "S105", "S608", "S311", "S104", "S310", "S603", "S607"]
-# The bank connectors name form fields ("password_id") and URLs ("TOKEN_URL"), not secrets (S105).
+# The bank and receipt connectors name form fields ("password_id") and tokens, not secrets (S105).
 "src/omsync/ingest/connectors/banks/*.py" = ["S105"]
+"src/omsync/receipts/connectors/*.py" = ["S105"]
 # The Bitwarden CLI runs with a fixed argument list and no shell (S603); `input` is the stdin
 # argument of subprocess.run (A002); the entry names and the env variable are not secrets (S105).
 "src/omsync/core/bitwarden.py" = ["S105", "S603", "A002"]
 "src/omsync/core/owner.py" = ["N817"]  # LA is Apple's own name for the LocalAuthentication framework
-"src/omsync/ingest/connectors/banks/browser.py" = ["S603", "N812"]  # Chrome with fixed arguments; EC is selenium's own alias
+"src/omsync/ingest/connectors/browser.py" = ["S603", "N812"]  # Chrome with fixed arguments; EC is selenium's own alias
 "src/omsync/reconcile/rules/base.py" = ["A002"]  # `credits` is the domain word, not site.credits (A001 in transfers.py)
 "src/omsync/core/logs.py" = ["N802"]  # overrides logging.Formatter.formatException
 # Markup wraps text this module escaped or built itself, so it is safe (S704).

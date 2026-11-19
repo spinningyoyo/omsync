@@ -18,8 +18,8 @@ from omsync import cli
 
 STATEMENT = b"DATE,AMOUNT,PAYEE\n2026-03-01,-12.50,EXAMPLE COFFEE\n"
 RECEIPT = b'{"transactionBarcode": "0001", "total": 1250}'
-STATEMENT_PATH = Path("statements/EXAMPLE/example_1111.csv")
-RECEIPT_PATH = Path("receipts/COSTCO/2026/Q1/0001.json")
+STATEMENT_PATH = Path("statements/EXAMPLE/1111/2026/example_1111.csv")
+RECEIPT_PATH = Path("receipts/COSTCO/default/2026/0001.json")
 ARCHIVE_LINE = re.compile(r"Backed up \d+ files to (\S+) \(")
 
 
@@ -116,8 +116,8 @@ def test_restore_drill_brings_back_rows_statement_and_receipt(home: Path, archiv
     (safety,) = [p for p in (home / "backups").iterdir() if p.name.endswith("-pre-restore.tar.gz")]
     assert "Saved the state from before the restore to" in result.output
     saved = _members(safety)
-    assert saved["data/statements/EXAMPLE/example_1111.csv"] == b"edited after the backup"
-    assert "data/receipts/COSTCO/2026/Q1/0001.json" not in saved
+    assert saved[f"data/{STATEMENT_PATH.as_posix()}"] == b"edited after the backup"
+    assert f"data/{RECEIPT_PATH.as_posix()}" not in saved
     listing = run("backup", "list").output
     assert "manual" in listing and "pre-restore" in listing
 

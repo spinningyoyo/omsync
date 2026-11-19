@@ -73,10 +73,15 @@ def _headline(view: JobView) -> str:
     if view.phase is JobPhase.idle:
         return "No sync has run from this page yet."
     if view.cancelling:
-        return "Cancelling. The bank in progress stops at its next step."
+        return "Cancelling. The sync in progress stops at its next step."
     if view.phase is JobPhase.running:
-        target = "every enabled provider" if view.scope == ALL else view.scope
-        return f"Syncing {target}."
+        if view.scope == ALL:
+            return "Syncing all providers and receipt vendors."
+        if view.scope == "banks":
+            return "Syncing bank accounts."
+        if view.scope == "receipts":
+            return "Fetching vendor receipts."
+        return f"Syncing {view.scope.removeprefix('vendor:')}."
     ended = (
         "Cancelled."
         if any(item.phase is ProviderPhase.cancelled for item in view.providers)
@@ -89,8 +94,9 @@ def _headline(view: JobView) -> str:
 
 
 def _line(progress: ProviderProgress) -> ProviderLineView:
+    display_key = progress.key.removeprefix("vendor:")
     return ProviderLineView(
-        key=progress.key,
+        key=display_key,
         label=LABELS[progress.phase],
         detail=_detail(progress),
         tone=TONES[progress.phase],
@@ -99,6 +105,10 @@ def _line(progress: ProviderProgress) -> ProviderLineView:
 
 
 def _detail(progress: ProviderProgress) -> str:
+    if progress.key.startswith("vendor:"):
+        if progress.phase is ProviderPhase.succeeded:
+            return progress.message or f"{progress.files_fetched} receipts fetched."
+        return progress.message or ""
     if progress.phase is ProviderPhase.succeeded:
         files = "1 file" if progress.files_fetched == 1 else f"{progress.files_fetched} files"
         detail = (

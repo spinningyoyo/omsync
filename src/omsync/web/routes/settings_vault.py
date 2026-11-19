@@ -60,7 +60,7 @@ def connect_vault(
         return _refused(request, exc.message, email)
     try:
         update_settings({"vault": "bitwarden", "email": email})
-    except ValueError as exc:
+    except (ValueError, OSError) as exc:
         state.sync_runner.use_vault(None, old)
         vault.lock()
         return _refused(request, str(exc), email)
@@ -82,7 +82,7 @@ def disconnect_vault(request: Request) -> Response:
         return _refused(request, exc.message)
     try:
         update_settings({"vault": "none", "email": ""})
-    except ValueError as exc:
+    except (ValueError, OSError) as exc:
         state.sync_runner.use_vault(vault, old)
         return _refused(request, str(exc))
     if vault is not None:
@@ -97,6 +97,7 @@ def _use(request: Request, vault: Vault | None, settings: Settings) -> None:
     state.settings = settings
     state.login_names.clear()
     state.templates.env.globals["has_vault"] = vault is not None
+    state.templates.env.cache.clear()
 
 
 def _reload() -> Response:

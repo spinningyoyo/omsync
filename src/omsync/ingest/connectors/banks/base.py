@@ -20,7 +20,6 @@ from selenium.webdriver.common.by import By
 
 from omsync.core.settings import load_settings
 from omsync.core.vault import LoginCredentials, Vault
-from omsync.ingest.connectors.banks.browser import BrowserSession
 from omsync.ingest.connectors.base import (
     ConnectorAccount,
     ConnectorError,
@@ -30,6 +29,7 @@ from omsync.ingest.connectors.base import (
     Prompt,
     SyncCancelled,
 )
+from omsync.ingest.connectors.browser import BrowserSession
 from omsync.ingest.timing import timed
 
 SIGN_IN_TIMEOUT = 60  # seconds for the bank to answer a sign-in or a code
@@ -472,9 +472,9 @@ class BankConnector(BrowserSession):
         """Hook: why an answer was not a statement, as far as it is safe to show."""
         return NOT_A_STATEMENT if text.strip() else "the bank returned an empty response"
 
-    def statement_folder(self, account: ConnectorAccount) -> str | None:
-        """Hook: the subfolder for an account's files, when its format does not name the account."""
-        return None
+    def statement_folder(self, account: ConnectorAccount) -> str:
+        """Hook: the subfolder for an account's files."""
+        return folder_for(account)
 
     def get_account_activity(self) -> None:
         """Fetch and keep every configured account's statements. An account the site does not list
@@ -546,10 +546,12 @@ class BankConnector(BrowserSession):
             raise ConnectorError("a statement account ID cannot name a folder")
 
     def _store(self, dest: Path) -> list[Path]:
-        """Move each kept file into dest, or dest/<subfolder>, under a name that is never taken."""
+        """Move each kept file into dest/<account>/<year>, under a name that is never taken."""
         stored: list[Path] = []
+        year = str(self._period.start.year)
         for item in self._downloads:
-            folder = dest if item.subfolder is None else dest / item.subfolder
+            account_subfolder = item.subfolder or "default"
+            folder = dest / account_subfolder / year
             folder.mkdir(parents=True, exist_ok=True)
             target = _free_name(folder, f"{item.stem}{item.suffix}")
             shutil.move(str(item.source), str(target))

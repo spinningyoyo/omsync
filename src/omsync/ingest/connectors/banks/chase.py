@@ -217,7 +217,7 @@ class ChaseConnector(_ChaseConnector):
     """Chase personal login."""
 
     key = "chase"
-    label = "Chase: OFX from the website"
+    label = "Chase: OFX statement"
     display_name = "Chase"
     sign_in_kind = "personal"
 
@@ -228,7 +228,7 @@ class ChaseBusinessConnector(_ChaseConnector):
     which also asked for the password again, is still followed if Chase shows it."""
 
     key = "chase_business"
-    label = "Chase Business: OFX from the website"
+    label = "Chase Business: OFX statement"
     display_name = "Chase Business"
     sign_in_kind = "business"
 

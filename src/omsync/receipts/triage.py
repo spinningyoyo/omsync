@@ -37,7 +37,7 @@ class ItemSource:
     """A receipt that a waiting item is on, and the transaction its charge matched."""
 
     receipt_id: str
-    vendor_login: str
+    account: str
     purchased_on: date
     is_refund: bool
     url: str | None
@@ -110,7 +110,7 @@ class ReceiptDetail:
     the sign of the lines, so a refund's total is what came back."""
 
     receipt_id: str
-    vendor_login: str
+    account: str
     purchased_on: date
     is_refund: bool
     total_cents: int
@@ -149,7 +149,7 @@ def receipt_detail(
     ]
     return ReceiptDetail(
         receipt_id=receipt_id,
-        vendor_login=receipt.vendor_login,
+        account=receipt.account,
         purchased_on=receipt.purchased_on,
         is_refund=receipt.is_refund,
         # A refund's lines are positive, as the money that comes back, and its total negative.
@@ -196,7 +196,7 @@ def _source(
     )
     return ItemSource(
         receipt_id=receipt.receipt_id,
-        vendor_login=receipt.vendor_login,
+        account=receipt.account,
         purchased_on=receipt.purchased_on,
         is_refund=receipt.is_refund,
         url=url,

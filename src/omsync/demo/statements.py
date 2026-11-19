@@ -296,11 +296,16 @@ def write_statements(statements_dir: Path, lines: list[Line], end: date) -> list
             rows = [line for line in mine if _same_month(line.day, month)]
             period_end = min(_month_end(month), end)
             if account.institution_key == "boa":
-                folder = statements_dir / "BOA" / account.statement_account_id
+                folder = statements_dir / "BOA" / account.statement_account_id / str(month.year)
                 path = folder / f"stmt_{month:%Y-%m}.csv"
                 text = _boa_csv(month, period_end, balance, rows)
             else:
-                folder = statements_dir / account.institution_key.upper()
+                folder = (
+                    statements_dir
+                    / account.institution_key.upper()
+                    / account.statement_account_id
+                    / str(month.year)
+                )
                 path = folder / f"{account.institution_key}_{account.last4}_{month:%Y-%m}.ofx"
                 text = _card_ofx(account, month, period_end, balance, rows)
             folder.mkdir(parents=True, exist_ok=True)

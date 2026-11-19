@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
-from omsync.core.vault import is_locked
+from omsync.core.vault import LoginSummary, Vault, is_locked
 from omsync.ingest.discovery import scan_statement_files, suggested_account
 from omsync.ingest.institutions import institution_accounts
 from omsync.ingest.pipeline import ImportReport, import_institution
@@ -51,7 +51,7 @@ router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
 PAGE = "pages/settings_wizard.html"
 FRAGMENTS = "settings/fragments.html"
-PROVIDERS_PATH = "/settings/providers"
+PROVIDERS_PATH = "/settings/sync"
 WIZARD = "/settings/providers/new"
 MAX_FORM_VALUE = 200
 ACCOUNT_ROWS = 4
@@ -115,10 +115,36 @@ def choose_connector(
         setup.provider_key,
     )
     vault = request.app.state.vault
+    locked = is_locked(vault)
+    logins, query = _initial_vault_logins(request, vault, state, locked=locked)
     return _step(
         request,
         "frag_step_login",
-        **_login_context(state, locked=is_locked(vault), form_key=uuid4().hex),
+        **_login_context(
+            state,
+            locked=locked,
+            form_key=uuid4().hex,
+            logins=logins,
+            query=query,
+        ),
+    )
+
+
+@router.post(f"{WIZARD}/back", response_class=HTMLResponse)
+def back_to_setup(
+    request: Request,
+    institution: Annotated[str, Form()] = "",
+    name: Annotated[str, Form()] = "",
+    connector: Annotated[str, Form()] = "",
+    provider: Annotated[str, Form()] = "",
+    idempotency_key: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """Return to step 1 to edit provider setup details."""
+    state = _state(institution, name, connector, provider)
+    return _step(
+        request,
+        "frag_step_setup",
+        **_setup_context(state, idempotency_key or uuid4().hex, ""),
     )
 
 
@@ -191,10 +217,17 @@ def unlock(
                 unlock_message=exc.message,
             ),
         )
+    logins, query = _initial_vault_logins(request, vault, state, locked=False)
     return _step(
         request,
         "frag_step_login",
-        **_login_context(state, locked=False, form_key=uuid4().hex),
+        **_login_context(
+            state,
+            locked=False,
+            form_key=uuid4().hex,
+            logins=logins,
+            query=query,
+        ),
         vault_status=vault_status_view(vault),
     )
 
@@ -226,14 +259,18 @@ def save_login(
         )
     except ProviderSetupError as exc:
         vault = request.app.state.vault
+        locked = is_locked(vault)
+        logins, query = _initial_vault_logins(request, vault, state, locked=locked)
         return _step(
             request,
             "frag_step_login",
             422,
             **_login_context(
                 state,
-                locked=is_locked(vault),
+                locked=locked,
                 form_key=uuid4().hex,
+                logins=logins,
+                query=query,
                 message=str(exc),
             ),
         )
@@ -496,19 +533,44 @@ def _setup_context(state: WizardState, form_key: str, message: str) -> dict[str,
     }
 
 
+def _initial_vault_logins(
+    request: Request,
+    vault: Vault | None,
+    state: WizardState,
+    *,
+    locked: bool,
+) -> tuple[list[LoginSummary] | None, str]:
+    if vault is None or locked:
+        return None, ""
+    for candidate in (state.name, state.institution):
+        query = candidate.strip()
+        if not query:
+            continue
+        try:
+            logins = search_logins(vault, query, request.app.state.login_names)
+        except VaultActionError:
+            continue
+        if logins:
+            return logins, query
+    query = (state.name or state.institution).strip()
+    return None, query
+
+
 def _login_context(
     state: WizardState,
     *,
     locked: bool,
     form_key: str,
+    logins: list[LoginSummary] | None = None,
+    query: str = "",
     message: str = "",
     unlock_message: str = "",
 ) -> dict[str, object]:
     return {
         "state": state,
         "locked": locked,
-        "logins": None,
-        "query": "",
+        "logins": logins,
+        "query": query,
         "form_key": form_key,
         "message": message,
         "unlock_message": unlock_message,

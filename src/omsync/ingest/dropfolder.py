@@ -17,6 +17,7 @@ which copies a file from outside the data directory into the folder.
 import re
 import shutil
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import select
@@ -77,6 +78,7 @@ def destination_for(
     source: Path,
     institution_key: str,
     statement_account_id: str | None = None,
+    year: int | str | None = None,
 ) -> Path:
     """Where stage_external would copy this file. Writes nothing.
 
@@ -84,10 +86,13 @@ def destination_for(
     the institution key or statement account ID could not name a folder safely.
     """
     folder = _institution_folder(settings, institution_key)
-    if statement_account_id is not None:
-        if not _ACCOUNT_FOLDER.fullmatch(statement_account_id):
-            raise ValueError(f"statement account ID {statement_account_id!r} is not a folder name")
-        folder = folder / statement_account_id
+    account_slug = statement_account_id or "default"
+    if not _ACCOUNT_FOLDER.fullmatch(account_slug):
+        raise ValueError(f"statement account ID {account_slug!r} is not a folder name")
+    folder = folder / account_slug
+    if year is None:
+        year = date.today().year
+    folder = folder / str(year)
     return _free_name(folder, source.name)
 
 
@@ -96,12 +101,13 @@ def stage_external(
     settings: Settings,
     institution_key: str,
     statement_account_id: str | None = None,
+    year: int | str | None = None,
 ) -> Path:
     """Copy a file from outside the data directory into the drop folder, and return the copy.
 
     The copy never overwrites: a name already taken gets a -N suffix. Used only on --apply.
     """
-    destination = destination_for(settings, path, institution_key, statement_account_id)
+    destination = destination_for(settings, path, institution_key, statement_account_id, year=year)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with path.open("rb") as source, destination.open("xb") as target:
         shutil.copyfileobj(source, target)
@@ -117,10 +123,10 @@ def stored_path(settings: Settings, path: Path) -> str:
 
 
 def _location(parts: tuple[str, ...], path: Path) -> PendingFile:
+    if len(parts) >= 3:
+        return PendingFile(parts[0].lower(), parts[1], path)
     if len(parts) == 2:
         return PendingFile(parts[0].lower(), None, path)
-    if len(parts) == 3:
-        return PendingFile(parts[0].lower(), parts[1], path)
     return PendingFile(None, None, path)
 
 

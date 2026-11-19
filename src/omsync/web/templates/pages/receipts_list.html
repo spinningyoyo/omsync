@@ -1,0 +1,141 @@
+{% extends "layouts/shell.html" %}
+{% from "layouts/shell_parts.html" import page_header %}
+{% from "components/pill.html" import pill %}
+
+{% block page %}
+<div class="flex flex-col gap-6">
+  {{ page_header("Receipts", "All downloaded receipts, their line items, and match status.") }}
+
+  <form method="get" action="/receipts" class="flex flex-wrap items-center gap-3 rounded-xl bg-container p-4 shadow-border-xs">
+    <div class="min-w-[12rem] flex-1">
+      <input
+        type="search"
+        name="q"
+        value="{{ q }}"
+        placeholder="Search receipt ID, account, item..."
+        aria-label="Search receipts"
+        class="w-full rounded-md border border-secondary bg-surface px-3 py-1.5 text-sm text-primary placeholder:text-secondary focus-ring"
+      >
+    </div>
+
+    <select
+      name="vendor"
+      aria-label="Filter by vendor"
+      class="rounded-md border border-secondary bg-surface px-3 py-1.5 text-sm text-primary focus-ring"
+      onchange="this.form.submit()"
+    >
+      <option value="all"{% if vendor == 'all' %} selected{% endif %}>All vendors</option>
+      {%- for v in available_vendors %}
+      <option value="{{ v }}"{% if vendor == v %} selected{% endif %}>{{ v|upper }}</option>
+      {%- endfor %}
+    </select>
+
+    <select
+      name="account"
+      aria-label="Filter by account"
+      class="rounded-md border border-secondary bg-surface px-3 py-1.5 text-sm text-primary focus-ring"
+      onchange="this.form.submit()"
+    >
+      <option value="all"{% if account == 'all' %} selected{% endif %}>All accounts</option>
+      {%- for a in available_accounts %}
+      <option value="{{ a }}"{% if account == a %} selected{% endif %}>{{ a }}</option>
+      {%- endfor %}
+    </select>
+
+    <select
+      name="year"
+      aria-label="Filter by year"
+      class="rounded-md border border-secondary bg-surface px-3 py-1.5 text-sm text-primary focus-ring"
+      onchange="this.form.submit()"
+    >
+      <option value="all"{% if year == 'all' %} selected{% endif %}>All years</option>
+      {%- for y in available_years %}
+      <option value="{{ y }}"{% if year == y %} selected{% endif %}>{{ y }}</option>
+      {%- endfor %}
+    </select>
+
+    <select
+      name="status"
+      aria-label="Filter by status"
+      class="rounded-md border border-secondary bg-surface px-3 py-1.5 text-sm text-primary focus-ring"
+      onchange="this.form.submit()"
+    >
+      {%- for val, label in status_options %}
+      <option value="{{ val }}"{% if status == val %} selected{% endif %}>{{ label }}</option>
+      {%- endfor %}
+    </select>
+
+    <select
+      name="sort"
+      aria-label="Sort by"
+      class="rounded-md border border-secondary bg-surface px-3 py-1.5 text-sm text-primary focus-ring"
+      onchange="this.form.submit()"
+    >
+      {%- for val, label in sort_options %}
+      <option value="{{ val }}"{% if sort == val %} selected{% endif %}>{{ label }}</option>
+      {%- endfor %}
+    </select>
+
+    <button type="submit" class="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 focus-ring">Filter</button>
+    {%- if q or vendor != 'all' or account != 'all' or year != 'all' or status != 'all' or sort != 'date_desc' %}
+    <a href="/receipts" class="text-xs text-secondary hover:text-primary">Reset</a>
+    {%- endif %}
+  </form>
+
+  <div class="flex items-center justify-between text-xs text-secondary">
+    <span>Showing {{ filtered_count }} of {{ total_count }} {{ "receipt" if total_count == 1 else "receipts" }}</span>
+  </div>
+
+  {%- if not rows %}
+  <div class="flex flex-col items-center justify-center rounded-xl bg-container p-12 text-center shadow-border-xs">
+    <p class="font-medium text-primary">No receipts found</p>
+    <p class="mt-1 text-sm text-secondary">
+      {%- if total_count == 0 %}
+      Download receipts via <code>omsync fetch amazon</code> or <code>omsync fetch costco</code>, or put JSON files under <code>receipts/&lt;vendor&gt;/&lt;account&gt;/&lt;year&gt;/</code>.
+      {%- else %}
+      No receipts match the selected filters.
+      {%- endif %}
+    </p>
+  </div>
+  {%- else %}
+  <div class="table-scroll rounded-xl shadow-border-xs" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Receipts">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">Date</th>
+          <th scope="col">Vendor</th>
+          <th scope="col">Account</th>
+          <th scope="col">Receipt ID</th>
+          <th scope="col">Items</th>
+          <th scope="col" class="num">Total</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {%- for row in rows %}
+        <tr class="hover:bg-container-inset/50 transition-colors">
+          <td class="px-4 py-3 whitespace-nowrap tabular-nums text-secondary">{{ row.purchased_on.isoformat() }}</td>
+          <td class="px-4 py-3 whitespace-nowrap">{{ pill(row.vendor_label, tone="violet", style="outline") }}</td>
+          <td class="px-4 py-3 whitespace-nowrap">{{ pill(row.account, tone="neutral", style="soft") }}</td>
+          <td class="px-4 py-3 whitespace-nowrap font-mono">
+            <a href="{{ row.href }}" class="font-medium text-primary hover:underline underline-offset-2">{{ row.receipt_id }}</a>
+          </td>
+          <td class="px-4 py-3 max-w-xs truncate text-secondary" title="{{ row.item_preview }}">{{ row.item_preview }}</td>
+          <td class="px-4 py-3 whitespace-nowrap num font-medium text-primary tabular-nums">{{ row.total_cents|money }}</td>
+          <td class="px-4 py-3 whitespace-nowrap">
+            {%- if row.status == "applied" %}
+            {{ pill("Applied", tone="green") }}
+            {%- elif row.status == "matched" %}
+            {{ pill("Matched", tone="blue") }}
+            {%- else %}
+            {{ pill("Unmatched", tone="gray") }}
+            {%- endif %}
+          </td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+  {%- endif %}
+</div>
+{% endblock %}

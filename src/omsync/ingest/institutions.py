@@ -2,28 +2,15 @@
 accounts, each provider's latest sync run, and whether a provider can be synced. Read-only."""
 
 from dataclasses import dataclass
-from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from omsync.core.sync_models import RecentSync, SyncKind, SyncRun, latest_sync_runs
 from omsync.ingest.connectors.config import list_providers
-from omsync.ingest.models import SyncRun, SyncStatus
 from omsync.ledger.models import Account, AccountType, Institution
 
 RECENT_SYNCS = 5
-
-
-@dataclass(frozen=True)
-class RecentSync:
-    """One SyncRun, as the account page's sync card shows it. message is already safe to show."""
-
-    id: int
-    status: SyncStatus
-    started_at: datetime  # naive UTC, as SyncRun stores it; the web layer converts it for display
-    finished_at: datetime | None
-    files_fetched: int
-    message: str | None
 
 
 @dataclass(frozen=True)
@@ -155,30 +142,19 @@ def _account_line(account: Account) -> AccountLine:
 
 def _latest_runs_by_provider(session: Session) -> dict[str, RecentSync]:
     """The newest sync run of each provider. Runs logged before providers existed have none."""
-    newest = session.scalars(
-        select(func.max(SyncRun.id))
-        .where(SyncRun.provider_key.is_not(None))
-        .group_by(SyncRun.provider_key)
-    ).all()
-    latest: dict[str, RecentSync] = {}
-    for run in session.scalars(select(SyncRun).where(SyncRun.id.in_(newest))).all():
-        if run.provider_key is not None:
-            latest[run.provider_key] = RecentSync(
-                id=run.id,
-                status=run.status,
-                started_at=run.started_at,
-                finished_at=run.finished_at,
-                files_fetched=run.files_fetched,
-                message=run.message,
-            )
-    return latest
+    return latest_sync_runs(session, kind=SyncKind.bank)
 
 
 def recent_syncs(session: Session, institution_key: str) -> tuple[RecentSync, ...]:
     """The last RECENT_SYNCS runs of an institution, newest first."""
     runs = session.scalars(
         select(SyncRun)
-        .where(SyncRun.institution_key == institution_key)
+        .where(
+            or_(
+                SyncRun.institution_key == institution_key,
+                SyncRun.source_key == institution_key,
+            )
+        )
         .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
         .limit(RECENT_SYNCS)
     ).all()
@@ -188,8 +164,12 @@ def recent_syncs(session: Session, institution_key: str) -> tuple[RecentSync, ..
             status=run.status,
             started_at=run.started_at,
             finished_at=run.finished_at,
-            files_fetched=run.files_fetched,
+            items_fetched=run.items_fetched or run.files_fetched,
             message=run.message,
+            kind=run.kind,
+            target_key=run.target_key or run.provider_key or "",
+            connector_key=run.connector_key,
+            source_key=run.source_key or run.institution_key,
         )
         for run in runs
     )

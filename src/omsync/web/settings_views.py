@@ -14,6 +14,7 @@ from omsync.ingest.pipeline import ImportReport
 from omsync.ingest.providers import connector_label
 from omsync.ledger.models import AccountType
 from omsync.ledger.sources import account_digits
+from omsync.receipts.profiles import VendorProfile
 from omsync.web.account_page import SyncView, local_time, sync_views
 from omsync.web.accounts_panel import TYPE_LABELS
 from omsync.web.formats import long_day
@@ -50,7 +51,7 @@ SETTINGS_NAV: tuple[NavSection, ...] = (
     NavSection(
         "General",
         (
-            NavItem("Bank sync", "/settings/providers", "banknote-arrow-down"),
+            NavItem("Data sync", "/settings/sync", "cloud-sync"),
             NavItem("Contacts", "/settings/contacts", "book-user"),
             NavItem("Rental properties", "/settings/rental", "house"),
             NavItem("About", "/settings/about", "info"),
@@ -147,6 +148,64 @@ class InstitutionGroupView:
     name: str
     providers: list[ProviderCardView]
     not_synced: list[AccountRowView]
+
+
+@dataclass(frozen=True)
+class VendorCardView:
+    key: str
+    vendor_key: str
+    name: str
+    account: str
+    folder: str
+    method: str
+    vault: str
+    vault_item_id: str | None
+    locked: bool
+    sync_busy: bool
+    receipt_count: int
+    latest_date: date | None
+    edit_key: str
+    delete_key: str
+    can_delete: bool = True
+    sync: SyncView | None = None
+    synced_at: datetime | None = None
+
+
+def vendor_card_view(
+    profile: VendorProfile,
+    vault_text: str,
+    receipt_count: int,
+    latest_date: date | None,
+    locked: bool,
+    busy: bool,
+    can_delete: bool = True,
+    sync: SyncView | None = None,
+    synced_at: datetime | None = None,
+) -> VendorCardView:
+    method = (
+        "Costco receipt download" if profile.vendor_key == "costco" else "Amazon receipt download"
+    )
+    folder_name = profile.account or profile.key
+    folder = f"receipts/{profile.vendor_key.upper()}/{folder_name}"
+    return VendorCardView(
+        key=profile.key,
+        vendor_key=profile.vendor_key,
+        name=profile.name,
+        account=folder_name,
+        folder=folder,
+        method=method,
+        vault=vault_text,
+        vault_item_id=profile.vault_item_id,
+        locked=locked,
+        sync_busy=busy,
+        receipt_count=receipt_count,
+        latest_date=latest_date,
+        edit_key=uuid4().hex,
+        delete_key=uuid4().hex,
+        can_delete=can_delete,
+        sync=sync,
+        synced_at=synced_at,
+    )
 
 
 def institution_group_view(

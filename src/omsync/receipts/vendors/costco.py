@@ -101,14 +101,28 @@ class CostcoVendor(BaseVendor):
     key: str = VENDOR_KEY
 
     def discover(self, root: Path) -> list[Path]:
-        return sorted(path for path in root.glob("*/*/*.json") if path.is_file())
+        return sorted(
+            path
+            for path in root.rglob("*.json")
+            if path.is_file()
+            and not path.name.startswith(".")
+            and not path.parent.name.startswith(".")
+        )
 
     def parse(self, path: Path) -> list[Receipt]:
         data = load_receipt_file(path)
         if _cents(data.get("total"), "total") == 0:
             return []
-        earlier = _earlier_items(path.parent.parent.parent, receipt_date(data, path.name))
-        return [parse_receipt(data, path.name, earlier)]
+        parts = path.parts
+        try:
+            costco_idx = parts.index("COSTCO")
+            account = parts[costco_idx + 1] if len(parts) > costco_idx + 2 else "default"
+            root = Path(*parts[: costco_idx + 1])
+        except ValueError:
+            account = "default"
+            root = path.parent
+        earlier = _earlier_items(root, receipt_date(data, path.name))
+        return [parse_receipt(data, path.name, earlier, account=account)]
 
     def is_vendor_payee(self, payee: str) -> bool:
         return is_costco_payee(payee)
@@ -188,6 +202,7 @@ def parse_receipt(
     data: dict[str, Any],
     name: str = "receipt",
     earlier: Mapping[str, tuple[str, str | None]] | None = None,
+    account: str = "default",
 ) -> Receipt:
     """Build the engine's Receipt from one Costco receipt object. earlier maps an item number to
     its description and code on an earlier receipt, for price adjustments. Raises
@@ -206,7 +221,7 @@ def parse_receipt(
         vendor_key=VENDOR_KEY,
         receipt_id=barcode,
         purchased_on=purchased_on,
-        vendor_login=VENDOR_LOGIN,
+        account=account,
         items=_items(data.get("itemArray"), sign, earlier or {}),
         tax_cents=tax,
         total_cents=total,
@@ -380,7 +395,13 @@ def _earlier_items(root: Path, before: date) -> dict[str, tuple[str, str | None]
 
 def _folder_state(root: Path) -> tuple[tuple[str, int], ...]:
     """The receipt files under root and their modification times, so a change reads them again."""
-    return tuple((str(path), path.stat().st_mtime_ns) for path in sorted(root.glob("*/*/*.json")))
+    if not root.exists():
+        return ()
+    return tuple(
+        (str(path), path.stat().st_mtime_ns)
+        for path in sorted(root.rglob("*.json"))
+        if path.is_file() and not path.name.startswith(".") and not path.parent.name.startswith(".")
+    )
 
 
 @functools.lru_cache(maxsize=4)

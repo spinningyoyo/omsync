@@ -61,9 +61,8 @@ def link_items(transaction_id: int, links: list[RowLink]) -> list[LinkItem]:
 
 
 def receipt_href(vendor_key: str, receipt_id: str) -> str:
-    """The vendor's own page for a receipt, or omsync's page for it when the vendor has none."""
-    url = get_vendor(vendor_key).receipt_url(receipt_id)
-    return url or f"/receipts/{quote(vendor_key)}/{quote(receipt_id)}"
+    """The in-app page for a receipt."""
+    return f"/receipts/{quote(vendor_key)}/{quote(receipt_id)}"
 
 
 def _receipt_item(receipt_ref: str, icon: str) -> LinkItem:
@@ -72,11 +71,9 @@ def _receipt_item(receipt_ref: str, icon: str) -> LinkItem:
         vendor = get_vendor(vendor_key)
     except KeyError:
         return LinkItem(f"Receipt {receipt_ref}", icon, None)
-    url = vendor.receipt_url(receipt_id)
-    if url is None:
-        return LinkItem(
-            vendor.receipt_label(receipt_id),
-            icon,
-            f"/receipts/{quote(vendor_key)}/{quote(receipt_id)}",
-        )
-    return LinkItem(vendor.receipt_label(receipt_id), icon, url, external=True)
+    return LinkItem(
+        vendor.receipt_label(receipt_id),
+        icon,
+        receipt_href(vendor_key, receipt_id),
+        external=False,
+    )

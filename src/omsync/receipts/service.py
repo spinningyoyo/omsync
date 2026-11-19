@@ -79,7 +79,7 @@ class ReviewLine:
     on: date | None = None
     amount_cents: int | None = None
     receipt_id: str | None = None
-    vendor_login: str | None = None
+    account: str | None = None
     reason: str | None = None
     action: ReviewAction = ReviewAction.none
     advice: str = ""
@@ -382,18 +382,18 @@ def _line(kind: str, outcome: MatchOutcome, reason: str) -> ReviewLine:
         on=receipt.purchased_on,
         amount_cents=_amount(outcome.charge, receipt),
         receipt_id=receipt.receipt_id,
-        vendor_login=receipt.vendor_login,
+        account=receipt.account,
         reason=reason,
     )
 
 
 def _describe(outcome: MatchOutcome, reason: str) -> str:
-    """One safe line: date, amount, vendor login, order, and reason. Never a card number."""
+    """One safe line: date, amount, account, order, and reason. Never a card number."""
     receipt = outcome.receipt
     amount = _amount(outcome.charge, receipt)
     return (
         f"{receipt.purchased_on.isoformat()}  {money.format_cents(amount)}  "
-        f"{receipt.vendor_login}  {receipt.receipt_id}  {reason}"
+        f"{receipt.account}  {receipt.receipt_id}  {reason}"
     )
 
 

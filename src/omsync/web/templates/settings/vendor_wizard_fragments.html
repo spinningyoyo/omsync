@@ -1,0 +1,22 @@
+{# Fragment blocks for the add-vendor wizard's replies (routes/settings_vendor_wizard.py).
+   The wizard blocks replace #wizard-step. #}
+
+{% block frag_step_setup %}
+{% from "settings/vendor_wizard_parts.html" import vendor_setup_step %}
+{{ vendor_setup_step(state, vendors, form_key, message) }}
+{% endblock %}
+
+{% block frag_step_login %}
+{% from "settings/vendor_wizard_parts.html" import vendor_login_step %}
+{% from "components/vault_status.html" import vault_status_oob %}
+{{ vendor_login_step(state, form_key, locked, logins, query, message, unlock_message) }}
+{%- if vault_status is defined %}
+{{ vault_status_oob(vault_status, page=false) }}
+{%- endif %}
+{% endblock %}
+
+{% block frag_vault_results %}
+{% from "settings/vendor_wizard_parts.html" import vendor_state_fields %}
+{% from "settings/parts.html" import vault_results %}
+{{ vault_results(locked, logins, unlock_message, message, unlock_action="/settings/vendors/new/unlock", unlock_target="#wizard-step", unlock_hidden=vendor_state_fields(state), form_id="vendor-login-form", choice_required=false) }}
+{% endblock %}

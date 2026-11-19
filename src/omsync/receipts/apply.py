@@ -211,7 +211,7 @@ def _plan_one(
                     "vendor": receipt.vendor_key,
                     "receipt_id": receipt.receipt_id,
                     "revision": receipt.revision,
-                    "vendor_login": receipt.vendor_login,
+                    "account": receipt.account,
                     "observed": charge.observed,
                 },
             },

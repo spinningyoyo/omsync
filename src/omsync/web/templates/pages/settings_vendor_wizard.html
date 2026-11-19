@@ -1,0 +1,14 @@
+{% extends "layouts/settings.html" %}
+{% from "layouts/shell_parts.html" import page_header %}
+{% from "settings/vendor_wizard_parts.html" import vendor_setup_step with context %}
+{% from "components/alert.html" import alert with context %}
+
+{% block settings_page %}
+{{ page_header(page_title, "Set up a receipt vendor in two steps.") }}
+{% if demo_mode %}
+{{ alert("Demo: receipt sync is off. You can look through the steps.", variant="info") }}
+{% endif %}
+<section class="flex max-w-2xl flex-col gap-6 rounded-xl bg-container p-6 shadow-border-xs">
+  {{ vendor_setup_step(state, vendors, form_key, message) }}
+</section>
+{% endblock %}

@@ -196,3 +196,8 @@ def test_sync_asks_for_the_password_then_fetches_and_imports(
     assert fake.calls[0]["vault_item_id"] == "item-1"
     assert fake.calls[0]["last4"] == ["5678", "5432"]
     assert counts(connected) == (2, 9)
+
+    log_result = run("sync-log")
+    assert log_result.exit_code == 0
+    assert "testbank" in log_result.output
+    assert "2 files" in log_result.output

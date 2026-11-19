@@ -15,7 +15,7 @@ from omsync.web.settings_views import SETTINGS_NAV
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
 ABOUT_PAGE = "pages/settings_about.html"
-PROVIDERS_PATH = "/settings/providers"
+PROVIDERS_PATH = "/settings/sync"
 GUIDES_PATH = "/settings/guides"
 
 

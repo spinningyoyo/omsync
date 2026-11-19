@@ -1,0 +1,79 @@
+{# Wizard macros for adding a receipt vendor (routes/settings_vendor_wizard.py). #}
+{% from "components/button.html" import button, link_button %}
+{% from "settings/parts.html" import step_error, vault_results %}
+
+{% macro vendor_step_heading(number, title) -%}
+<div class="flex flex-col gap-1">
+  <p class="text-xs font-medium uppercase text-secondary">Step {{ number }} of 2</p>
+  <h2 class="text-lg font-medium text-primary">{{ title }}</h2>
+</div>
+{%- endmacro %}
+
+{% macro vendor_state_fields(state, form_key=none) -%}
+<input type="hidden" class="wizard-state" name="vendor" value="{{ state.vendor }}">
+<input type="hidden" class="wizard-state" name="name" value="{{ state.name }}">
+<input type="hidden" class="wizard-state" name="vendor_key" value="{{ state.vendor_key }}">
+{%- if form_key %}
+<input type="hidden" class="wizard-state" name="idempotency_key" value="{{ form_key }}">
+{%- endif %}
+{%- endmacro %}
+
+{% macro vendor_setup_step(state, vendors, form_key, message="") -%}
+<div id="wizard-step" class="flex flex-col gap-6">
+  {{ vendor_step_heading(1, "Vendor details") }}
+  <form class="flex flex-col gap-4" hx-post="/settings/vendors/new/setup" hx-target="#wizard-step" hx-swap="outerHTML" data-controller="key-suggest">
+    <input type="hidden" name="idempotency_key" value="{{ form_key }}">
+    <label class="form-field">
+      <span class="form-field__label">Vendor</span>
+      <select name="vendor" required class="form-field__input" data-autofocus data-key-suggest-target="institution" data-action="change->key-suggest#institutionChanged">
+        <option value=""{% if not state.vendor %} selected{% endif %} disabled>Choose a vendor</option>
+        {%- for v in vendors %}
+        <option value="{{ v.key }}"{% if v.key == state.vendor %} selected{% endif %}>{{ v.label }}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    <label class="form-field">
+      <span class="form-field__label">Display name</span>
+      <input name="name" value="{{ state.name }}" required maxlength="60" autocomplete="off" class="form-field__input" aria-describedby="name-help">
+    </label>
+    <p id="name-help" class="text-xs text-secondary">A name to identify this profile, like Amazon Personal or Costco.</p>
+    <label class="form-field">
+      <span class="form-field__label">Vendor key</span>
+      <input name="vendor_key" value="{{ state.vendor_key }}" required maxlength="32" pattern="[a-z0-9][a-z0-9_\-]*" autocomplete="off" class="form-field__input" aria-describedby="vendor-key-help" data-key-suggest-target="provider">
+    </label>
+    <p id="vendor-key-help" class="text-xs text-secondary">The organization folder on disk, like amazon_personal.</p>
+    {{ step_error(message) }}
+    <div class="flex items-center justify-between">
+      {{ link_button("Back to data sync", href="/settings/sync?tab=vendors", variant="ghost") }}
+      {{ button("Next", variant="primary", type="submit") }}
+    </div>
+  </form>
+</div>
+{%- endmacro %}
+
+{% macro vendor_login_step(state, form_key, locked, logins, query, message="", unlock_message="") -%}
+<div id="wizard-step" class="flex flex-col gap-6">
+  {%- if has_vault %}
+  {{ vendor_step_heading(2, "Vault login") }}
+  <p class="text-sm text-secondary">Pick the vault login for {{ state.name }}. The password is never stored.</p>
+  <label class="form-field">
+    <span class="form-field__label">Search logins</span>
+    <input type="search" name="q" value="{{ query }}" autocomplete="off" class="form-field__input" aria-controls="vendor-vault-results" hx-get="/settings/vendors/new/logins" hx-trigger="input changed delay:300ms, search" hx-target="#vendor-vault-results" hx-include="#vendor-login-form">
+  </label>
+  <div id="vendor-vault-results" aria-live="polite" class="flex flex-col gap-2">
+    {{ vault_results(locked, logins, unlock_message, "", unlock_action="/settings/vendors/new/unlock", unlock_target="#wizard-step", unlock_hidden=vendor_state_fields(state), form_id="vendor-login-form", choice_required=false) }}
+  </div>
+  {%- else %}
+  {{ vendor_step_heading(2, "Sign-in") }}
+  <p class="text-sm text-secondary">At each sync, you sign in to {{ state.name }} in the browser window that opens.</p>
+  {%- endif %}
+  <form id="vendor-login-form" class="flex flex-col gap-4" hx-post="/settings/vendors/new/login" hx-target="#wizard-step" hx-swap="outerHTML">
+    {{ vendor_state_fields(state, form_key) }}
+    {{ step_error(message) }}
+    <div class="flex items-center justify-between">
+      {{ button("Back", variant="outline", type="button", attrs={"hx-post": "/settings/vendors/new/back", "hx-target": "#wizard-step", "hx-swap": "outerHTML", "hx-include": "#vendor-login-form"}) }}
+      {{ button("Add vendor", variant="primary", type="submit") }}
+    </div>
+  </form>
+</div>
+{%- endmacro %}

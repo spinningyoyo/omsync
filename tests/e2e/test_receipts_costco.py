@@ -79,7 +79,7 @@ def write_receipt(
         "total": f"@{money(total)}",
         "tenderArray": tenders,
     }
-    folder = data_dir / "receipts" / "COSTCO" / str(day.year) / f"Q{(day.month - 1) // 3 + 1}"
+    folder = data_dir / "receipts" / "COSTCO" / "default" / str(day.year)
     folder.mkdir(parents=True, exist_ok=True)
     text = re.sub(r'"@(-?\d+\.\d\d)"', r"\1", json.dumps(receipt))
     (folder / f"{barcode}.json").write_text(text, encoding="utf-8")
@@ -291,6 +291,11 @@ def test_triage_lists_only_items_that_hold_up_a_charge_and_its_keyword_applies_t
     assert receipt.status_code == 200, receipt.text
     assert "SOAP" in receipt.text and "PEARS" in receipt.text
     assert 'href="/receipts/costco/R14"' in register
+    receipts_list = client.get("/receipts")
+    assert receipts_list.status_code == 200
+    assert "R14" in receipts_list.text
+    assert "COSTCO" in receipts_list.text
+    assert "default" in receipts_list.text
     undo = re.search(r"/batches/(\d+)/undo", added.text)
     assert undo is not None
     assert client.post(f"/batches/{undo.group(1)}/undo").status_code == 200

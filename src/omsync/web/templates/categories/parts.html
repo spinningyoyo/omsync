@@ -795,7 +795,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 <li class="flex flex-col gap-2 rounded-lg bg-container-inset p-3">
   <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
     <span class="font-medium text-primary tabular-nums">{{ source.purchased_on.isoformat() }}</span>
-    <span class="text-secondary">{{ "Refund" if source.is_refund else "Purchase" }}{% if source.vendor_login|lower != vendor_key %} · {{ source.vendor_login }}{% endif %} · <span class="break-all">{{ source.receipt_id }}</span></span>
+    <span class="text-secondary">{{ "Refund" if source.is_refund else "Purchase" }}{% if source.account|lower != vendor_key %} · {{ source.account }}{% endif %} · <span class="break-all">{{ source.receipt_id }}</span></span>
     {%- if source.url %}
     <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer" class="rounded-sm font-medium text-primary underline-offset-2 hover:underline focus-ring">Order page</a>
     {%- endif %}

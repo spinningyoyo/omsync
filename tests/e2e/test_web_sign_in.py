@@ -2,6 +2,7 @@
 
 import getpass
 import tomllib
+from datetime import UTC, datetime
 from http.cookies import Morsel, SimpleCookie
 from pathlib import Path
 
@@ -9,6 +10,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from web_support import EMAIL, PASSWORD, SESSION_COOKIE, FakeOwnerCheck, FakeVault
+
+from omsync.core.sync_models import SyncKind, SyncRun, SyncStatus
+from omsync.receipts.profiles import VendorProfile, save_vendor_profile
 
 
 def _cookie(set_cookie_header: str) -> Morsel:
@@ -104,3 +108,34 @@ def test_the_bank_sync_vault_panel_disconnects_and_connects(
     assert app.state.vault is connected and connected.is_unlocked()
     assert tomllib.loads(config.read_text()) == {"vault": "bitwarden", "email": EMAIL}
     assert "Vault unlocked" in signed_in.get("/settings/providers").text
+
+    with app.state.session_factory() as db:
+        save_vendor_profile(
+            db,
+            VendorProfile(
+                key="amazon_personal",
+                vendor_key="amazon",
+                name="Amazon Personal",
+                account="personal",
+            ),
+        )
+        db.add(
+            SyncRun(
+                kind=SyncKind.receipt,
+                target_key="amazon_personal",
+                connector_key="amazon",
+                source_key="amazon",
+                started_at=datetime(2026, 11, 18, 12, 7, 0, tzinfo=UTC).replace(tzinfo=None),
+                finished_at=datetime(2026, 11, 18, 12, 8, 0, tzinfo=UTC).replace(tzinfo=None),
+                status=SyncStatus.succeeded,
+                items_fetched=14,
+                files_fetched=14,
+            )
+        )
+        db.commit()
+
+    sync_page = signed_in.get("/settings/sync?tab=vendors")
+    assert sync_page.status_code == 200
+    assert "Last sync" in sync_page.text
+    assert "Succeeded" in sync_page.text
+    assert "14 receipts" in sync_page.text

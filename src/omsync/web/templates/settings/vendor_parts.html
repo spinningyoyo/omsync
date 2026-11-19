@@ -1,0 +1,106 @@
+{# Receipt vendor sync parts: cards for Costco and Amazon, edit and delete dialogs,
+   vault login search, and adding new vendor profiles. #}
+{% from "components/button.html" import button %}
+{% from "components/dialog.html" import dialog with context %}
+{% from "components/institution_logo.html" import institution_logo with context %}
+{% from "components/pill.html" import pill with context %}
+{% from "settings/parts.html" import step_error, vault_results %}
+{% from "settings/sync_parts.html" import sync_vendor_button %}
+
+{% set CARD = "flex min-w-0 flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" %}
+
+{% macro vendor_list(vendor_cards, oob=false) -%}
+<div id="vendors-list-section" class="flex flex-col gap-4"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {%- if not vendor_cards %}
+  <p class="text-sm text-secondary">No receipt vendors configured.</p>
+  {%- endif %}
+  <div class="grid items-start gap-4 md:grid-cols-2 2xl:grid-cols-3" role="list" aria-label="Receipt Vendors">
+    {%- for card in vendor_cards %}
+    {{ vendor_card(card) }}
+    {%- endfor %}
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro vendor_card(card) -%}
+<article id="vendor-card-{{ card.key }}" role="listitem" class="{{ CARD }}" aria-labelledby="vendor-{{ card.key }}-title">
+  <header class="flex items-start gap-2">
+    <div class="flex min-w-0 flex-1 items-center gap-3">
+      {{ institution_logo(card.vendor_key, card.name, 36) }}
+      <div class="min-w-0">
+        <h3 id="vendor-{{ card.key }}-title" class="font-medium text-primary">{{ card.name }}</h3>
+        <p class="break-words text-xs text-secondary">{{ card.folder }}</p>
+      </div>
+    </div>
+    <div class="flex shrink-0 items-center">
+      {{ sync_vendor_button(card.key, card.sync_busy) }}
+      {% call dialog(id="edit-vendor-" ~ card.key, title="Edit " ~ card.name, trigger="Edit", trigger_size="sm", trigger_icon="pencil", width="md") %}
+        {{ vendor_edit(card, card.locked) }}
+      {% endcall %}
+      {% call dialog(id="delete-vendor-" ~ card.key, title="Delete " ~ card.name ~ "?", trigger="Delete", trigger_size="sm", trigger_icon="trash-2", width="sm") %}
+        {{ vendor_delete(card) }}
+      {% endcall %}
+    </div>
+  </header>
+  <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+    <dt class="text-secondary">Method</dt>
+    <dd class="min-w-0 break-words text-primary">{{ card.method }}</dd>
+    <dt class="text-secondary">{{ "Vault login" if has_vault else "Sign-in" }}</dt>
+    <dd class="min-w-0 break-words text-primary">{{ card.vault }}</dd>
+    <dt class="text-secondary">Last sync</dt>
+    <dd class="min-w-0 break-words text-primary">
+      {%- if card.sync %}{{ card.sync.status }}, {{ card.sync.when }}, {{ card.sync.files }}
+      {%- if card.sync.message %} <span class="text-xs text-secondary">{{ card.sync.message }}</span>{% endif %}
+      {%- else %}No syncs yet{% endif %}
+    </dd>
+    <dt class="text-secondary">Receipts</dt>
+    <dd class="min-w-0 break-words text-primary">
+      {{ card.receipt_count }} receipt{% if card.receipt_count != 1 %}s{% endif %} on disk
+      {%- if card.latest_date %} · latest {{ card.latest_date.isoformat() }}{% endif %}
+    </dd>
+  </dl>
+</article>
+{%- endmacro %}
+
+{% macro vendor_edit(card, locked, logins=none, query="", unlock_message="", message="") -%}
+<div id="vendor-edit-{{ card.key }}" class="flex flex-col gap-4">
+  <div class="flex flex-col gap-3">
+    {%- if has_vault %}
+    <p class="text-sm text-primary">Vault login: <span class="text-secondary">{{ card.vault }}</span></p>
+    <label class="form-field">
+      <span class="form-field__label">Search logins to use another</span>
+      <input type="search" name="q" value="{{ query }}" autocomplete="off" class="form-field__input" aria-controls="vendor-vault-results-{{ card.key }}" hx-get="/settings/sync/vendor/{{ card.key }}/edit/logins" hx-trigger="input changed delay:300ms, search" hx-target="#vendor-vault-results-{{ card.key }}">
+    </label>
+    <div id="vendor-vault-results-{{ card.key }}" aria-live="polite" class="flex flex-col gap-2">
+      {{ vault_results(locked, logins, unlock_message, "", unlock_action="/settings/sync/vendor/" ~ card.key ~ "/edit/unlock", unlock_target="#vendor-edit-" ~ card.key, form_id="vendor-edit-form-" ~ card.key, choice_required=false) }}
+    </div>
+    {%- else %}
+    <p class="text-sm text-primary">Sign-in: <span class="text-secondary">{{ card.vault }}</span></p>
+    {%- endif %}
+  </div>
+  <form id="vendor-edit-form-{{ card.key }}" class="flex flex-col gap-4" hx-post="/settings/sync/vendor/{{ card.key }}/edit" hx-target="#vendor-edit-status-{{ card.key }}" hx-swap="innerHTML">
+    <input type="hidden" name="idempotency_key" value="{{ card.edit_key }}">
+    <label class="form-field">
+      <span class="form-field__label">Display name</span>
+      <input name="name" value="{{ card.name }}" required maxlength="60" autocomplete="off" class="form-field__input">
+    </label>
+    <div id="vendor-edit-status-{{ card.key }}" aria-live="polite">{{ step_error(message) }}</div>
+    <div class="flex justify-end gap-2">
+      {{ button("Cancel", variant="outline", attrs={"data-action": "dialog#close"}) }}
+      {{ button("Save", variant="primary", type="submit") }}
+    </div>
+  </form>
+</div>
+{%- endmacro %}
+
+{% macro vendor_delete(card) -%}
+<form class="flex flex-col gap-4" hx-post="/settings/sync/vendor/{{ card.key }}/delete" hx-target="#vendor-delete-status-{{ card.key }}" hx-swap="innerHTML">
+  <p class="text-sm text-secondary">Remove this vendor account profile? Saved receipts on disk stay.</p>
+  <input type="hidden" name="idempotency_key" value="{{ card.delete_key }}">
+  <div id="vendor-delete-status-{{ card.key }}" aria-live="assertive"></div>
+  <div class="flex justify-end gap-2">
+    {{ button("Cancel", variant="outline", attrs={"data-action": "dialog#close"}) }}
+    {{ button("Delete", variant="destructive", type="submit") }}
+  </div>
+</form>
+{%- endmacro %}

@@ -17,7 +17,6 @@ from omsync.ledger.links import Link, LinkKind
 from omsync.ledger.sources import Account, account_digits
 from omsync.ledger.transactions import Transaction
 from omsync.receipts.service import ServiceReport, apply_digest, registered_vendors, run_vendor
-from omsync.receipts.vendors import get_vendor
 from omsync.reconcile.decisions import coverage
 from omsync.reconcile.engine import run
 from omsync.reconcile.history import MANUAL_RULE, UNKNOWN_RULE, rule_tally
@@ -481,7 +480,6 @@ def vendor_view(
 ) -> VendorView:
     """The vendor's tab. Its review lists the receipts dated in the period, and every file that
     cannot be read."""
-    vendor = get_vendor(report.vendor_key)
     review = tuple(
         ReviewRow(
             on="" if line.on is None else line.on.isoformat(),
@@ -490,8 +488,7 @@ def vendor_view(
             url=None
             if line.receipt_id is None
             else receipt_href(report.vendor_key, line.receipt_id),
-            external=line.receipt_id is not None
-            and vendor.receipt_url(line.receipt_id) is not None,
+            external=False,
             action=line.action.value,
             advice=line.advice or line.text,
             candidates_href=pair_href(*line.candidate_ids) if line.candidate_ids else "",

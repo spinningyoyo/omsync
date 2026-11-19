@@ -14,7 +14,7 @@ ACCOUNTS_URL = "https://online.citi.com/gcgapi/prod/public/v1/v2/digital/custome
 @register
 class CitiConnector(BankConnector):
     key = "citi"
-    label = "Citi: OFX from the website"
+    label = "Citi: OFX statement"
     display_name = "Citi"
     fallback_sign_in_url = "https://online.citi.com/US/login.do"
     username_id = "username"

@@ -6,38 +6,45 @@ checkout. Omit it for an installed application.
 
 ## Obtain Amazon receipts
 
-Use the Request my data page at Amazon. Request orders and returns/refunds. Unzip the files of
-each vendor login into their own directory. Keep the inner folder names that Amazon uses:
+Download a range of purchase dates:
+
+```sh
+uv run omsync receipts fetch amazon
+uv run omsync receipts fetch amazon --start 2026-01-01 --end 2026-11-17
+uv run omsync receipts fetch amazon --login personal
+```
+
+Without dates, the download covers all recent orders up to today. omsync opens Chrome with its
+browser profile. Sign in to Amazon in that Chrome window and select I have signed in (or press Enter
+in the terminal). This uses the browser session, not the vault. omsync saves the receipts as:
+
+```text
+receipts/AMAZON/<login>/<year>/<order_id>.json
+```
+
+If the download stops, finished receipts stay on disk. Run the same range again to fetch the rest.
+See [vendor requests](../architecture/vendor-requests/amazon.md) for request details.
+
+omsync also supports legacy manual exports from Amazon's "Request my data" page placed at:
 
 ```text
 receipts/AMAZON/<vendor login>/Your Amazon Orders/Order History.csv
 receipts/AMAZON/<vendor login>/Your Returns & Refunds/Refund Details.csv
 ```
 
-The login label is your folder name. Keep the order files and refund files of one login together.
-The refund payer and the items come from the order history of that login. These files are private.
-Never use them as repository fixtures.
-
 ## Obtain Costco receipts
 
-Start Chrome with omsync's profile and loopback remote debugging. With the default data location
-on a Mac:
+Download a range of purchase dates:
 
 ```sh
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/omsync-data/browser-profile"
-```
-
-Then download a range of purchase dates:
-
-```sh
+uv run omsync receipts fetch costco
 uv run omsync receipts fetch costco --start 2026-01-01 --end 2026-03-31
 ```
 
-Both dates are required. The end date cannot be in the future. Sign in to Costco in that Chrome
-window and complete any verification. Then press Enter in the terminal when it asks. This uses the
-browser session, not the vault. omsync saves the receipts as:
+Without dates, the download covers the last 90 days up to today. omsync opens Chrome with its
+browser profile. Sign in to Costco in that Chrome window and complete any verification. Then
+select I have signed in (or press Enter in the terminal). This uses the browser session, not
+the vault. omsync saves the receipts as:
 
 ```text
 receipts/COSTCO/<year>/<quarter>/<barcode>.json
@@ -45,7 +52,8 @@ receipts/COSTCO/<year>/<quarter>/<barcode>.json
 
 If Costco rejects the session, sign in again and retry. If the download stops, the finished
 receipts stay on disk. Run the same range again to fetch the rest. Do not share the JSON files
-casually. They can contain membership identifiers.
+casually. They can contain membership identifiers. See
+[vendor requests](../architecture/vendor-requests/costco.md) for the request details.
 
 ## Preview and apply receipts
 

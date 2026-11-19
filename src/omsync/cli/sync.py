@@ -15,10 +15,10 @@ from omsync.cli.groups import app
 from omsync.cli.imports import echo_import_report
 from omsync.core.bitwarden import MISSING_EMAIL
 from omsync.core.settings import Settings
+from omsync.core.sync_models import SyncKind, SyncRun, SyncStatus
 from omsync.core.vault import Vault, VaultError
 from omsync.core.vaults import open_vault
 from omsync.ingest.connectors.base import ConnectorError, DateRange
-from omsync.ingest.models import SyncRun, SyncStatus
 from omsync.ingest.sync import SyncBusy, SyncResult, sync_all, sync_provider
 
 
@@ -127,10 +127,13 @@ def sync_log(
             return
         for run in runs:
             when = run.started_at.strftime("%Y-%m-%d %H:%M UTC")
-            provider = run.provider_key or run.institution_key
+            target = run.target_key or run.provider_key or run.institution_key or ""
+            items = _files(
+                run.items_fetched or run.files_fetched, getattr(run, "kind", SyncKind.bank)
+            )
             line = (
-                f"{run.id:>5}  {when:<20}  {provider:<16}  {run.connector_key:<12}  "
-                f"{run.status.value:<18}  {_files(run.files_fetched):<12}  {run.message or ''}"
+                f"{run.id:>5}  {when:<20}  {target:<16}  {run.connector_key:<12}  "
+                f"{run.status.value:<18}  {items:<12}  {run.message or ''}"
             )
             typer.echo(line.rstrip())
 
@@ -195,8 +198,9 @@ def _failure(result: SyncResult) -> str:
     return f"sync {result.status.value}{detail}"
 
 
-def _files(count: int) -> str:
-    return f"{count} file" if count == 1 else f"{count} files"
+def _files(count: int, kind: SyncKind = SyncKind.bank) -> str:
+    unit = "receipt" if kind == SyncKind.receipt else "file"
+    return f"{count} {unit}" if count == 1 else f"{count} {unit}s"
 
 
 def _period(from_date: str | None, to_date: str | None) -> DateRange | None:

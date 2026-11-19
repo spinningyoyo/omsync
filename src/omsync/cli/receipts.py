@@ -7,7 +7,7 @@ reads only the settings. `fetch costco` downloads receipts through Chrome, and t
 as `omsync sync`, so the two never drive Chrome at once.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Annotated
 from uuid import uuid4
 
@@ -18,6 +18,7 @@ from omsync.cli.groups import fetch_app, receipts_app
 from omsync.core.batches import BatchError
 from omsync.core.locks import SYNC_LOCK_NAME, LockBusy, exclusive_lock
 from omsync.ingest.connectors.base import ConnectorError, NeedsUserAction
+from omsync.receipts.connectors import get_connector
 from omsync.receipts.service import (
     ServiceReport,
     apply_report,
@@ -26,7 +27,6 @@ from omsync.receipts.service import (
     vendor_folder,
 )
 from omsync.receipts.vendors.costco import RECEIPTS_FOLDER
-from omsync.receipts.vendors.costco_fetch import fetch_receipts
 
 _PREVIEW_ONLY = (
     "Preview only: nothing was written. Run again with --apply to apply {count} charges."
@@ -102,6 +102,10 @@ class EnterPrompt:
     def ask(self, question: str, *, secret: bool = False, digits: int | None = None) -> str:
         return typer.prompt(question, default="", show_default=False, prompt_suffix=" ")
 
+    def confirm(self, question: str, *, button: str) -> bool:
+        typer.prompt(f"{question} Press Enter for {button}", default="", show_default=False)
+        return True
+
     def show(self, message: str, *, image: str | None = None) -> None:
         if message:
             typer.echo(message)
@@ -112,31 +116,40 @@ class EnterPrompt:
 
 @fetch_app.command("costco")
 def fetch_costco(
-    start: Annotated[str, typer.Option("--start", help="First purchase day, YYYY-MM-DD.")],
+    start: Annotated[
+        str | None,
+        typer.Option("--start", help="First purchase day, YYYY-MM-DD. Defaults to 90 days ago."),
+    ] = None,
     end: Annotated[
-        str, typer.Option("--end", help="Last purchase day, YYYY-MM-DD. Not after today.")
-    ],
+        str | None,
+        typer.Option("--end", help="Last purchase day, YYYY-MM-DD. Defaults to today."),
+    ] = None,
+    account: Annotated[
+        str,
+        typer.Option("--account", help="Account or folder label for this Costco account."),
+    ] = "default",
 ) -> None:
-    """Download Costco receipts for a date range into receipts/COSTCO.
+    """Download Costco receipts for a date range into receipts/COSTCO/<account>/.
 
-    Chrome must already be running with remote debugging on 127.0.0.1:9222, using omsync's browser
-    profile. Sign in to Costco there, then press Enter here. Receipts already on disk are skipped.
-    Exits 1 if you need to act, or the download fails. Another sync or download refuses to start.
+    Chrome opens with omsync's browser profile. Sign in to Costco there, then press Enter here.
+    Receipts already on disk are skipped. Exits 1 if you need to act, or the download fails.
+    Another sync or download refuses to start.
     """
-    first = parse_date("--start", start)
-    last = parse_date("--end", end)
+    first = parse_date("--start", start) if start else (date.today() - timedelta(days=90))
+    last = parse_date("--end", end) if end else date.today()
     if first > last:
         fail("--start is after --end")
     if last > date.today():
         fail("--end is in the future")
     settings = load_settings_or_exit()
-    root = settings.receipts_dir / RECEIPTS_FOLDER
+    root = settings.receipts_dir / RECEIPTS_FOLDER / account
     typer.echo(f"Fetching Costco receipts from {first} to {last} into {root}.")
     try:
         # The sync lock also covers this download, so a bank sync and a Costco fetch never share
         # Chrome. A lock held by either makes the other refuse at once.
         with exclusive_lock(settings.data_dir / SYNC_LOCK_NAME):
-            saved = fetch_receipts(settings, EnterPrompt(), start=first, end=last)
+            connector = get_connector("costco")
+            saved = connector.fetch(settings, EnterPrompt(), start=first, end=last, account=account)
     except LockBusy:
         fail("another sync or receipt download is already running. Try again when it finishes.")
     except (NeedsUserAction, ConnectorError) as exc:
@@ -150,6 +163,55 @@ def fetch_costco(
     noun = "file" if len(saved) == 1 else "files"
     typer.echo(f"Saved {len(saved)} new receipt {noun} to {root}.")
     typer.echo("Match them with: omsync receipts run costco")
+
+
+@fetch_app.command("amazon")
+def fetch_amazon(
+    start: Annotated[
+        str | None,
+        typer.Option("--start", help="First purchase day, YYYY-MM-DD. Optional."),
+    ] = None,
+    end: Annotated[
+        str | None,
+        typer.Option("--end", help="Last purchase day, YYYY-MM-DD. Optional, defaults to today."),
+    ] = None,
+    account: Annotated[
+        str,
+        typer.Option("--account", help="Account or folder label for this Amazon account."),
+    ] = "default",
+) -> None:
+    """Download Amazon orders and refunds into receipts/AMAZON/<account>/.
+
+    Chrome opens with omsync's browser profile. Sign in to Amazon there, then press Enter here.
+    Each order is saved as a JSON receipt under receipts/AMAZON/<account>/<year>/<order_id>.json.
+    Exits 1 if you need to act, or the download fails. Another sync or download refuses to start.
+    """
+    first = parse_date("--start", start) if start else None
+    last = parse_date("--end", end) if end else date.today()
+    if first and last and first > last:
+        fail("--start is after --end")
+    if last and last > date.today():
+        fail("--end is in the future")
+    settings = load_settings_or_exit()
+    root = settings.receipts_dir / "AMAZON" / account
+    typer.echo(f"Fetching Amazon receipts into {root}.")
+    try:
+        with exclusive_lock(settings.data_dir / SYNC_LOCK_NAME):
+            connector = get_connector("amazon")
+            saved = connector.fetch(settings, EnterPrompt(), start=first, end=last, account=account)
+    except LockBusy:
+        fail("another sync or receipt download is already running. Try again when it finishes.")
+    except (NeedsUserAction, ConnectorError) as exc:
+        fail(str(exc))
+    except KeyboardInterrupt:
+        typer.echo("Cancelled. Receipts already saved stay; run the same command to get the rest.")
+        raise typer.Exit(code=130) from None
+    if not saved:
+        typer.echo("No new receipt files were saved for that range.")
+        return
+    noun = "file" if len(saved) == 1 else "files"
+    typer.echo(f"Saved {len(saved)} {noun} to {root}.")
+    typer.echo("Match them with: omsync receipts run amazon")
 
 
 def _scope(report: ServiceReport) -> str:

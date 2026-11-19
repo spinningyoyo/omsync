@@ -194,6 +194,25 @@ class BrowserSession:
             "windows that use omsync's browser profile, then sync again."
         )
 
+    def launch_clean_browser(self, url: str) -> subprocess.Popen[bytes]:
+        """Launch Chrome with this profile without debugging flags, for manual sign-in."""
+        profile_dir = self._profile_dir
+        if profile_dir is None:
+            raise BrowserError("prepare() must run before Chrome is launched")
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        (profile_dir / "DevToolsActivePort").unlink(missing_ok=True)
+        cmd = [
+            chrome_binary(),
+            f"--user-data-dir={profile_dir}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            url,
+        ]
+        try:
+            return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            raise BrowserError("Chrome could not be started; is it installed?") from None
+
     def _start_debug_chrome(self, port: int = 0) -> subprocess.Popen[bytes]:
         cmd = [chrome_binary()]
         profile_dir = self._profile_dir

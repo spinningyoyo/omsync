@@ -61,6 +61,7 @@ class BitwardenCLI:
         secrets = dict(extra_env or {})
         env = {k: v for k, v in os.environ.items() if k not in _INHERITED_SECRET_VARS}
         env["BITWARDENCLI_APPDATA_DIR"] = str(self._appdata_dir)
+        env["BW_NOINTERACTION"] = "true"
         env.update(secrets)
         try:
             # Windows starts only an .exe by bare name; npm installs bw as bw.cmd.
@@ -79,7 +80,7 @@ class BitwardenCLI:
             raise VaultError(f"Bitwarden CLI '{args[0]}' timed out") from None
         except OSError:
             raise VaultError(f"Bitwarden CLI '{self._executable}' could not be started") from None
-        if completed.returncode != 0:
+        if completed.returncode != 0 or (not completed.stdout.strip() and completed.stderr.strip()):
             detail = _sanitize(completed.stderr, secrets)
             detail = detail or f"exit status {completed.returncode}"
             raise VaultError(f"Bitwarden CLI '{args[0]}' failed: {detail}")
@@ -124,18 +125,19 @@ class BitwardenVault(Vault):
     def unlock(self, password: str) -> None:
         if not self._email:
             raise VaultError(MISSING_EMAIL)
-        if self._cli.status().get("status") == "unauthenticated":
-            self._api_key_login()
-        if not _same_email(self._cli.status().get("userEmail"), self._email):
-            raise VaultError("This email does not match the Bitwarden account of your API key")
-        # Outside the except block so no chained exception carries the CLI output.
-        output = self._try_unlock(password)
-        if output is None:
-            raise VaultError("Incorrect master password")
-        key = output.strip()
-        if not key:
-            raise VaultError("Bitwarden returned no session key")
-        self._session = key
+        self._ensure_login()
+        try:
+            self._session = self._cli_unlock(password)
+        except VaultError as exc:
+            if _is_bad_password(exc):
+                raise VaultError("Incorrect master password") from None
+            self._relogin()
+            try:
+                self._session = self._cli_unlock(password)
+            except VaultError as retry_exc:
+                if _is_bad_password(retry_exc):
+                    raise VaultError("Incorrect master password") from None
+                raise
         self._last_used = self._clock()
 
     def is_unlocked(self) -> bool:
@@ -198,24 +200,44 @@ class BitwardenVault(Vault):
             raise VaultLocked("Vault is locked; unlock it first")
         return self._session
 
-    def _api_key_login(self) -> None:
+    def _ensure_login(self) -> None:
+        try:
+            status = self._cli.status()
+            if status.get("status") != "unauthenticated" and _same_email(
+                status.get("userEmail"), self._email
+            ):
+                return
+        except VaultError:
+            pass
+        self._relogin()
+
+    def _relogin(self) -> None:
         client_id = self._keychain.get(CLIENT_ID_ENTRY)
         client_secret = self._keychain.get(CLIENT_SECRET_ENTRY)
         if not client_id or not client_secret:
             raise VaultError(MISSING_API_KEY)
+        with contextlib.suppress(VaultError):
+            self._cli.run(["logout"])
         self._cli.run(
             ["login", "--apikey"],
             extra_env={"BW_CLIENTID": client_id, "BW_CLIENTSECRET": client_secret},
         )
+        if not _same_email(self._cli.status().get("userEmail"), self._email):
+            raise VaultError("This email does not match the Bitwarden account of your API key")
 
-    def _try_unlock(self, password: str) -> str | None:
-        try:
-            return self._cli.run(
-                ["unlock", "--passwordenv", _PASSWORD_ENV, "--raw"],
-                extra_env={_PASSWORD_ENV: password},
-            )
-        except VaultError:
-            return None
+    def _cli_unlock(self, password: str) -> str:
+        output = self._cli.run(
+            ["unlock", "--passwordenv", _PASSWORD_ENV, "--raw"],
+            extra_env={_PASSWORD_ENV: password},
+        )
+        key = output.strip()
+        if not key:
+            raise VaultError("Bitwarden returned no session key")
+        return key
+
+
+def _is_bad_password(exc: VaultError) -> bool:
+    return "invalid master password" in str(exc).lower()
 
 
 def _login_uris(login: dict[str, Any]) -> tuple[str, ...]:
@@ -233,11 +255,17 @@ def _same_email(found: object, expected: str) -> bool:
 
 def _sanitize(stderr: str | None, secrets: Mapping[str, str]) -> str:
     # Mask before truncating so a secret cut at the limit cannot leak a prefix.
-    text = stderr or ""
+    text = (stderr or "").strip()
     for value in secrets.values():
         if value:
             text = text.replace(value, "***")
-    return text.strip()[:_STDERR_LIMIT]
+    if not text:
+        return ""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for line in reversed(lines):
+        if not line.startswith("at ") and line not in ("{", "}", "},"):
+            return line[:_STDERR_LIMIT]
+    return text[:_STDERR_LIMIT]
 
 
 def _parse_json(text: str, what: str) -> Any:

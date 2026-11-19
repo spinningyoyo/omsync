@@ -72,6 +72,7 @@ from omsync.web.routes.settings import router as settings_router
 from omsync.web.routes.settings_providers import router as settings_providers_router
 from omsync.web.routes.settings_rental import router as settings_rental_router
 from omsync.web.routes.settings_vault import router as settings_vault_router
+from omsync.web.routes.settings_vendor_wizard import router as settings_vendor_wizard_router
 from omsync.web.routes.settings_wizard import router as settings_wizard_router
 from omsync.web.row_links import link_items
 from omsync.web.scenes import nursery_scenes
@@ -82,6 +83,27 @@ from omsync.web.vault_logins import LoginNames
 WEB_DIR = Path(__file__).parent
 TEMPLATES_DIR = WEB_DIR / "templates"
 STATIC_DIR = WEB_DIR / "static"
+
+
+class DynamicHasVault:
+    """Evaluates whether a vault is currently configured on the app at template evaluation time.
+
+    Jinja macro imports capture module globals at initial compilation time. Using a dynamic object
+    allows templates and cached macros to reflect runtime connect/disconnect of Bitwarden without
+    relying on static globals.
+    """
+
+    def __init__(self, app: FastAPI) -> None:
+        self._app = app
+
+    def __bool__(self) -> bool:
+        return self._app.state.vault is not None
+
+    def __repr__(self) -> str:
+        return repr(bool(self))
+
+    def __str__(self) -> str:
+        return str(bool(self))
 
 
 def create_app(
@@ -158,7 +180,7 @@ def create_app(
     templates.env.globals["register_page_sizes"] = PAGE_SIZES
     templates.env.globals["new_key"] = lambda: uuid4().hex
     templates.env.globals["demo_mode"] = demo is not None
-    templates.env.globals["has_vault"] = vault is not None
+    templates.env.globals["has_vault"] = DynamicHasVault(app)
     app.state.templates = templates
 
     install_guard(app)
@@ -214,6 +236,7 @@ def create_app(
     app.include_router(settings_providers_router)
     app.include_router(settings_vault_router)
     app.include_router(settings_wizard_router)
+    app.include_router(settings_vendor_wizard_router)
     app.include_router(settings_rental_router)
     app.include_router(guides.router)
     app.include_router(demo_router)

@@ -20,10 +20,10 @@ uv run omsync accounts add --institution acmecard --institution-name "Acme Card"
 uv run omsync accounts add --institution boa --institution-name "Bank of America" \
     --statement-account 1234 --name "BoA Checking" --type checking >/dev/null
 
-mkdir -p "$dir/statements/TESTBANK" "$dir/statements/ACMECARD" "$dir/statements/BOA/1234"
-cp "$fixtures/ofx1_checking.ofx" "$dir/statements/TESTBANK/"
-cp "$fixtures/ofx2_card.ofx" "$dir/statements/ACMECARD/"
-cp "$fixtures/boa_checking.csv" "$dir/statements/BOA/1234/"
+mkdir -p "$dir/statements/TESTBANK/000012345678/2026" "$dir/statements/ACMECARD/000098765432/2026" "$dir/statements/BOA/1234/2026"
+cp "$fixtures/ofx1_checking.ofx" "$dir/statements/TESTBANK/000012345678/2026/"
+cp "$fixtures/ofx2_card.ofx" "$dir/statements/ACMECARD/000098765432/2026/"
+cp "$fixtures/boa_checking.csv" "$dir/statements/BOA/1234/2026/"
 uv run omsync import --apply | tail -n 3
 
 echo

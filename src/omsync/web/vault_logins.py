@@ -97,6 +97,40 @@ class LoginNames:
         self._missing.clear()
 
 
+def resolve_vault_login_name(
+    vault: Vault | None,
+    vault_item_id: str | None,
+    names: LoginNames,
+    query_hints: tuple[str, ...] = (),
+) -> str:
+    """The name of a vault login item, or why there is none to show."""
+    if vault is None:
+        return MANUAL_SIGN_IN
+    if vault_item_id is None:
+        return "No vault login"
+    if not vault.is_unlocked():
+        names.clear()
+        return "vault locked"
+    known = names.get(vault_item_id)
+    if known is not None:
+        return known
+    if names.is_missing(vault_item_id):
+        return "Not found in the vault"
+    for query in query_hints:
+        if not query:
+            continue
+        try:
+            matches = vault.find_logins(query)
+        except VaultError:
+            return "Vault lookup failed"
+        names.remember(matches)
+        known = names.get(vault_item_id)
+        if known is not None:
+            return known
+    names.remember_missing(vault_item_id)
+    return "Not found in the vault"
+
+
 def vault_login_name(
     vault: Vault | None,
     provider: ProviderLine,
@@ -106,29 +140,12 @@ def vault_login_name(
     """The name of the provider's vault login, or why there is none to show. The vault has no
     lookup by ID that does not also fetch the password, so a name is found by searching, and every
     login a search returns is remembered in names."""
-    if vault is None:
-        return MANUAL_SIGN_IN
-    if provider.vault_item_id is None:
-        return "No vault login"
-    if not vault.is_unlocked():
-        names.clear()
-        return "vault locked"
-    known = names.get(provider.vault_item_id)
-    if known is not None:
-        return known
-    if names.is_missing(provider.vault_item_id):
-        return "Not found in the vault"
-    for query in dict.fromkeys((provider.key, institution.name, institution.key)):
-        try:
-            matches = vault.find_logins(query)
-        except VaultError:
-            return "Vault lookup failed"
-        names.remember(matches)
-        known = names.get(provider.vault_item_id)
-        if known is not None:
-            return known
-    names.remember_missing(provider.vault_item_id)
-    return "Not found in the vault"
+    return resolve_vault_login_name(
+        vault,
+        provider.vault_item_id,
+        names,
+        query_hints=(provider.key, institution.name, institution.key),
+    )
 
 
 def search_logins(vault: Vault, query: str, names: LoginNames | None = None) -> list[LoginSummary]:

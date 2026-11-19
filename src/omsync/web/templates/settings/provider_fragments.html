@@ -45,20 +45,59 @@
    while idle, the sync buttons and the provider list, which show each provider's last sync. A
    reply that is not a poll sends the user menus' vault status too, so an unlock shows at once. #}
 {% block frag_sync %}
-{% from "settings/sync_parts.html" import sync_region, sync_question, sync_all_control %}
+{% from "settings/sync_parts.html" import sync_region, sync_question, sync_all_control, sync_banks_control, sync_vendors_control %}
 {% from "settings/provider_parts.html" import provider_list %}
+{% from "settings/vendor_parts.html" import vendor_list %}
 {% from "components/vault_status.html" import vault_status_oob %}
 {{ sync_region(sync, vault_status, notice, unlock_scope, unlock_message, unlocked) }}
-{%- if not poll %}
-{{ vault_status_oob(vault_status, page=false) }}
+{%- if vault_status and (not poll or not sync.running) %}
+{{ vault_status_oob(vault_status, page=true) }}
 {%- endif %}
 {%- if include_question %}
 {{ sync_question(sync.question, sync.notice, oob=true) }}
 {%- endif %}
 {%- if groups is not none %}
 {{ sync_all_control(sync.running, oob=true) }}
+{{ sync_banks_control(sync.running, oob=true) }}
 {{ provider_list(groups, oob=true) }}
 {%- endif %}
+{%- if vendor_cards is not none %}
+{{ sync_vendors_control(sync.running, oob=true) }}
+{{ vendor_list(vendor_cards, oob=true) }}
+{%- endif %}
+{% endblock %}
+
+{% block frag_vendor_vault %}
+{% from "settings/parts.html" import vault_results %}
+{{ vault_results(locked, logins, unlock_message, message, unlock_action="/settings/sync/vendor/" ~ card.key ~ "/edit/unlock", unlock_target="#vendor-edit-" ~ card.key, form_id="vendor-edit-form-" ~ card.key, choice_required=false) }}
+{% endblock %}
+
+{% block frag_vendor_edit %}
+{% from "settings/vendor_parts.html" import vendor_edit %}
+{% from "components/vault_status.html" import vault_status_oob %}
+{{ vendor_edit(card, locked, logins, query, unlock_message, message) }}
+{%- if vault_status is defined %}
+{{ vault_status_oob(vault_status) }}
+{%- endif %}
+{% endblock %}
+
+{% block frag_vendor_saved %}
+{% from "settings/vendor_parts.html" import vendor_list %}
+{% from "transactions/parts.html" import toast %}
+{{ vendor_list(vendor_cards, oob=true) }}
+{{ toast(message) }}
+{% endblock %}
+
+{% block frag_vendor_added %}
+{% from "settings/vendor_parts.html" import vendor_list %}
+{% from "transactions/parts.html" import toast %}
+{{ vendor_list(vendor_cards, oob=true) }}
+{{ toast(message) }}
+<script>document.getElementById("add-vendor-dialog")?.close();</script>
+{% endblock %}
+
+{% block frag_vendor_message %}
+<p class="text-sm {{ 'text-destructive' if error else 'text-primary' }}" role="{{ 'alert' if error else 'status' }}">{{ message }}</p>
 {% endblock %}
 
 {% block frag_provider_undone %}
