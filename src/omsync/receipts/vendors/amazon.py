@@ -1,54 +1,43 @@
-"""Amazon: order history and refund exports, read into receipts, and the card charges they paid.
+"""Amazon: the order files a sync downloads, read into receipts, and the card charges they paid.
 
-Each order is one receipt, built from its item rows. Each completed refund row is a refund
-receipt. Its items are found in this order:
+Each order is one receipt, built from its items. Each refund in it is a refund receipt. Its items
+are found in this order:
 - the order's items that add up to the refund exactly, when some do;
 - else its units that add up to the refund exactly, so one of two units returned is found;
 - else, when the order has one product, that product, as for a return fee or a price adjustment;
 - else one item carries the refund and goes to triage.
 
-Amazon's Total Amount already includes each item's tax and shipping, so items are not marked
-taxable. The engine then spreads no tax, and each group is scaled to the charge from its exact
-Total Amount sums. The order's tax is kept on the receipt as a fact.
+An item's amount already includes its tax and shipping, so items are not marked taxable. The
+engine then spreads no tax, and each group is scaled to the charge from its exact amounts. The
+order's tax is kept on the receipt as a fact.
 
 Charges:
-- A single-shipment order paid with a known card is observed: one charge for the total. Its window
-  runs from 3 days before the earlier of the ship date and the order date, to 30 days after the
-  later of them. Without a ship date, the order date is used. When no transaction has the total,
-  the order is tried as split charges, as below, because Amazon sometimes charges each item.
-  A shipment of free items only is not counted.
-- An order with several shipments may be charged once per shipment, so it needs transactions.
-  infer_charges looks for transactions that add up to the total. It accepts only one answer:
-  no answer or several answers go to review. Its window runs from 1 day before the order to
-  21 days after the order or the latest ship date, whichever is later. An order that names no
-  card gives inferred charges with no card, which are unknown payer and never applied.
-- A gift card plus a card is insufficient when Amazon does not say how much the card paid, as in
-  an export. A downloaded charge that names no card was paid by gift card or points: with one card
-  charge, it is an offset of that charge, and with no card charge, no charge is expected.
+- An order states its card charges, as Amazon's payment history lists them. Each is observed,
+  with a window from 3 days before the earlier of its date and the order date, to 30 days after
+  the later of them. When no transaction has a stated charge, the order is tried as split charges:
+  infer_charges looks for transactions that add up to the total, because Amazon sometimes charges
+  each item, or the bank shows one charge as several. It accepts only one answer: no answer or
+  several answers go to review. Its window runs from 1 day before the order to 21 days after the
+  order or the latest charge date, whichever is later. An order that names no card gives inferred
+  charges with no card, which are unknown payer and never applied.
+- A charge that names no card was paid by gift card or points: with one card charge, it is an
+  offset of that charge, and with no card charge, no charge is expected.
 - A refund is observed: one positive charge, dated from 1 day before to 10 days after the refund.
   When no transaction has its amount, the refund is tried as split credits, one per item group,
   with the same exact-combination rule. Amazon credits each item separately, sometimes.
 
-Files: the downloader saves one JSON file per order, <provider folder>/<year>/<order ID>.json. An
-export is read from <export folder>/Your Amazon Orders/Order History.csv and
-<export folder>/Your Returns & Refunds/Refund Details.csv. Refunds take their card and items from
-the order history of the same export.
-
-Rows that cannot be read raise AmazonFileError (a ValueError) with the file name and row number.
-The message never includes the row's contents.
+Files: the sync saves one JSON file per order, <provider folder>/<year>/<order ID>.json. A file
+that cannot be read raises AmazonFileError (a ValueError) with the file name. The message never
+includes the file's contents.
 """
 
-import csv
 import json
-from collections.abc import Sequence
 from dataclasses import dataclass, fields
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-from omsync.core import money
-from omsync.ledger.receipt_vendors import is_amazon_payee
 from omsync.receipts.model import (
     Charge,
     ChargeResult,
@@ -63,9 +52,6 @@ from omsync.receipts.vendor import BaseVendor, CandidateTxn
 
 VENDOR_KEY = "amazon"
 FOLDER = "AMAZON"  # under the data directory's receipts folder
-ORDER_FILE = "Order History.csv"
-ORDERS_FOLDER = "Your Amazon Orders"
-REFUND_FILE = "Refund Details.csv"
 ORDER_PAGE = "https://www.amazon.com/gp/your-account/order-details"
 REFUND_ID_PART = "-refund-"
 
@@ -90,36 +76,19 @@ REFUND_NO_COMBINATION_REASON = "no exact combination of credits adds up to the r
 SEVERAL_COMBINATIONS_REASON = "several possible charge combinations"
 UNTIED_CREDITS_REASON = "the credits cannot be tied to the refunded items one by one"
 
-_ORDER_COLUMNS = (
-    "Order ID",
-    "Order Date",
-    "Order Status",
-    "Ship Date",
-    "Product Name",
-    "Total Amount",
-    "Shipment Item Subtotal Tax",
-    "Payment Method Type",
-)
-_REFUND_COLUMNS = ("Order ID", "Refund Amount", "Refund Date", "Payment Status", "Reversal Reason")
-# Optional: an older export without it counts one of each item.
-QUANTITY_COLUMN = "Original Quantity"
-_MISSING = frozenset({"", "not available", "na", "nan", "none"})
-
 
 class AmazonFileError(ValueError):
-    """An Amazon export cannot be read. The message names the file and row, never its contents."""
+    """An Amazon order file cannot be read. The message names the file, never its contents."""
 
 
 @dataclass(frozen=True)
 class AmazonReceipt(Receipt):
-    """A receipt with the number of shipments in its order, and each item's quantity in the same
-    order as its items.
+    """A receipt with each item's quantity in the same order as its items.
 
-    shipments and quantities are not part of the revision, which covers the facts the engine knows
-    about. An empty quantities means one of each.
+    quantities is not part of the revision, which covers the facts the engine knows about. An
+    empty quantities means one of each.
     """
 
-    shipments: int = 1
     quantities: tuple[int, ...] = ()
 
 
@@ -128,23 +97,10 @@ class AmazonVendor(BaseVendor):
     folder = FOLDER
 
     def discover(self, provider_folder: Path) -> list[Path]:
-        jsons = sorted(path for path in provider_folder.rglob("*.json") if path.is_file())
-        csvs = sorted(provider_folder.rglob(ORDER_FILE)) + sorted(
-            provider_folder.rglob(REFUND_FILE)
-        )
-        return jsons + csvs
+        return sorted(path for path in provider_folder.rglob("*.json") if path.is_file())
 
     def parse(self, path: Path, provider_key: str) -> list[Receipt]:
-        if path.suffix == ".json":
-            return list(_parse_json_receipt(path, provider_key))
-        if path.name == ORDER_FILE:
-            return list(_order_receipts(path, provider_key))
-        if path.name == REFUND_FILE:
-            return list(_refund_receipts(path, provider_key))
-        raise AmazonFileError(f"{path.name} is not an Amazon order or refund file")
-
-    def is_vendor_payee(self, payee: str) -> bool:
-        return is_amazon_payee(payee)
+        return list(_parse_json_receipt(path, provider_key))
 
     def receipt_url(self, receipt_id: str) -> str | None:
         return f"{ORDER_PAGE}?{urlencode({'orderID': _order_id(receipt_id)})}"
@@ -164,8 +120,6 @@ class AmazonVendor(BaseVendor):
             amounts = [tender.amount_cents for tender in receipt.tenders]
             if None in amounts or sum(a or 0 for a in amounts) != receipt.total_cents:
                 return ChargeResult("insufficient", reason=GIFT_REASON)
-        if _shipments(receipt) > 1:
-            return ChargeResult("needs_transactions")
         start, end = _observed_window(receipt)
         card_tenders = [
             t for t in receipt.tenders if t.kind == "card" and t.amount_cents is not None
@@ -241,9 +195,9 @@ class AmazonVendor(BaseVendor):
         chosen = [usable[index] for index in combinations[0]]
         amounts = [abs(candidate.amount_cents) for candidate in chosen]
         positions = _item_positions(receipt.items, amounts) if len(chosen) > 1 else None
-        # A single shipment is inferred only after its whole-order charge found nothing. Its keys
-        # start at 1, so they never collide with that charge's key 0.
-        first_key = 1 if _shipments(receipt) == 1 else 0
+        # An order is inferred only after its stated charges found nothing. Its keys start at 1, so
+        # they never collide with the first stated charge's key 0.
+        first_key = 1
         # A charge that names no card keeps card_last4 None: its payer is unknown, so it is
         # reviewed, not applied, even though its transaction is known.
         charges = tuple(
@@ -288,45 +242,6 @@ def _gift_and_card_charges(
 
 
 # Reading files
-
-
-def _read_rows(path: Path, columns: Sequence[str]) -> list[tuple[int, dict[str, str]]]:
-    """Every data row with its row number (the header is row 1), stripped of surrounding spaces."""
-    try:
-        with path.open(newline="", encoding="utf-8-sig") as handle:
-            reader = csv.DictReader(handle)
-            header = reader.fieldnames or []
-            for column in columns:
-                if column not in header:
-                    raise AmazonFileError(f"{path.name} has no {column!r} column")
-            rows = [
-                (
-                    reader.line_num,
-                    {key.strip(): (value or "").strip() for key, value in row.items() if key},
-                )
-                for row in reader
-            ]
-    except (UnicodeDecodeError, csv.Error):
-        raise AmazonFileError(f"{path.name} is not a readable CSV file") from None
-    return rows
-
-
-def _row_error(path: Path, line: int, message: str) -> AmazonFileError:
-    return AmazonFileError(f"{path.name} row {line}: {message}")
-
-
-def _money(value: str, path: Path, line: int, column: str) -> int:
-    try:
-        return money.to_cents(value)
-    except ValueError:
-        raise _row_error(path, line, f"{column} is not an amount") from None
-
-
-def _date(value: str, path: Path, line: int, column: str) -> date:
-    parsed = _parse_date(value)
-    if parsed is None:
-        raise _row_error(path, line, f"{column} is not a date")
-    return parsed
 
 
 def _parse_date(value: str) -> date | None:
@@ -467,128 +382,19 @@ def _parse_json_receipt(path: Path, account: str) -> list[AmazonReceipt]:
         is_refund=False,
         ship_dates=ship_dates,
     )
-    # One shipment: the charges are stated exactly, so matching uses them rather than inferring.
-    order_receipt = _as_amazon(base, shipments=1, quantities=tuple(quantities))
+    # The charges are stated exactly, so matching uses them rather than inferring.
+    order_receipt = _as_amazon(base, quantities=tuple(quantities))
     return [order_receipt, *_json_refund_receipts(data, order_receipt, order_id, account)]
 
 
-def _blank(value: str) -> bool:
-    return value.strip().lower() in _MISSING
-
-
-def _quantity(value: str) -> int:
-    """A whole number of units of at least one, or 1 when the value is anything else."""
-    text = value.strip()
-    return int(text) if text.isdigit() and int(text) >= 1 else 1
-
-
-def _card_last4(payment_method: str) -> str | None:
-    """The last four digits from text such as "Visa - 1111", or None."""
-    last = payment_method.split(" - ")[-1].strip()
-    return last if len(last) == 4 and last.isdigit() else None
-
-
-def _tenders(payment_method: str, total_cents: int) -> tuple[Tender, ...]:
-    if _blank(payment_method):
-        return ()
-    last4 = _card_last4(payment_method)
-    if "gift" in payment_method.lower():
-        gift = (Tender("gift", None, None),)
-        return gift if last4 is None else (*gift, Tender("card", last4, None))
-    return (Tender("card", last4, total_cents),)
-
-
-# Orders
-
-
-def _order_receipts(path: Path, account: str) -> list[AmazonReceipt]:
-    grouped: dict[str, list[tuple[int, dict[str, str]]]] = {}
-    for line, row in _read_rows(path, _ORDER_COLUMNS):
-        order_id = row["Order ID"]
-        if not order_id:
-            raise _row_error(path, line, "Order ID is blank")
-        _date(row["Order Date"], path, line, "Order Date")
-        _money(row["Total Amount"], path, line, "Total Amount")
-        if not _blank(row["Ship Date"]):
-            _date(row["Ship Date"], path, line, "Ship Date")
-        if not _blank(row["Shipment Item Subtotal Tax"]):
-            _money(row["Shipment Item Subtotal Tax"], path, line, "Shipment Item Subtotal Tax")
-        grouped.setdefault(order_id, []).append((line, row))
-
-    receipts: list[AmazonReceipt] = []
-    for order_id, group in grouped.items():
-        receipt = _build_order(path, account, order_id, group)
-        if receipt is not None:
-            receipts.append(receipt)
-    return receipts
-
-
-def _build_order(
-    path: Path, account: str, order_id: str, group: list[tuple[int, dict[str, str]]]
-) -> AmazonReceipt | None:
-    """One order from its rows. Cancelled orders and orders that total nothing are skipped."""
-    _, first = group[0]
-    if first["Order Status"].lower() == "cancelled":
-        return None
-    total = sum(_money(row["Total Amount"], path, line, "Total Amount") for line, row in group)
-    if total <= 0:
-        return None
-
-    items: list[ReceiptItem] = []
-    quantities: list[int] = []
-    for line, row in group:
-        amount = _money(row["Total Amount"], path, line, "Total Amount")
-        if amount == 0:
-            continue  # Free items carry no money, and would otherwise need a category.
-        description = row["Product Name"] or "Unnamed item"
-        items.append(
-            ReceiptItem(
-                position=len(items) + 1,
-                description=description,
-                amount_cents=amount,
-                taxable=False,
-            )
-        )
-        quantities.append(_quantity(row.get(QUANTITY_COLUMN, "")))
-    # A free item can ship on its own, and that shipment charges nothing.
-    ship_dates = {
-        _date(row["Ship Date"], path, line, "Ship Date")
-        for line, row in group
-        if not _blank(row["Ship Date"])
-        and _money(row["Total Amount"], path, line, "Total Amount") != 0
-    }
-    tax_text = first["Shipment Item Subtotal Tax"]
-    tax = 0
-    if not _blank(tax_text):
-        tax = _money(tax_text, path, group[0][0], "Shipment Item Subtotal Tax")
-    base = make_receipt(
-        vendor_key=VENDOR_KEY,
-        receipt_id=order_id,
-        purchased_on=_date(first["Order Date"], path, group[0][0], "Order Date"),
-        account=account,
-        items=items,
-        tax_cents=tax,
-        total_cents=total,
-        tenders=_tenders(first["Payment Method Type"], total),
-        ship_dates=ship_dates,
-    )
-    return _as_amazon(base, shipments=max(len(ship_dates), 1), quantities=tuple(quantities))
-
-
-def _as_amazon(
-    base: Receipt, *, shipments: int = 1, quantities: tuple[int, ...] = ()
-) -> AmazonReceipt:
+def _as_amazon(base: Receipt, *, quantities: tuple[int, ...] = ()) -> AmazonReceipt:
     values = {field.name: getattr(base, field.name) for field in fields(Receipt)}
-    return AmazonReceipt(**values, shipments=shipments, quantities=quantities)
+    return AmazonReceipt(**values, quantities=quantities)
 
 
 def _order_id(receipt_id: str) -> str:
     """The order a receipt ID names: a refund's ID starts with its order's."""
     return receipt_id.split(REFUND_ID_PART, 1)[0]
-
-
-def _shipments(receipt: Receipt) -> int:
-    return receipt.shipments if isinstance(receipt, AmazonReceipt) else 1
 
 
 def _card(receipt: Receipt) -> str | None:
@@ -630,73 +436,6 @@ def _split_window(receipt: Receipt) -> tuple[date, date]:
 
 
 # Refunds
-
-
-def _refund_receipts(path: Path, account: str) -> list[AmazonReceipt]:
-    orders = _orders_by_id(path, account)
-    seen: set[tuple[str, int, date]] = set()
-    receipts: list[AmazonReceipt] = []
-    for line, row in _read_rows(path, _REFUND_COLUMNS):
-        if row["Payment Status"].lower() != "completed":
-            continue
-        order_id = row["Order ID"]
-        if not order_id:
-            raise _row_error(path, line, "Order ID is blank")
-        refund_date = _date(row["Refund Date"], path, line, "Refund Date")
-        refund_cents = _money(row["Refund Amount"], path, line, "Refund Amount")
-        if refund_cents <= 0:
-            continue
-        key = (order_id, refund_cents, refund_date)
-        if key in seen:
-            continue
-        seen.add(key)
-        receipts.append(
-            _refund_receipt(
-                order_id,
-                refund_date,
-                refund_cents,
-                row["Reversal Reason"],
-                account,
-                orders.get(order_id),
-            )
-        )
-    return receipts
-
-
-def _orders_by_id(refund_path: Path, account: str) -> dict[str, Receipt]:
-    """The same account's order receipts, keyed by order ID, when the order history is present."""
-    order_path = refund_path.parent.parent / ORDERS_FOLDER / ORDER_FILE
-    if not order_path.is_file():
-        return {}
-    return {receipt.receipt_id: receipt for receipt in _order_receipts(order_path, account)}
-
-
-def _refund_receipt(
-    order_id: str,
-    refund_date: date,
-    refund_cents: int,
-    reason: str,
-    account: str,
-    order: Receipt | None,
-) -> AmazonReceipt:
-    items = _refund_items(order, refund_cents) if order is not None else None
-    if items is None:
-        description = f"Refund: {reason}" if reason else "Refund"
-        items = (ReceiptItem(1, description, refund_cents, taxable=False),)
-    card = _card(order) if order is not None else None
-    base = make_receipt(
-        vendor_key=VENDOR_KEY,
-        receipt_id=f"{order_id}{REFUND_ID_PART}{refund_date.isoformat()}-{refund_cents}",
-        purchased_on=refund_date,
-        account=account,
-        items=items,
-        tax_cents=0,
-        total_cents=refund_cents,
-        tenders=() if card is None else (Tender("card", card, refund_cents),),
-        is_refund=True,
-        refund_of=order_id,
-    )
-    return _as_amazon(base)
 
 
 def _refund_items(order: Receipt, refund_cents: int) -> tuple[ReceiptItem, ...] | None:

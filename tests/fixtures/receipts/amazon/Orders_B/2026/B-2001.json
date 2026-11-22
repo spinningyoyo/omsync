@@ -1,0 +1,21 @@
+{
+  "order_id": "B-2001",
+  "order_date": "2026-09-01",
+  "total_cents": 3000,
+  "tax_cents": 273,
+  "items": [
+    {
+      "title": "Fake Kettle",
+      "amount_cents": 3000,
+      "quantity": 1
+    }
+  ],
+  "charges": [
+    {
+      "amount_cents": 3000,
+      "card_last4": "2222",
+      "date": "2026-09-02"
+    }
+  ],
+  "refunds": []
+}

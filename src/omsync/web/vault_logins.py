@@ -14,7 +14,7 @@ from omsync.core.vault import LoginSummary, Vault, VaultError, VaultLocked
 SEARCH_MAX = 100
 SEARCH_LIMIT = 20
 TOO_MANY_ATTEMPTS = "Too many failed attempts. Wait a minute, then try again."
-NO_VAULT = "No vault is connected. Connect one with the vault button on the Bank sync page."
+NO_VAULT = "No vault is connected. Connect one with the vault button on the Data sync page."
 MANUAL_SIGN_IN = "You sign in at the bank"
 LOGIN_PICKED = "Picked"
 LOGIN_NOT_PICKED = "Not picked"

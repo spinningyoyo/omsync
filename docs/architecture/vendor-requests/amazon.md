@@ -48,19 +48,19 @@ sequenceDiagram
 
 ## Design decisions
 
-- **Replace the old manual CSV exports with native JSON receipts.** The old method required manual
-  privacy data exports (`Order History.csv` and `Refund Details.csv`). The CSV export lacked card
-  identities for split shipments and forced combinatorial guessing (`infer_charges`). The new flow
-  records exact observed card charges and line items directly from the authenticated session.
+- **Read orders only from the payment history, not from the data export.** The data export did
+  not give the card charge of each shipment or the gift card amount. The payment history gives each
+  card charge. See [ADR 0003](../../adr/0003-read-amazon-orders-from-the-payment-history.md).
 - **Discrete, atomic files per order.** Receipts save to
   `receipts/AMAZON/<login>/<year>/<order_id>.json`.
-- **Skip orders already on disk.** The downloader checks if `<order_id>.json` exists before
-  requesting the printable invoice. Existing receipts require no invoice network traffic.
+- **Skip orders already on disk.** The downloader does not write an order again when it has no new
+  charge or refund. An order on disk keeps its items, so it needs no invoice request.
 - **Send requests from the page.** `fetch` in `execute_async_script` inherits the browser's TLS
   fingerprint, AWS WAF cookies, and session cookies. Direct requests from outside the browser
   fail with HTTP 403 Forbidden.
-- **Exact card charges eliminate split-charge guessing.** The `get-transactions` API explicitly
-  provides each separate card charge, card last 4 digits, and refund tied to the order ID.
+- **Exact card charges make split-charge searches rare.** The `get-transactions` API gives each
+  card charge, the last four digits of its card, and each refund with its order ID. omsync
+  searches for transactions that add up to the total only when no transaction has a stated charge.
 
 ## Terms
 

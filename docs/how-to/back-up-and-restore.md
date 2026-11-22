@@ -92,7 +92,7 @@ needs no pre-restore archive, because it holds no financial data to save.
    the new Mac.
 4. Run `uv run omsync doctor`.
 5. If you use Bitwarden, enter the API credentials at the secret prompts, then connect the vault on
-   the Bank sync page:
+   the Data sync page:
 
 ```sh
 uv run keyring set omsync bitwarden-client-id

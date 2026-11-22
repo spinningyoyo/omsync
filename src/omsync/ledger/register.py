@@ -327,28 +327,6 @@ def edit_memo(session: Session, txn_id: int, memo: str | None, *, idempotency_ke
     )
 
 
-def edit_tags(
-    session: Session, txn_id: int, tag_ids: Sequence[int], *, idempotency_key: str
-) -> Batch | None:
-    """Set the tags of a transaction. Returns None when it already has exactly these."""
-    replay = applied_batch_for_key(session, idempotency_key)
-    if replay is not None:
-        return replay
-    current = _transaction_values(session, txn_id)
-    changes = retag_changes(session, TransactionTag, txn_id, tag_ids)
-    if not changes:
-        return None
-    return _write(
-        session,
-        kind="register.tags",
-        txn_id=txn_id,
-        field="tags",
-        label=f"Update tags of {current['payee']}",
-        changes=changes,
-        idempotency_key=idempotency_key,
-    )
-
-
 def toggle_transaction_tag(
     session: Session, txn_id: int, tag_id: int, *, idempotency_key: str
 ) -> Batch | None:
@@ -842,7 +820,7 @@ def _links_for(session: Session, txn_ids: list[int]) -> dict[int, list[RowLink]]
             select(Transaction, Account)
             .join(Account, Account.id == Transaction.account_id)
             .where(Transaction.id.in_(other_ids))
-        ).tuples()
+        )
     }
     wanted = set(txn_ids)
     result: dict[int, list[RowLink]] = {}

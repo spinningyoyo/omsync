@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
-from omsync.core.batches import BatchError
+from omsync.core.batches import CHANGED_ELSEWHERE, BatchError
 from omsync.ledger.tags import (
     Tag,
     create_tag,
@@ -33,7 +33,6 @@ FRAGMENTS = "settings/tag_fragments.html"
 PATH = "/settings/tags"
 CHANGED = {"tags-changed": True, "close-dialogs": True}
 PICK_TARGET = "Pick a tag to move its transactions to."
-CHANGED_MESSAGE = "This changed elsewhere. Reload the page."
 
 
 @dataclass
@@ -198,7 +197,7 @@ def post_delete(
     except ValueError as exc:
         return _delete_refused(request, db, tag, key, str(exc), 422)
     except BatchError:
-        return _delete_refused(request, db, tag, key, CHANGED_MESSAGE, 409)
+        return _delete_refused(request, db, tag, key, CHANGED_ELSEWHERE, 409)
     return _done(request, batch)
 
 
@@ -213,5 +212,5 @@ def post_delete_all(
     except ValueError as exc:
         return _refused(request, str(exc))
     except BatchError:
-        return _refused(request, CHANGED_MESSAGE, 409)
+        return _refused(request, CHANGED_ELSEWHERE, 409)
     return _done(request, batch)

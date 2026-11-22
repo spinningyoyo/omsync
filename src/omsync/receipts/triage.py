@@ -167,7 +167,7 @@ def receipt_detail(
 
 def _category_names(session: Session, vendor_key: str) -> CategoryName:
     category_id_for = keyword_categories(session, vendor_key)
-    names = dict(session.execute(select(Category.id, Category.name)).tuples().all())
+    names = dict(session.execute(select(Category.id, Category.name)).all())
 
     def name_for(item: ReceiptItem) -> str | None:
         category_id = category_id_for(item)

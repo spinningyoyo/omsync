@@ -40,7 +40,7 @@ Open `http://127.0.0.1:8765` and select **Sign in**. Your computer asks for Touc
 password or Windows Hello. omsync has no password of its own. After the first sign-in:
 
 1. Go to **Settings**, then **Guides**, for five short guides to the app.
-2. To fetch statements from a bank, add a provider in **Settings**, then **Bank sync**.
+2. To fetch statements from a bank, open **Settings**, then **Data sync**, and select **Add bank**.
 3. For Amazon and Costco receipts, see [Get receipts](docs/how-to/get-receipts.md).
 4. Make a backup. See [Back up and restore](docs/how-to/back-up-and-restore.md).
 
@@ -63,7 +63,7 @@ bank logins for you.
    uv run keyring set omsync bitwarden-client-secret
    ```
 
-4. On the **Bank sync** page, select **No vault**, then connect with your email and master
+4. On the **Data sync** page, select **No vault**, then connect with your email and master
    password.
 
 Do not put credentials in a config file or in command arguments.

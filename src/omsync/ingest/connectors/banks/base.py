@@ -133,7 +133,7 @@ class BankConnector(BrowserSession):
     login_id: str = ""
     browser_mode: str = "chrome-attach"
     # How many digits the bank's one-time code has. A connector declares it when it is not 6, so
-    # the Bank sync page sends the code once that many digits are entered.
+    # the Data sync page sends the code once that many digits are entered.
     code_digits: int = 6
     statement_suffix: str = ".ofx"
     # How long the bank's code request must stay on the page before it counts, for a bank whose
@@ -225,7 +225,7 @@ class BankConnector(BrowserSession):
     def _vault_login(self, vault: Vault, vault_item_id: str | None) -> LoginCredentials:
         if vault_item_id is None:
             raise ConnectorError(
-                f"no vault login is set for {self.display_name}; choose one on the Bank sync page"
+                f"no vault login is set for {self.display_name}; choose one on the Data sync page"
             )
         login = vault.get_login(vault_item_id)
         if not login.username:

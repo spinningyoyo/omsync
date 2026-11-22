@@ -1,0 +1,38 @@
+{
+  "order_id": "A-1002",
+  "order_date": "2026-08-05",
+  "total_cents": 5775,
+  "tax_cents": 427,
+  "items": [
+    {
+      "title": "Fake Blender 900W",
+      "amount_cents": 4500,
+      "quantity": 1
+    },
+    {
+      "title": "Fake Cable 2m",
+      "amount_cents": 850,
+      "quantity": 1
+    },
+    {
+      "title": "Fake Soap Bar",
+      "amount_cents": 425,
+      "quantity": 1
+    }
+  ],
+  "charges": [
+    {
+      "amount_cents": 5775,
+      "card_last4": "1111",
+      "date": "2026-08-05"
+    }
+  ],
+  "refunds": [
+    {
+      "amount_cents": 850,
+      "card_last4": "1111",
+      "date": "2026-08-22",
+      "reason": "Damaged"
+    }
+  ]
+}

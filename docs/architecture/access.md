@@ -25,7 +25,7 @@ stateDiagram-v2
     SignedIn --> SignedOut: you sign out, 12 idle hours pass, or the server restarts
     state SignedIn {
         [*] --> NoVault
-        NoVault --> Locked: you connect Bitwarden on the Bank sync page
+        NoVault --> Locked: you connect Bitwarden on the Data sync page
         Locked --> NoVault: you disconnect it
         Locked --> Unlocked: you give the master password for a sync
         Unlocked --> Locked: the vault idle timeout ends

@@ -28,7 +28,7 @@ from omsync.receipts.service import (
     run_vendor,
     vendor_folder,
 )
-from omsync.receipts.sync import sync_one
+from omsync.sync.run import sync_one
 
 _PREVIEW_ONLY = (
     "Preview only: nothing was written. Run again with --apply to apply {count} charges."

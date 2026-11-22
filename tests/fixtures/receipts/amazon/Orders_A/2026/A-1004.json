@@ -1,0 +1,26 @@
+{
+  "order_id": "A-1004",
+  "order_date": "2026-08-09",
+  "total_cents": 6000,
+  "tax_cents": 545,
+  "items": [
+    {
+      "title": "Fake Headphones",
+      "amount_cents": 6000,
+      "quantity": 1
+    }
+  ],
+  "charges": [
+    {
+      "amount_cents": 1500,
+      "card_last4": null,
+      "date": "2026-08-09"
+    },
+    {
+      "amount_cents": 4500,
+      "card_last4": "1111",
+      "date": "2026-08-09"
+    }
+  ],
+  "refunds": []
+}

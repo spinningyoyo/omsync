@@ -22,7 +22,7 @@ from omsync.ledger.categories import DEFAULT_CATEGORY_ICON
 from omsync.ledger.categories_admin.rows import (
     _BY_HAND,
     _ICON_NAME,
-    COSTCO_FOOD_USE,
+    ITEM_CODE_USE,
     SAVED_FILTER_USE,
     CategoryRow,
     RuleDraft,
@@ -46,7 +46,7 @@ from omsync.ledger.payment_methods import (
     store_paid_by,
 )
 from omsync.ledger.preferences import get_pref
-from omsync.ledger.receipt_vendors import COSTCO_FOOD_CATEGORY
+from omsync.ledger.receipt_vendors import ITEM_CODE_PREFS
 
 
 def _write(
@@ -210,8 +210,8 @@ def _category_columns() -> dict[str, list[Any]]:
 
 def _category_usage(session: Session) -> dict[int, Counter[str]]:
     """What points at each category, by kind: rows with a foreign key to it, saved filters that name
-    it, and the Costco food setting. A category nothing points at is absent. Its rental mark is its
-    own, so it is not a use.
+    it, and the receipt item settings. A category nothing points at is absent. Its rental mark is
+    its own, so it is not a use.
 
     Each table names a category in one column, so counting each column counts each row once.
     """
@@ -230,9 +230,10 @@ def _category_usage(session: Session) -> dict[int, Counter[str]]:
     for saved in session.scalars(select(SavedFilter)):
         for category_id in _filter_category_ids(saved.conditions):
             tally(category_id, SAVED_FILTER_USE)
-    food = get_pref(session, COSTCO_FOOD_CATEGORY)
-    if isinstance(food, int) and not isinstance(food, bool):
-        tally(food, COSTCO_FOOD_USE)
+    for pref in ITEM_CODE_PREFS:
+        chosen = get_pref(session, pref)
+        if isinstance(chosen, int) and not isinstance(chosen, bool):
+            tally(chosen, ITEM_CODE_USE)
     return usage
 
 
@@ -395,13 +396,15 @@ def _rental_mark_changes(session: Session, source_id: int, target_id: int) -> li
     return [Change("category", str(target_id), target, {**target, "rental": True})]
 
 
-def _costco_food_changes(session: Session, source_id: int, target_id: int) -> list[Change]:
-    """The Costco food setting names the target when it named the source. It is a batch change,
-    so undo puts it back."""
-    before = snapshot(session, "preference", COSTCO_FOOD_CATEGORY)
-    if before is None or before.get("value") != source_id:
-        return []
-    return [Change("preference", COSTCO_FOOD_CATEGORY, before, {**before, "value": target_id})]
+def _item_code_changes(session: Session, source_id: int, target_id: int) -> list[Change]:
+    """Each receipt item setting that named the source names the target. They are batch changes,
+    so undo puts them back."""
+    changes = []
+    for pref in ITEM_CODE_PREFS:
+        before = snapshot(session, "preference", pref)
+        if before is not None and before.get("value") == source_id:
+            changes.append(Change("preference", pref, before, {**before, "value": target_id}))
+    return changes
 
 
 def _check_list_key(list_key: str) -> None:

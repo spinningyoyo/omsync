@@ -165,9 +165,6 @@ query receiptsWithCounts(
 }
 """.replace("\n", " ").strip()
 
-RECEIPTS_SUMMARY_QUERY = RECEIPTS_QUERY
-RECEIPT_DETAIL_QUERY = RECEIPTS_QUERY
-
 
 RECEIPTS_SCRIPT = """
             const payload = arguments[0];

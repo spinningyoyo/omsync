@@ -33,7 +33,7 @@ sequenceDiagram
     Browser-->>You: The result, or the error with your input kept
 ```
 
-### Add a provider
+### Add a bank
 
 ```mermaid
 flowchart LR
@@ -44,11 +44,23 @@ flowchart LR
     Map --> Import[Preview and import]
 ```
 
+### Add a store
+
+```mermaid
+flowchart LR
+    Store[Amazon or Costco] --> Name[Name of the login]
+    Name --> Login[Vault login, when the store uses one]
+    Login --> Card[Store card on the Receipts tab]
+```
+
 ## Design decisions
 
 - **Each setting has one location.** Machine settings are in `omsync.toml`. Tracked data is in the
   database. The look on each device is in browser storage. For secrets, see [access](access.md).
-- **The vault is set where it is used, on the Bank sync page.** It has no Settings page of its own.
+- **The vault is set where it is used, on the Data sync page.** It has no Settings page of its
+  own.
+- **Data sync has one tab for banks and one for stores.** Each provider is a card with Sync, Edit,
+  and Delete. Sync all is in the page header.
 - **Privacy mode blurs amounts on the screen.** It is not access control. Exports are not blurred.
 - **Pages show only the last four digits of an account number.** The full number does not go to the
   browser. Account mapping uses short-lived tokens.

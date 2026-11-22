@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
-from omsync.core.batches import BatchError, StalePreview
+from omsync.core.batches import CHANGED_ELSEWHERE, BatchError, StalePreview
 from omsync.ledger.filters import (
     FIELD_OPS,
     PICKED_FIELDS,
@@ -235,9 +235,7 @@ def saved_update(
     except FilterError as exc:
         return fragment(request, "frag_toast", status_code=422, message=str(exc))
     except StalePreview:
-        return fragment(
-            request, "frag_toast", status_code=409, message="This changed elsewhere, reload."
-        )
+        return fragment(request, "frag_toast", status_code=409, message=CHANGED_ELSEWHERE)
     except BatchError as exc:
         return fragment(request, "frag_toast", status_code=409, message=str(exc))
     return _saved_reply(request, db, batch, spec, account, filter_id)

@@ -4,6 +4,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from omsync.core.batches import PREVIEW_AGAIN
 from omsync.ledger.categorize import (
     Move,
 )
@@ -20,13 +21,13 @@ NOTHING_CHANGED = "Nothing has changed."
 IN_USE = "in use: hide it instead"
 
 
-STALE = "This changed elsewhere. Preview again."
+STALE = PREVIEW_AGAIN
 
 
 SAVED_FILTER_USE = "saved_filter"
 
 
-COSTCO_FOOD_USE = "costco_food"
+ITEM_CODE_USE = "item_code"
 
 
 # A kind of use is a table name, or one of the kinds above. Each has a singular and a plural.
@@ -38,7 +39,7 @@ _USE_NAMES = {
     "budget_line": ("budget line", "budget lines"),
     "recurring_series": ("recurring series", "recurring series"),
     SAVED_FILTER_USE: ("saved filter", "saved filters"),
-    COSTCO_FOOD_USE: ("Costco food setting", "Costco food settings"),
+    ITEM_CODE_USE: ("receipt item setting", "receipt item settings"),
 }
 
 
@@ -69,7 +70,7 @@ class CategoryRow:
 @dataclass(frozen=True)
 class CategoryUse:
     """How many rows of one kind point at a category. The kind is a table name, or one of the
-    kinds for saved filters and the Costco food setting."""
+    kinds for saved filters and the receipt item settings."""
 
     kind: str
     count: int

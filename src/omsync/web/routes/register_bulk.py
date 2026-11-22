@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from omsync.core.batches import BatchError, StalePreview, applied_batch_for_key
+from omsync.core.batches import CHANGED_ELSEWHERE, BatchError, StalePreview, seen_is_current
 from omsync.ledger.bulk import BulkPlan, apply_bulk, ids_matching, plan_bulk
 from omsync.ledger.filters import FilterError, FilterSpec
 from omsync.ledger.register import categories
@@ -24,7 +24,6 @@ from omsync.web.register_state import (
 
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
-STALE = "This changed elsewhere, reload."
 VALUE_ACTIONS = ("set_category", "set_memo", "add_tag", "remove_tag")
 ACTIONS = (*VALUE_ACTIONS, "clear_category")
 
@@ -97,14 +96,12 @@ def bulk_apply(
     except (ValueError, LookupError, FilterError) as exc:
         return fragment(request, "frag_bulk_error", status_code=422, message=str(exc))
     key = idempotency_key or uuid4().hex
-    # A key that already applied is a retry of a change that went through, so it is answered with
-    # that batch, even though the data has moved on since the first apply.
-    if applied_batch_for_key(db, key) is None and plan.preview.base_revision != revision:
-        return fragment(request, "frag_bulk_error", status_code=409, message=STALE)
+    if not seen_is_current(db, plan.preview, revision, key):
+        return fragment(request, "frag_bulk_error", status_code=409, message=CHANGED_ELSEWHERE)
     try:
         batch = apply_bulk(db, plan, idempotency_key=key)
     except StalePreview:
-        return fragment(request, "frag_bulk_error", status_code=409, message=STALE)
+        return fragment(request, "frag_bulk_error", status_code=409, message=CHANGED_ELSEWHERE)
     except BatchError as exc:
         return fragment(request, "frag_bulk_error", status_code=422, message=str(exc))
     state = build_state(

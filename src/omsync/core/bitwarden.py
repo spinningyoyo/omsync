@@ -27,7 +27,7 @@ CLIENT_ID_ENTRY = "bitwarden-client-id"
 CLIENT_SECRET_ENTRY = "bitwarden-client-secret"
 MISSING_API_KEY = "Bitwarden API key missing from keychain; run omsync doctor"
 MISSING_EMAIL = (
-    "No Bitwarden email is set. Connect the vault on the Bank sync page, or run: "
+    "No Bitwarden email is set. Connect the vault on the Data sync page, or run: "
     "omsync config set email <your-email>"
 )
 LOGIN_ITEM_TYPE = 1

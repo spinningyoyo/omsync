@@ -14,7 +14,6 @@ from omsync.ingest.institutions import institution_accounts
 from omsync.ingest.pipeline import ImportReport, import_institution
 from omsync.ingest.providers import (
     ProviderSetupError,
-    add_provider,
     connector_choices,
     create_wizard_accounts,
     institution_exists,
@@ -24,6 +23,7 @@ from omsync.ingest.providers import (
     provider_setup,
 )
 from omsync.ledger.accounts import NewAccount, last4_of
+from omsync.sync.providers import add_bank_provider
 from omsync.web.deps import get_db
 from omsync.web.fragments import render_block
 from omsync.web.routes.shell import shell_context
@@ -200,7 +200,7 @@ def save_login(
     first when it is new."""
     state = _state(institution, name, connector, provider)
     try:
-        add_provider(
+        add_bank_provider(
             db,
             institution=institution,
             name=name,

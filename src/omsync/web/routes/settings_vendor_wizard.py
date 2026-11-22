@@ -14,8 +14,9 @@ from sqlalchemy.orm import Session
 
 from omsync.core.vault import LoginSummary, Vault, is_locked
 from omsync.ingest.connectors.config import ProviderError
+from omsync.ledger.models import ProviderKind
 from omsync.receipts.connectors.registry import registered_connectors
-from omsync.receipts.profiles import VendorProfile, create_vendor_profile, new_profile_key
+from omsync.sync.providers import create_provider, new_provider_key
 from omsync.web.deps import get_db
 from omsync.web.fragments import render_block
 from omsync.web.routes.shell import shell_context
@@ -202,14 +203,16 @@ def _create(
 ) -> Response:
     """Add the provider, with a key made from its name, and go to the Receipts tab. A refusal
     shows on the step that asked."""
-    profile = VendorProfile(
-        key=new_profile_key(db, state.connector, state.name),
-        vendor_key=state.connector,
-        name=state.name,
-        vault_item_id=vault_item_id,
-    )
     try:
-        create_vendor_profile(db, profile, idempotency_key=idempotency_key)
+        create_provider(
+            db,
+            kind=ProviderKind.receipt,
+            provider_key=new_provider_key(db, state.name, state.connector),
+            provider_name=state.name,
+            connector_key=state.connector,
+            vault_item_id=vault_item_id,
+            idempotency_key=idempotency_key,
+        )
     except ProviderError as exc:
         return _refused(request, state, idempotency_key, str(exc))
     return Response(status_code=204, headers={"HX-Redirect": "/settings/sync?tab=receipts"})

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from omsync.core.batches import BatchError, StalePreview
+from omsync.core.batches import CHANGED_ELSEWHERE, BatchError, StalePreview
 from omsync.ingest.importer import resolve_review
 from omsync.ledger.accounts import AccountError
 from omsync.ledger.models import Transaction
@@ -19,7 +19,6 @@ from omsync.web.routes.shell import shell_context
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
 PAGE = "pages/transactions.html"
-STALE = "This changed elsewhere, reload."
 
 
 @router.get("/transactions/review", response_class=HTMLResponse)
@@ -58,7 +57,7 @@ def review_resolve(
             idempotency_key=idempotency_key or uuid4().hex,
         )
     except StalePreview:
-        return _list(request, db, status_code=409, message=STALE)
+        return _list(request, db, status_code=409, message=CHANGED_ELSEWHERE)
     except BatchError as exc:
         return _list(request, db, status_code=409, message=str(exc))
     except AccountError as exc:

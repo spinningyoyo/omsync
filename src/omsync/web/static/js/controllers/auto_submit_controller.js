@@ -1,5 +1,5 @@
 // Sends a one-time code as soon as the field holds a whole code, so the person need not press Send
-// (the MFA question on the Bank sync page, templates/settings/sync_parts.html).
+// (the MFA question on the Data sync page, templates/settings/sync_parts.html).
 //
 // The bank's connector says how many digits its code has, and the form carries that as the length.
 // A code is digits only; spaces and dashes pasted with it are dropped. Any other entry waits for

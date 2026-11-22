@@ -146,6 +146,7 @@ source_modules = [
     "omsync.receipts",
     "omsync.reconcile",
     "omsync.reports",
+    "omsync.sync",
 ]
 forbidden_modules = ["omsync.web", "omsync.cli"]
 
@@ -161,6 +162,7 @@ source_modules = [
     "omsync.receipts",
     "omsync.reconcile",
     "omsync.reports",
+    "omsync.sync",
 ]
 forbidden_modules = ["omsync.models"]
 
@@ -177,6 +179,7 @@ forbidden_modules = [
     "omsync.receipts",
     "omsync.reconcile",
     "omsync.reports",
+    "omsync.sync",
 ]
 
 [[tool.importlinter.contracts]]
@@ -186,6 +189,7 @@ layers = [
     "omsync.demo",
     "omsync.reports",
     "omsync.plan",
+    "omsync.sync",
     "omsync.receipts",
     "omsync.ingest",
     "omsync.reconcile",

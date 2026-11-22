@@ -16,7 +16,7 @@ rules_app = typer.Typer(
     help="Rules: each sets a category when its conditions hold. The first that holds, in order, "
     "wins. `rules list` shows them."
 )
-providers_app = typer.Typer(help="Bank providers: list them. Edit them on the Bank sync page.")
+providers_app = typer.Typer(help="Bank providers: list them. Edit them on the Data sync page.")
 receipts_app = typer.Typer(
     help="Receipts: match a vendor's receipts to your transactions, list the vendors, or download."
 )

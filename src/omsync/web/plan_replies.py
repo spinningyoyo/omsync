@@ -11,12 +11,11 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 
-from omsync.core.batches import BatchError, StalePreview
+from omsync.core.batches import CHANGED_ELSEWHERE, BatchError, StalePreview
 from omsync.web.amounts import parse_cents
 from omsync.web.fragments import render_block
 
 FRAGMENTS = "plan/fragments.html"
-STALE_MESSAGE = "This changed elsewhere, reload."
 CONFLICT_MESSAGE = "This change was already made or undone. Reload the page and try again."
 CLOSE_DIALOGS = {"close-dialogs": True}
 
@@ -29,7 +28,7 @@ def money_field(text: str, what: str) -> int:
 def refused(exc: Exception) -> tuple[int, str]:
     """The status and message for a change that was refused."""
     if isinstance(exc, StalePreview):
-        return 409, STALE_MESSAGE
+        return 409, CHANGED_ELSEWHERE
     if isinstance(exc, BatchError):
         return 409, CONFLICT_MESSAGE
     text = str(exc) or "That change could not be saved."

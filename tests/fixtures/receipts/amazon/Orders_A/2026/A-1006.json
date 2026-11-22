@@ -1,0 +1,26 @@
+{
+  "order_id": "A-1006",
+  "order_date": "2026-08-03",
+  "total_cents": 300,
+  "tax_cents": 27,
+  "items": [
+    {
+      "title": "Fake Sample",
+      "amount_cents": 0,
+      "quantity": 1
+    },
+    {
+      "title": "Fake Pen",
+      "amount_cents": 300,
+      "quantity": 1
+    }
+  ],
+  "charges": [
+    {
+      "amount_cents": 300,
+      "card_last4": "1111",
+      "date": "2026-08-03"
+    }
+  ],
+  "refunds": []
+}

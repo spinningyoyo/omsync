@@ -10,20 +10,32 @@ numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Support for Windows.
+- Store sync for Amazon and Costco, on the Data sync page.
+- A Receipts page.
+- Tags.
 - Bank sync without a password manager.
-- Connect and disconnect controls for Bitwarden on the Bank sync page.
-- `omsync config show` and `omsync config set` commands to view and update settings.
+- `omsync config show` and `omsync config set`.
 
 ### Changed
 
-- Sign-in uses the computer's owner check (Touch ID, Windows Hello, or login password) instead of a Bitwarden account.
-- The Bitwarden vault is optional.
-- Costco receipt download launches Chrome automatically and uses the updated receipt queries.
+- Sign-in uses the computer's owner check (Touch ID, Windows Hello, or login password) instead of
+  a Bitwarden account.
+- Bitwarden is optional. Connect or disconnect it on the Data sync page.
+- Amazon receipts come from your Amazon payment history instead of the data export.
+- An Amazon charge with no card counts as a gift card or points.
+- Bank sync is now Data sync, with tabs for banks and stores.
+- `omsync sync --all` also syncs stores.
+- Costco sync opens Chrome by itself.
+- Rental properties are set on accounts and categories.
 
 ### Fixed
 
-- Support for Windows.
-- Windows sign-in falls back to the computer account password when Windows Hello is unavailable.
+- Sync all blocks other syncs until it finishes.
+
+### Removed
+
+- Reading the Amazon data export (`Order History.csv`, `Refund Details.csv`).
 
 ## [0.1.0] - 2026-11-14
 
@@ -43,7 +55,5 @@ numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Reports, account pages, backup and restore.
 - Sign-in scenes from the `omsync-nursery` package.
 
-[Unreleased]: https://github.com/spinningyoyo/omsync/compare/v0.2.1...HEAD
-[0.2.1]: https://github.com/spinningyoyo/omsync/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/spinningyoyo/omsync/compare/v0.1.0...v0.2.0
+[Unreleased]: https://github.com/spinningyoyo/omsync/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/spinningyoyo/omsync/releases/tag/v0.1.0

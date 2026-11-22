@@ -1,3 +1,0 @@
-Order ID,Order Date,Order Status,Ship Date,Product Name,ASIN,Unit Price,Unit Price Tax,Shipping Charge,Total Amount,Shipment Item Subtotal,Shipment Item Subtotal Tax,Payment Method Type
-B-2001,2026-09-01T09:00:00Z,Closed,2026-09-02T09:00:00Z,Fake Kettle,FAKEASIN11,27.27,2.73,0.00,30.00,27.27,2.73,Visa - 2222
-B-2002,2026-09-03T09:00:00Z,Closed,Not Available,Fake Vase,FAKEASIN12,10.91,1.09,0.00,12.00,10.91,1.09,Visa - 1111

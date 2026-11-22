@@ -1,8 +1,6 @@
-"""Sync: fetch a provider's statement files with its connector, then import the new ones.
+"""Bank sync: fetch a bank provider's statement files with its connector, then import the new ones.
 
-A sync runs one at a time on this machine. It holds an exclusive lock on <data_dir>/sync.lock for
-its whole length, the import included, and a second sync raises SyncBusy instead of waiting.
-sync_all holds the lock across all its providers.
+omsync.sync.run calls bank_sync while it holds the sync lock, for one provider or for all of them.
 
 Each sync writes one SyncRun (ingest/runs.py): running when it starts, then succeeded,
 failed, needs_user_action, or cancelled. A connector's exceptions become that status and never
@@ -12,7 +10,6 @@ provider's accounts with the keywords. A sync cancelled while it fetches imports
 
 import logging
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -22,7 +19,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from omsync.core.batches import BatchError
-from omsync.core.locks import SYNC_LOCK_NAME
 from omsync.core.settings import Settings
 from omsync.core.vault import Vault, VaultError
 from omsync.ingest.connectors.base import (
@@ -33,12 +29,11 @@ from omsync.ingest.connectors.base import (
     PartialFetch,
     Prompt,
 )
-from omsync.ingest.connectors.config import enabled_provider_keys
 from omsync.ingest.connectors.registry import get_connector
 from omsync.ingest.discovery import scan_statement_files, suggested_account
 from omsync.ingest.dropfolder import PendingFile, location_of
 from omsync.ingest.pipeline import ImportReport, import_files
-from omsync.ingest.runs import failure_of, finish_run, start_run, sync_lock
+from omsync.ingest.runs import failure_of, finish_run, start_run
 from omsync.ingest.timing import timed
 from omsync.ledger.accounts import AccountError, add_alias
 from omsync.ledger.categorize import InvalidKeyword, apply_categorize, plan_categorize
@@ -90,21 +85,6 @@ class SyncResult:
 
 
 @dataclass(frozen=True)
-class ProviderSync:
-    """What sync_all did for one provider. A provider that could not run at all, such as one with
-    no accounts, writes no SyncRun, so its error is set instead of result."""
-
-    provider_key: str
-    result: SyncResult | None
-    error: str | None
-
-
-ProgressCallback = Callable[[str, ProviderSync | None], None]
-"""Called as sync_all reaches each provider: (key, None) when its sync starts, then (key, outcome)
-when it ends, with the outcome sync_all records for it."""
-
-
-@dataclass(frozen=True)
 class _Plan:
     """What a sync needs from the database, read before its SyncRun is written."""
 
@@ -116,106 +96,23 @@ class _Plan:
     vault_item_id: str | None
 
 
-def sync_provider(
+def bank_sync(
     session: Session,
     settings: Settings,
     *,
     provider_key: str,
     vault: Vault | None,
     prompt: Prompt,
-    period: DateRange | None = None,
+    period: DateRange | None,
 ) -> SyncResult:
-    """Fetch a provider's statement files for its accounts, then import the newly fetched ones.
+    """Fetch a bank provider's statement files for its accounts, then import the newly fetched
+    ones. The caller holds the sync lock.
 
     The period defaults to 45 days before the latest transaction in those accounts, or to January 1
-    of this year when there is none, through today. Raises SyncBusy if another sync holds the lock,
-    and ConnectorError if the provider is unknown, turned off, or has no open accounts. Connector
-    failures do not raise: they set the result's status.
+    of this year when there is none, through today. Raises ConnectorError if the provider is
+    unknown, turned off, or has no open accounts. Connector failures do not raise: they set the
+    result's status.
     """
-    with sync_lock(settings.data_dir / SYNC_LOCK_NAME):
-        return _sync(
-            session,
-            settings,
-            provider_key=provider_key,
-            vault=vault,
-            prompt=prompt,
-            period=period,
-        )
-
-
-def sync_all(
-    session: Session,
-    settings: Settings,
-    *,
-    vault: Vault | None,
-    prompt: Prompt,
-    period: DateRange | None = None,
-    on_progress: ProgressCallback | None = None,
-) -> list[ProviderSync]:
-    """Sync every enabled provider, one after another, in institution key then provider key order,
-    each for the given period (see sync_provider).
-
-    A provider that fails, or cannot run, does not stop the others. Cancelling through the prompt
-    does: no provider starts after it, so only the providers that started have an entry in the
-    list. Raises SyncBusy, before anything is fetched, if another sync holds the lock.
-    """
-    outcomes: list[ProviderSync] = []
-    with sync_lock(settings.data_dir / SYNC_LOCK_NAME):
-        for key in enabled_provider_keys(session):
-            if prompt.cancelled():
-                break
-            if on_progress is not None:
-                on_progress(key, None)
-            outcome = _sync_one(
-                session,
-                settings,
-                key,
-                vault=vault,
-                prompt=prompt,
-                period=period,
-            )
-            outcomes.append(outcome)
-            if on_progress is not None:
-                on_progress(key, outcome)
-    return outcomes
-
-
-def _sync_one(
-    session: Session,
-    settings: Settings,
-    key: str,
-    *,
-    vault: Vault | None,
-    prompt: Prompt,
-    period: DateRange | None,
-) -> ProviderSync:
-    try:
-        result = _sync(
-            session,
-            settings,
-            provider_key=key,
-            vault=vault,
-            prompt=prompt,
-            period=period,
-        )
-    except ConnectorError as exc:
-        return ProviderSync(key, None, str(exc))
-    except Exception as exc:  # one provider's crash must not stop the rest
-        session.rollback()
-        logger.exception("Sync of provider %s failed unexpectedly", key)
-        return ProviderSync(key, None, f"unexpected error ({type(exc).__name__})")
-    return ProviderSync(key, result, None)
-
-
-def _sync(
-    session: Session,
-    settings: Settings,
-    *,
-    provider_key: str,
-    vault: Vault | None,
-    prompt: Prompt,
-    period: DateRange | None,
-) -> SyncResult:
     plan = _prepare(session, provider_key)
     window = period or _default_period(
         session, [account.account_id for account in plan.accounts], date.today()

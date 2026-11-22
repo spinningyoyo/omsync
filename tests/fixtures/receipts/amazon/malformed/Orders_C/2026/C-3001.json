@@ -1,0 +1,21 @@
+{
+  "order_id": "C-3001",
+  "order_date": "2026-09-05",
+  "total_cents": 500,
+  "tax_cents": 45,
+  "items": [
+    {
+      "title": "Fake Pen Case",
+      "amount_cents": 500,
+      "quantity": 1
+    }
+  ],
+  "charges": [
+    {
+      "amount_cents": 500,
+      "card_last4": "1111",
+      "date": "2026-09-05"
+    }
+  ],
+  "refunds": []
+}

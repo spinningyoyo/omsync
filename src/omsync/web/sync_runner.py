@@ -22,9 +22,9 @@ from omsync.ingest.connectors.base import ConnectorError, SyncCancelled
 from omsync.ingest.discovery import mask_account_numbers
 from omsync.ingest.pipeline import ImportReport
 from omsync.ingest.runs import SyncBusy
-from omsync.ingest.sync import ProviderSync, SyncResult, sync_all
+from omsync.ingest.sync import SyncResult
 from omsync.ledger.models import ProviderKind, SyncStatus
-from omsync.receipts.sync import ALL, sync_one
+from omsync.sync.run import ALL, ProviderSync, sync_all, sync_one
 
 logger = logging.getLogger(__name__)
 
@@ -271,7 +271,7 @@ class SyncRunner:
         try:
             session = self._session_factory()
             prompt = WebPrompt(self, job, self._prompt_timeout)
-            if job.scope == ALL and job.bank_keys:
+            if job.scope == ALL:
                 sync_all(
                     session,
                     self._settings,
@@ -279,14 +279,9 @@ class SyncRunner:
                     prompt=prompt,
                     on_progress=lambda key, outcome: self._progress(job, key, outcome),
                 )
-            # sync_all already ran the banks of an ALL job; one provider's job is in either list.
-            single_keys = (
-                job.receipt_keys if job.scope == ALL else [*job.bank_keys, *job.receipt_keys]
-            )
-            for key in single_keys:
-                if job.cancel.is_set():
-                    break
-                self._sync_single(job, session, prompt, key)
+            else:
+                for key in [*job.bank_keys, *job.receipt_keys]:
+                    self._sync_single(job, session, prompt, key)
             if job.cancel.is_set():
                 self._cancel_unstarted(job)
         except SyncBusy:
@@ -379,11 +374,13 @@ class SyncRunner:
 
 
 def _update(job: _Job, key: str, **changes: object) -> None:
-    job.providers[key] = replace(job.providers[key], **changes)
+    # A provider added after the job started has no line yet.
+    current = job.providers.get(key) or ProviderProgress(key, ProviderPhase.queued)
+    job.providers[key] = replace(current, **changes)
 
 
 def _outcome_fields(outcome: ProviderSync) -> dict[str, object]:
-    """The provider's line once its sync has ended, from the outcome sync_all or sync_provider
+    """The provider's line once its sync has ended, from the outcome sync_all or sync_one
     recorded for it."""
     if outcome.result is None:
         return {

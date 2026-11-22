@@ -4,6 +4,7 @@ The database is migrated and seeded with synthetic transactions. The Amazon fixt
 into <data_dir>/receipts/AMAZON/default, the folder of one Amazon provider. The data directory
 comes from the environment, so these tests never touch ~/omsync-data."""
 
+import json
 import shutil
 import sqlite3
 from collections.abc import Iterator
@@ -19,9 +20,8 @@ from typer.testing import CliRunner
 from omsync import cli
 from omsync.cli import receipts as cli_receipts
 from omsync.core.db import database_url, make_engine
-from omsync.core.locks import LockBusy, exclusive_lock
+from omsync.core.locks import SYNC_LOCK_NAME, LockBusy, exclusive_lock
 from omsync.core.settings import load_settings
-from omsync.ingest.sync import SYNC_LOCK_NAME
 from omsync.ledger.categories import Category, Keyword
 from omsync.ledger.sources import Account, AccountType, Institution
 from omsync.ledger.transactions import CategoryOrigin, Transaction
@@ -56,52 +56,50 @@ SEEDED_TRANSACTIONS = [
     (date(2026, 8, 27), 700, "AMZN Refund"),
 ]
 
-ORDER_HEADER = (
-    "Order ID,Order Date,Order Status,Ship Date,Product Name,ASIN,Unit Price,Unit Price Tax,"
-    "Shipping Charge,Total Amount,Shipment Item Subtotal,Shipment Item Subtotal Tax,"
-    "Payment Method Type,Original Quantity"
-)
-REFUND_HEADER = "Order ID,Refund Amount,Refund Date,Reversal Reason,Payment Status"
+
+def item(product: str, cents: int, quantity: int = 1) -> dict:
+    """One item line: `quantity` units that cost `cents` together."""
+    return {"title": product, "amount_cents": cents, "quantity": quantity}
 
 
-def money_text(cents: int) -> str:
-    return f"{cents / 100:.2f}"
-
-
-def order_line(
+def order(
     order_id: str,
     ordered: str,
-    shipped: str,
-    product: str,
-    cents: int,
-    payment: str = "Visa - 1111",
-    quantity: int = 1,
-) -> str:
-    """One item row of an order: `quantity` units that cost `cents` together. Dates are ISO days,
-    such as 2026-08-05."""
-    total = money_text(cents)
-    return (
-        f"{order_id},{ordered}T10:00:00Z,Closed,{shipped},{product},FAKEASIN,"
-        f"{total},0.00,0.00,{total},{total},0.00,{payment},{quantity}"
-    )
+    items: list[dict],
+    charges: list[tuple[int, str]],
+    refunds: list[tuple[int, str]] = (),
+    card: str = "1111",
+) -> dict:
+    """One order as the Amazon connector writes it. charges and refunds are (cents, ISO day), all
+    on `card`. The total is what the charges add up to."""
+    return {
+        "order_id": order_id,
+        "order_date": ordered,
+        "total_cents": sum(cents for cents, _ in charges),
+        "tax_cents": 0,
+        "items": items,
+        "charges": [{"amount_cents": c, "card_last4": card, "date": d} for c, d in charges],
+        "refunds": [
+            {"amount_cents": c, "card_last4": card, "date": d, "reason": "Customer Return"}
+            for c, d in refunds
+        ],
+    }
 
 
-def refund_line(order_id: str, cents: int, refunded: str, reason: str = "Customer return") -> str:
-    return f"{order_id},{money_text(cents)},{refunded}T12:00:00Z,{reason},Completed"
-
-
-def write_export(data_dir: Path, login: str, orders: list[str], refunds: list[str] = ()) -> None:
-    """Write one login's order history, and its refunds when there are any."""
-    folder = data_dir / "receipts" / "AMAZON" / "default" / login
-    (folder / "Your Amazon Orders").mkdir(parents=True, exist_ok=True)
-    (folder / "Your Amazon Orders" / "Order History.csv").write_text(
-        "\n".join([ORDER_HEADER, *orders]) + "\n", encoding="utf-8"
-    )
-    if refunds:
-        (folder / "Your Returns & Refunds").mkdir(exist_ok=True)
-        (folder / "Your Returns & Refunds" / "Refund Details.csv").write_text(
-            "\n".join([REFUND_HEADER, *refunds]) + "\n", encoding="utf-8"
+def write_orders(data_dir: Path, login: str, orders: list[dict]) -> None:
+    """Write one login's orders, one JSON file each, as a sync of an Amazon provider does."""
+    for data in orders:
+        path = (
+            data_dir
+            / "receipts"
+            / "AMAZON"
+            / "default"
+            / login
+            / "2026"
+            / f"{data['order_id']}.json"
         )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data), encoding="utf-8")
 
 
 def add_keyword(data_dir: Path, pattern: str, category_name: str) -> None:
@@ -171,7 +169,7 @@ def seed(data_dir: Path, transactions: list[tuple[date, int, str]] = SEEDED_TRAN
 
 @pytest.fixture
 def ready(data_dir: Path) -> Iterator[Path]:
-    """A migrated database with seeded transactions, and the Amazon exports in place."""
+    """A migrated database with seeded transactions, and the Amazon orders in place."""
     assert run("db", "upgrade").exit_code == 0
     seed(data_dir)
     shutil.copytree(FIXTURES, data_dir / "receipts" / "AMAZON" / "default")
@@ -228,7 +226,7 @@ def fetch(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> FakeFetch:
 
 @pytest.fixture
 def database(data_dir: Path) -> Path:
-    """A migrated, empty database. Each test seeds its own transactions and exports."""
+    """A migrated, empty database. Each test seeds its own transactions and orders."""
     assert run("db", "upgrade").exit_code == 0
     return data_dir
 
@@ -244,17 +242,21 @@ def category_of_amount(data_dir: Path, amount_cents: int) -> str | None:
 
 
 def test_a_partly_applied_split_order_finishes_on_a_later_run(database: Path) -> None:
-    # A $29 order charged as $20 and $9. The $9 item has no keyword on the first run.
+    # A $29 order that the bank shows as $20 and $9. The $9 item has no keyword on the first run.
     seed(
         database,
         [(date(2026, 8, 6), -2000, "AMZN Mktp US"), (date(2026, 8, 8), -900, "AMZN Mktp US")],
     )
-    write_export(
+    write_orders(
         database,
         "Orders_F",
         [
-            order_line("F-1", "2026-08-05", "2026-08-06", "Fake Notebook A5", 2000),
-            order_line("F-1", "2026-08-05", "2026-08-08", "Fake Lamp", 900),
+            order(
+                "F-1",
+                "2026-08-05",
+                [item("Fake Notebook A5", 2000), item("Fake Lamp", 900)],
+                [(2900, "2026-08-06")],
+            )
         ],
     )
 
@@ -284,30 +286,35 @@ def test_a_partly_applied_split_order_finishes_on_a_later_run(database: Path) ->
 REFUND_CASES = {
     # Two soaps on one line, and one returned: the refund is one unit of the line.
     "one of two units": (
-        [
-            order_line("U-1", "2026-08-05", "2026-08-06", "Fake Soap", 2000, quantity=2),
-            order_line("U-1", "2026-08-05", "2026-08-06", "Fake Cable", 500),
-        ],
-        [refund_line("U-1", 1000, "2026-08-20")],
+        order(
+            "U-1",
+            "2026-08-05",
+            [item("Fake Soap", 2000, quantity=2), item("Fake Cable", 500)],
+            [(2500, "2026-08-06")],
+            [(1000, "2026-08-20")],
+        ),
         [(date(2026, 8, 7), -2500, "AMZN Mktp US"), (date(2026, 8, 21), 1000, "AMZN Refund")],
     ),
     # A price adjustment on an order of one product is not a whole number of its units.
     "partial refund of the one product": (
-        [order_line("P-1", "2026-08-05", "2026-08-06", "Fake Vase", 3000)],
-        [refund_line("P-1", 700, "2026-08-20", reason="Account adjustment")],
+        order(
+            "P-1",
+            "2026-08-05",
+            [item("Fake Vase", 3000)],
+            [(3000, "2026-08-06")],
+            [(700, "2026-08-20")],
+        ),
         [(date(2026, 8, 7), -3000, "AMZN Mktp US"), (date(2026, 8, 21), 700, "AMZN Refund")],
     ),
 }
 
 
-@pytest.mark.parametrize(
-    ("orders", "refunds", "transactions"), REFUND_CASES.values(), ids=REFUND_CASES.keys()
-)
+@pytest.mark.parametrize(("data", "transactions"), REFUND_CASES.values(), ids=REFUND_CASES.keys())
 def test_a_refund_that_is_not_whole_items_still_names_what_it_refunds(
-    database: Path, orders: list[str], refunds: list[str], transactions
+    database: Path, data: dict, transactions
 ) -> None:
     seed(database, transactions)
-    write_export(database, "Orders_R", orders, refunds)
+    write_orders(database, "Orders_R", [data])
 
     applied = run("receipts", "run", "amazon", "--apply")
 
@@ -317,20 +324,28 @@ def test_a_refund_that_is_not_whole_items_still_names_what_it_refunds(
 
 
 ORDER_CASES = {
-    # A free item shipped on its own. That shipment charged nothing, so the order is one charge.
-    "free item shipped apart": (
+    # A free item in the order. Its shipment charged nothing, so the order is one charge.
+    "free item": (
         [
-            order_line("S-1", "2026-08-05", "2026-08-06", "Fake Soap", 2000),
-            order_line("S-1", "2026-08-05", "2026-08-12", "Fake Soap Sample", 0),
+            order(
+                "S-1",
+                "2026-08-05",
+                [item("Fake Soap", 2000), item("Fake Soap Sample", 0)],
+                [(2000, "2026-08-06")],
+            )
         ],
         [(date(2026, 8, 7), -2000, "AMZN Mktp US")],
         "Applied 1 charges as batch 1.",
     ),
-    # One shipment, but Amazon charged each item on its own.
-    "one shipment charged per item": (
+    # Amazon states one charge, but the bank shows each item charged on its own.
+    "one charge the bank shows per item": (
         [
-            order_line("C-1", "2026-08-05", "2026-08-06", "Fake Soap", 2000),
-            order_line("C-1", "2026-08-05", "2026-08-06", "Fake Cable", 500),
+            order(
+                "C-1",
+                "2026-08-05",
+                [item("Fake Soap", 2000), item("Fake Cable", 500)],
+                [(2500, "2026-08-06")],
+            )
         ],
         [(date(2026, 8, 7), -2000, "AMZN Mktp US"), (date(2026, 8, 7), -500, "AMZN Mktp US")],
         "Applied 2 charges as batch 1.",
@@ -338,20 +353,25 @@ ORDER_CASES = {
     # Two identical orders and two identical charges: either pairing gives the same categories.
     "twin orders": (
         [
-            order_line("T-1", "2026-08-05", "2026-08-06", "Fake Soap", 1200),
-            order_line("T-2", "2026-08-05", "2026-08-06", "Fake Soap", 1200),
+            order("T-1", "2026-08-05", [item("Fake Soap", 1200)], [(1200, "2026-08-06")]),
+            order("T-2", "2026-08-05", [item("Fake Soap", 1200)], [(1200, "2026-08-06")]),
         ],
         [(date(2026, 8, 7), -1200, "AMZN Mktp US"), (date(2026, 8, 8), -1200, "AMZN Mktp US")],
         "Applied 2 charges as batch 1.",
     ),
-    # Another person's card paid an order of two shipments. Nothing of it is in this ledger.
+    # Another person's card paid an order in two charges. Nothing of it is in this ledger.
     "another person's card": (
         [
-            order_line("O-1", "2026-08-05", "2026-08-06", "Fake Soap", 2000, "Visa - 9999"),
-            order_line("O-1", "2026-08-05", "2026-08-09", "Fake Cable", 500, "Visa - 9999"),
+            order(
+                "O-1",
+                "2026-08-05",
+                [item("Fake Soap", 2000), item("Fake Cable", 500)],
+                [(2000, "2026-08-06"), (500, "2026-08-09")],
+                card="9999",
+            )
         ],
         [(date(2026, 8, 7), -2000, "AMZN Mktp US")],
-        "paid elsewhere: 1",
+        "paid elsewhere: 2",
     ),
 }
 
@@ -360,10 +380,10 @@ ORDER_CASES = {
     ("orders", "transactions", "expected"), ORDER_CASES.values(), ids=ORDER_CASES.keys()
 )
 def test_an_order_that_one_charge_cannot_explain_still_finds_its_charges(
-    database: Path, orders: list[str], transactions, expected: str
+    database: Path, orders: list[dict], transactions, expected: str
 ) -> None:
     seed(database, transactions)
-    write_export(database, "Orders_O", orders)
+    write_orders(database, "Orders_O", orders)
 
     applied = run("receipts", "run", "amazon", "--apply")
 

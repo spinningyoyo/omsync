@@ -18,8 +18,8 @@ from omsync.cli import sync as cli_sync
 from omsync.cli.common import ready_session
 from omsync.core.vault import VaultError
 from omsync.ingest.connectors import registry
-from omsync.ingest.connectors.config import create_provider, update_provider
 from omsync.ledger.accounts import find_account
+from omsync.sync.providers import create_provider, update_provider
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "statements"
 PASSWORD = "correct-horse-battery"

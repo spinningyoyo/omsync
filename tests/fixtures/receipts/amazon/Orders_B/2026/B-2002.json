@@ -1,0 +1,21 @@
+{
+  "order_id": "B-2002",
+  "order_date": "2026-09-03",
+  "total_cents": 1200,
+  "tax_cents": 109,
+  "items": [
+    {
+      "title": "Fake Vase",
+      "amount_cents": 1200,
+      "quantity": 1
+    }
+  ],
+  "charges": [
+    {
+      "amount_cents": 1200,
+      "card_last4": "1111",
+      "date": "2026-09-03"
+    }
+  ],
+  "refunds": []
+}

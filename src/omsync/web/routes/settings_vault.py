@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from omsync.core.settings import Settings, update_settings
 from omsync.core.vault import Vault, VaultError
-from omsync.receipts.sync import plan_sync
+from omsync.sync.run import plan_sync
 from omsync.web.deps import get_db
 from omsync.web.fragments import render_block
 from omsync.web.sync_runner import SyncRefused

@@ -1,64 +1,53 @@
 # Get receipts
 
-Receipts are downloaded and applied from the terminal. Import the statements of the cards first.
+Import the statements of the cards first. Then add a store, download its receipts, and apply them.
 See [receipts](../architecture/receipts.md) for the design. Commands use `uv run` from the
 checkout. Omit it for an installed application.
 
-## Obtain Amazon receipts
+## Add a store
 
-Download a range of purchase dates:
+Open **Settings → Data sync → Receipts** and select **Add store**. Choose Amazon or Costco, and
+give the store login a name. With a vault, you can choose its login for Amazon. You can add more
+than one login for a store, such as one for each person.
+
+## Download receipts
+
+In the app, select **Sync** on the store's card, or **Sync all**. Sync all syncs the banks first,
+then each store. In the terminal:
 
 ```sh
+uv run omsync sync --all
 uv run omsync receipts fetch amazon
-uv run omsync receipts fetch amazon --start 2026-01-01 --end 2026-11-17
-uv run omsync receipts fetch amazon --login personal
-```
-
-Without dates, the download covers all recent orders up to today. omsync opens Chrome with its
-browser profile. Sign in to Amazon in that Chrome window and select I have signed in (or press Enter
-in the terminal). This uses the browser session, not the vault. omsync saves the receipts as:
-
-```text
-receipts/AMAZON/<login>/<year>/<order_id>.json
-```
-
-If the download stops, finished receipts stay on disk. Run the same range again to fetch the rest.
-See [vendor requests](../architecture/vendor-requests/amazon.md) for request details.
-
-omsync also supports legacy manual exports from Amazon's "Request my data" page placed at:
-
-```text
-receipts/AMAZON/<vendor login>/Your Amazon Orders/Order History.csv
-receipts/AMAZON/<vendor login>/Your Returns & Refunds/Refund Details.csv
-```
-
-## Obtain Costco receipts
-
-Download a range of purchase dates:
-
-```sh
-uv run omsync receipts fetch costco
 uv run omsync receipts fetch costco --start 2026-01-01 --end 2026-03-31
+uv run omsync receipts fetch amazon --profile personal
 ```
 
-Without dates, the download covers the last 90 days up to today. omsync opens Chrome with its
-browser profile. Sign in to Costco in that Chrome window and complete any verification. Then
-select I have signed in (or press Enter in the terminal). This uses the browser session, not
-the vault. omsync saves the receipts as:
+Give `--start` and `--end` together. Without them, the download starts 14 days before the newest
+receipt of that login. A login with no receipts starts 90 days ago, or 14 days before the first
+transaction when that is earlier. Give `--profile` when a store has more than one login.
+
+omsync opens Chrome with its browser profile. Sign in to the store in that Chrome window and
+complete any verification. Then select **I have signed in**, or press Enter in the terminal. omsync
+saves one file for each receipt:
 
 ```text
-receipts/COSTCO/<year>/<quarter>/<barcode>.json
+receipts/AMAZON/<login>/<year>/<order ID>.json
+receipts/COSTCO/<login>/<year>/<barcode>.json
 ```
 
-If Costco rejects the session, sign in again and retry. If the download stops, the finished
-receipts stay on disk. Run the same range again to fetch the rest. Do not share the JSON files
-casually. They can contain membership identifiers. See
-[vendor requests](../architecture/vendor-requests/costco.md) for the request details.
+If the download stops, the finished receipts stay on disk. Run the same range again to fetch the
+rest. If Costco rejects the session, sign in again and retry. Do not share the JSON files casually.
+They can contain membership identifiers.
+
+omsync does not read the Amazon data export from the "Request my data" page. See
+[ADR 0003](../adr/0003-read-amazon-orders-from-the-payment-history.md). See
+[vendor requests](../architecture/vendor-requests/README.md) for the request details.
 
 ## Preview and apply receipts
 
-Import the supporting transactions first. Add receipt item keywords in Settings → Categories. Or
-preview and import a vendor keyword file:
+Add receipt item keywords in **Categories → Keywords**. Choose the store's list. For Costco, you can
+also choose a category for food items that have no keyword. Or preview and import a vendor keyword
+file:
 
 ```sh
 uv run omsync keywords import /path/to/keywords.json --list amazon

@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
-from omsync.core.batches import BatchError, applied_batch_for_key
+from omsync.core.batches import CHANGED_ELSEWHERE, BatchError, applied_batch_for_key
 from omsync.core.money import format_cents
 from omsync.ledger.filters import FilterError, FilterSpec
 from omsync.ledger.register import (
@@ -51,7 +51,6 @@ router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
 PAGE = "pages/transactions.html"
 EDITABLE_FIELDS = ("category",)
-STALE_MESSAGE = "This changed elsewhere, reload."
 ADD_CATEGORIES_HINT = "Add categories on the Categories page."
 
 
@@ -135,7 +134,7 @@ def save_cell(
             value=value,
             key=key,
             version=version,
-            error=STALE_MESSAGE,
+            error=CHANGED_ELSEWHERE,
             stale=True,
             status_code=409,
         )
@@ -167,7 +166,7 @@ def save_cell(
             value=value,
             key=key,
             version=version,
-            error=STALE_MESSAGE,
+            error=CHANGED_ELSEWHERE,
             stale=True,
             status_code=409,
         )
@@ -269,7 +268,7 @@ def save_split(
         db, row.amount_cents, amount or [], category or [], memo or [], tag or []
     )
     if _is_stale(db, row, row_version(row), key, version):
-        editor = _editor(row.amount_cents, views, STALE_MESSAGE)
+        editor = _editor(row.amount_cents, views, CHANGED_ELSEWHERE)
         return _editor_fragment(
             request, db, row, editor, account, status_code=409, key=key, version=version
         )
@@ -286,7 +285,7 @@ def save_split(
             request, db, row, editor, account, status_code=422, key=key, version=version
         )
     except BatchError:
-        editor = _editor(row.amount_cents, views, STALE_MESSAGE)
+        editor = _editor(row.amount_cents, views, CHANGED_ELSEWHERE)
         return _editor_fragment(
             request, db, row, editor, account, status_code=409, key=key, version=version
         )
@@ -315,7 +314,7 @@ def remove_split(
     row = _row_or_404(db, txn_id)
     key = idempotency_key or uuid4().hex
     if _is_stale(db, row, row_version(row), key, version):
-        editor = _editor(row.amount_cents, _initial_lines(row), STALE_MESSAGE)
+        editor = _editor(row.amount_cents, _initial_lines(row), CHANGED_ELSEWHERE)
         return _editor_fragment(
             request, db, row, editor, account, status_code=409, key=key, version=version
         )
@@ -333,7 +332,7 @@ def remove_split(
         )
     except BatchError:
         current = get_transaction_row(db, txn_id)
-        editor = _editor(current.amount_cents, _initial_lines(current), STALE_MESSAGE)
+        editor = _editor(current.amount_cents, _initial_lines(current), CHANGED_ELSEWHERE)
         return _editor_fragment(
             request, db, current, editor, account, status_code=409, key=key, version=version
         )

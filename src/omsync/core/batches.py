@@ -53,6 +53,10 @@ _REVISION: Table = DataRevision.__table__
 _RESERVED_TABLES = frozenset({"batch", "batch_change", "data_revision"})
 
 
+CHANGED_ELSEWHERE = "This changed elsewhere, reload."
+PREVIEW_AGAIN = "This changed elsewhere. Preview again."
+
+
 class BatchError(Exception):
     """A batch cannot be previewed, applied, or undone. Nothing was written."""
 
@@ -136,6 +140,17 @@ def snapshot(session: Session, table: str, row_id: str | int) -> dict[str, Any] 
     target = _table(table)
     pk = _primary_key(target)
     return _select_row(session, target, pk, _pk_value(pk, row_id))
+
+
+def seen_is_current(
+    session: Session, preview: Preview, seen_revision: int | None, idempotency_key: str
+) -> bool:
+    """True when the person saw the data the preview was computed from, or the key already
+    applied. A key that applied is a retry of a change that went through, so it is answered with
+    that batch even though the data has moved on since."""
+    if applied_batch_for_key(session, idempotency_key) is not None:
+        return True
+    return preview.base_revision == seen_revision
 
 
 def applied_batch_for_key(session: Session, idempotency_key: str) -> Batch | None:

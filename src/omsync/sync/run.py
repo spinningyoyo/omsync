@@ -1,8 +1,9 @@
-"""Sync any provider: a bank's statements or a receipt vendor's receipts.
+"""Sync providers of every kind: a bank's statements or a receipt vendor's receipts.
 
-sync_one looks up the provider's kind and runs the bank sync (ingest.sync) or the receipt sync
-here. Either way it takes the one sync lock, writes one SyncRun, and turns every failure into the
-run's status and a message that is safe to show.
+sync_one syncs one provider, and sync_all the enabled banks first, then every receipt provider.
+Each holds the one sync lock for its whole length, so a sync started elsewhere waits for none of it
+and is refused. Each provider sync writes one SyncRun, and every failure becomes the run's status
+and a message that is safe to show.
 
 A receipt sync downloads with the vendor's connector, then reads every receipt file in the
 provider's folder into the receipt table. A file that cannot be read fails the run: the receipts
@@ -12,6 +13,7 @@ already holds stays with it, and the message says so: the run still succeeded.
 
 import logging
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -25,7 +27,7 @@ from omsync.ingest.connectors.base import ConnectorError, DateRange, Prompt
 from omsync.ingest.connectors.config import enabled_provider_keys
 from omsync.ingest.institutions import provider_group, sync_refusal
 from omsync.ingest.runs import failure_of, finish_run, start_run, sync_lock
-from omsync.ingest.sync import SyncResult, sync_provider
+from omsync.ingest.sync import SyncResult, bank_sync
 from omsync.ledger.models import Provider, ProviderKind, SyncRun, SyncStatus, Transaction
 from omsync.receipts.connectors import get_connector
 from omsync.receipts.profiles import (
@@ -43,8 +45,22 @@ logger = logging.getLogger(__name__)
 LOOKBACK = timedelta(days=14)
 FIRST_FETCH = timedelta(days=90)
 
-
 ALL = "*"
+
+
+@dataclass(frozen=True)
+class ProviderSync:
+    """What sync_all did for one provider. A provider that could not run at all, such as one with
+    no accounts, writes no SyncRun, so its error is set instead of result."""
+
+    provider_key: str
+    result: SyncResult | None
+    error: str | None
+
+
+ProgressCallback = Callable[[str, ProviderSync | None], None]
+"""Called as sync_all reaches each provider: (key, None) when its sync starts, then (key, outcome)
+when it ends, with the outcome sync_all records for it."""
 
 
 @dataclass(frozen=True)
@@ -58,16 +74,26 @@ class SyncPlan:
     needs_vault: bool
 
 
+def receipt_provider_keys(session: Session) -> list[str]:
+    """The keys of the receipt providers, by name: the order sync_all runs them in. A receipt
+    provider cannot be turned off."""
+    return [profile.key for profile in list_vendor_profiles(session)]
+
+
 def plan_sync(session: Session, scope: str, *, has_vault: bool) -> SyncPlan:
     """The providers a sync of scope runs: ALL, or one provider's key. Raises LookupError when
     the scope names no provider."""
     if scope == ALL:
         banks = enabled_provider_keys(session)
-        profiles = list_vendor_profiles(session)
-        if not banks and not profiles:
+        receipts = receipt_provider_keys(session)
+        if not banks and not receipts:
             return SyncPlan([], [], "Nothing is turned on to sync.", False)
-        needs = has_vault and (bool(banks) or any(p.vault_item_id for p in profiles))
-        return SyncPlan(banks, [p.key for p in profiles], None, needs)
+        logins = any(
+            profile.vault_item_id
+            for profile in list_vendor_profiles(session)
+            if profile.key in receipts
+        )
+        return SyncPlan(banks, receipts, None, has_vault and (bool(banks) or logins))
     profile = get_vendor_profile(session, scope)
     if profile is not None:
         return SyncPlan([], [scope], None, has_vault and bool(profile.vault_item_id))
@@ -88,15 +114,79 @@ def sync_one(
 ) -> SyncResult:
     """Sync one provider of either kind, holding the sync lock for its whole length.
 
-    Raises SyncBusy if another sync holds the lock, and ConnectorError if the provider is unknown.
-    A bank provider can also raise what ingest.sync.sync_provider raises. A failed fetch does not
-    raise: it sets the result's status.
+    Raises SyncBusy if another sync holds the lock, and ConnectorError if the provider is unknown,
+    or is a bank that is turned off or cannot run (see ingest.sync.bank_sync). A failed fetch does
+    not raise: it sets the result's status.
     """
+    with sync_lock(settings.data_dir / SYNC_LOCK_NAME):
+        return _sync(session, settings, provider_key, vault=vault, prompt=prompt, period=period)
+
+
+def sync_all(
+    session: Session,
+    settings: Settings,
+    *,
+    vault: Vault | None,
+    prompt: Prompt,
+    period: DateRange | None = None,
+    on_progress: ProgressCallback | None = None,
+) -> list[ProviderSync]:
+    """Sync every enabled bank, in institution key then provider key order, then every receipt
+    provider by name, one after another. Each runs for the given period, or its own default.
+
+    A provider that fails, or cannot run, does not stop the others. Cancelling through the prompt
+    does: no provider starts after it, so only the providers that started have an entry in the
+    list. Raises SyncBusy, before anything is fetched, if another sync holds the lock.
+    """
+    outcomes: list[ProviderSync] = []
+    with sync_lock(settings.data_dir / SYNC_LOCK_NAME):
+        for key in [*enabled_provider_keys(session), *receipt_provider_keys(session)]:
+            if prompt.cancelled():
+                break
+            if on_progress is not None:
+                on_progress(key, None)
+            outcome = _guarded(session, settings, key, vault=vault, prompt=prompt, period=period)
+            outcomes.append(outcome)
+            if on_progress is not None:
+                on_progress(key, outcome)
+    return outcomes
+
+
+def _guarded(
+    session: Session,
+    settings: Settings,
+    key: str,
+    *,
+    vault: Vault | None,
+    prompt: Prompt,
+    period: DateRange | None,
+) -> ProviderSync:
+    try:
+        result = _sync(session, settings, key, vault=vault, prompt=prompt, period=period)
+    except ConnectorError as exc:
+        return ProviderSync(key, None, str(exc))
+    except Exception as exc:  # one provider's crash must not stop the rest
+        session.rollback()
+        logger.exception("Sync of provider %s failed unexpectedly", key)
+        return ProviderSync(key, None, f"unexpected error ({type(exc).__name__})")
+    return ProviderSync(key, result, None)
+
+
+def _sync(
+    session: Session,
+    settings: Settings,
+    provider_key: str,
+    *,
+    vault: Vault | None,
+    prompt: Prompt,
+    period: DateRange | None,
+) -> SyncResult:
+    """One provider's sync, with the lock already held."""
     provider = session.scalars(select(Provider).where(Provider.key == provider_key)).first()
     if provider is None:
         raise ConnectorError(f"there is no provider {provider_key!r}")
     if provider.kind is ProviderKind.bank:
-        return sync_provider(
+        return bank_sync(
             session,
             settings,
             provider_key=provider_key,
@@ -104,12 +194,10 @@ def sync_one(
             prompt=prompt,
             period=period,
         )
-    if not provider.enabled:
-        raise ConnectorError(f"the provider {provider_key} is turned off")
-    profile = to_profile(provider)
-    with sync_lock(settings.data_dir / SYNC_LOCK_NAME):
-        run = start_run(session, provider.id)
-        return _receipt_run(session, settings, run, provider, profile, vault, prompt, period)
+    run = start_run(session, provider.id)
+    return _receipt_run(
+        session, settings, run, provider, to_profile(provider), vault, prompt, period
+    )
 
 
 def _receipt_run(

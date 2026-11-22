@@ -1,0 +1,28 @@
+{
+  "order_id": "A-1001",
+  "order_date": "2026-08-05",
+  "total_cents": 1196,
+  "tax_cents": 96,
+  "items": [
+    {
+      "title": "Fake Notebook A5",
+      "amount_cents": 1196,
+      "quantity": 1
+    }
+  ],
+  "charges": [
+    {
+      "amount_cents": 1196,
+      "card_last4": "1111",
+      "date": "2026-08-06"
+    }
+  ],
+  "refunds": [
+    {
+      "amount_cents": 1196,
+      "card_last4": "1111",
+      "date": "2026-08-20",
+      "reason": "Item returned"
+    }
+  ]
+}

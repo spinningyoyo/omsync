@@ -1,0 +1,31 @@
+{
+  "order_id": "A-1003",
+  "order_date": "2026-08-08",
+  "total_cents": 2900,
+  "tax_cents": 264,
+  "items": [
+    {
+      "title": "Fake Lamp",
+      "amount_cents": 2000,
+      "quantity": 1
+    },
+    {
+      "title": "Fake Mug",
+      "amount_cents": 900,
+      "quantity": 1
+    }
+  ],
+  "charges": [
+    {
+      "amount_cents": 2000,
+      "card_last4": "2222",
+      "date": "2026-08-10"
+    },
+    {
+      "amount_cents": 900,
+      "card_last4": "2222",
+      "date": "2026-08-12"
+    }
+  ],
+  "refunds": []
+}

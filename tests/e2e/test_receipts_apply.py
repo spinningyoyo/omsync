@@ -1,8 +1,9 @@
 """Amazon receipts applied to imported charges, end to end through the CLI.
 
 The charges come in as a synthetic bank statement, and the receipts are the synthetic Amazon
-exports under tests/fixtures. A receipt explains a charge. It never creates, removes or changes
-money, so the ledger total and every transaction amount are asserted in integer cents."""
+orders under tests/fixtures, one JSON file each as a sync writes them. A receipt explains a charge.
+It never creates, removes or changes money, so the ledger total and every transaction amount are
+asserted in integer cents."""
 
 import shutil
 from datetime import date
@@ -26,7 +27,7 @@ KEYWORDS = '{"Household": ["Notebook", "Blender", "Soap", "Vase"], "Electronics"
 
 @pytest.fixture
 def ready(ledger: Ledger, tmp_path: Path) -> Ledger:
-    ledger.add_account("Checking", last4="1111")  # the exports say "Visa - 1111"
+    ledger.add_account("Checking", last4="1111")  # the orders name card 1111
     rows = [Row(day, cents, name, f"fit-{i}") for i, (day, cents, name) in enumerate(CHARGES)]
     ledger.statement("Checking", rows)
     ledger.import_all()

@@ -9,6 +9,7 @@ from datetime import date
 from pathlib import Path
 from typing import Protocol
 
+from omsync.ledger.receipt_vendors import vendor_terms
 from omsync.receipts.model import ChargeResult, Receipt
 
 NOT_ENOUGH_DATA = "not enough data to split this receipt across card charges"
@@ -71,7 +72,9 @@ class ReceiptVendor(Protocol):
 
 
 class BaseVendor:
-    """Inherit from this to get the default infer_charges, receipt_url, and receipt_label.
+    """Inherit from this to get the default is_vendor_payee, infer_charges, receipt_url, and
+    receipt_label. is_vendor_payee reads the vendor's payee wording in
+    omsync.ledger.receipt_vendors.
 
     The default says the receipt cannot be split and has no web page. A vendor that can infer
     charges overrides infer_charges and still implements the rest of ReceiptVendor itself.
@@ -96,6 +99,10 @@ class BaseVendor:
             raise ValueError("the receipt ID cannot be a file name")
         folder = self.provider_folder(receipts_dir, provider_key)
         return folder / str(day.year) / f"{receipt_id}.json"
+
+    def is_vendor_payee(self, payee: str) -> bool:
+        terms = vendor_terms(self.key)
+        return terms is not None and terms.is_payee(payee)
 
     def infer_charges(self, receipt: Receipt, candidates: list[CandidateTxn]) -> ChargeResult:
         return ChargeResult("insufficient", reason=NOT_ENOUGH_DATA)

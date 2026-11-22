@@ -1,7 +1,8 @@
 """The receipt vendors omsync reads.
 
-Add a vendor by importing its class here, adding an instance to BUILT_IN_VENDORS, and adding its
-key to RECEIPT_VENDOR_KEYS in omsync.ledger.receipt_vendors.
+Add a vendor by importing its class here and adding an instance to BUILT_IN_VENDORS. Its key, payee
+wording, and item codes are in omsync.ledger.receipt_vendors, and its connector registers in
+omsync.receipts.connectors.
 """
 
 from omsync.ledger.receipt_vendors import RECEIPT_VENDOR_KEYS
@@ -11,8 +12,8 @@ from omsync.receipts.vendors.costco import CostcoVendor
 
 BUILT_IN_VENDORS: tuple[ReceiptVendor, ...] = (AmazonVendor(), CostcoVendor())
 
-if tuple(vendor.key for vendor in BUILT_IN_VENDORS) != RECEIPT_VENDOR_KEYS:
-    raise RuntimeError("BUILT_IN_VENDORS and RECEIPT_VENDOR_KEYS list different vendors")
+if {vendor.key for vendor in BUILT_IN_VENDORS} != set(RECEIPT_VENDOR_KEYS):
+    raise RuntimeError("BUILT_IN_VENDORS and RECEIPT_VENDORS list different vendors")
 
 
 def get_vendor(key: str) -> ReceiptVendor:

@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from omsync.core.batches import BatchError, applied_batch_for_key
+from omsync.core.batches import PREVIEW_AGAIN, BatchError, seen_is_current
 from omsync.core.settings import Settings
 from omsync.ledger import categories_admin as admin
 from omsync.ledger.bulk import count_matching
@@ -51,7 +51,6 @@ from omsync.web.row_links import transaction_href
 
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
-STALE = "This changed elsewhere. Preview again."
 OUT_OF_DATE = "The import is out of date. Choose the file again."
 MAX_UPLOAD_BYTES = 1024 * 1024
 _SLOT = re.compile(r"[a-z0-9_-]{1,60}")
@@ -214,8 +213,8 @@ def import_apply(
         plan = plan_keyword_import(db, mapping, list_key=list_key)
     except (KeywordFileError, ValueError) as exc:
         return block(request, "frag_message", status=422, message=str(exc))
-    if applied_batch_for_key(db, key) is None and plan.preview.base_revision != revision:
-        return block(request, "frag_message", status=409, message=STALE)
+    if not seen_is_current(db, plan.preview, revision, key):
+        return block(request, "frag_message", status=409, message=PREVIEW_AGAIN)
     try:
         batch = apply_keyword_import(db, plan, idempotency_key=key)
     except BatchError as exc:

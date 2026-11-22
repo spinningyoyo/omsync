@@ -12,8 +12,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from web_support import EMAIL, PASSWORD, SESSION_COOKIE, FakeOwnerCheck, FakeVault
 
-from omsync.ledger.models import Provider, SyncRun, SyncStatus
-from omsync.receipts.profiles import VendorProfile, create_vendor_profile
+from omsync.ledger.models import Provider, ProviderKind, SyncRun, SyncStatus
+from omsync.sync.providers import create_provider
 
 
 def _cookie(set_cookie_header: str) -> Morsel:
@@ -111,14 +111,13 @@ def test_the_bank_sync_vault_panel_disconnects_and_connects(
     assert "Vault unlocked" in signed_in.get("/settings/sync").text
 
     with app.state.session_factory() as db:
-        create_vendor_profile(
+        create_provider(
             db,
-            VendorProfile(
-                key="amazon_personal",
-                vendor_key="amazon",
-                name="Amazon Personal",
-                vault_item_id="item-amazon",
-            ),
+            kind=ProviderKind.receipt,
+            provider_key="amazon_personal",
+            provider_name="Amazon Personal",
+            connector_key="amazon",
+            vault_item_id="item-amazon",
             idempotency_key="test-amazon-personal",
         )
         db.add(

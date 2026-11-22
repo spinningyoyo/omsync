@@ -19,7 +19,7 @@ Every diagram that has such a step defines the style `waits`.
 ## Getting transactions
 
 - [Statement import](architecture/import.md)
-- [Sync, providers, and connectors](architecture/sync.md)
+- [Sync, providers, and connectors](architecture/sync.md): banks and stores
 - [Bank requests](architecture/bank-requests/README.md): [Bank of America](architecture/bank-requests/boa.md),
   [Chase](architecture/bank-requests/chase.md), [Citi](architecture/bank-requests/citi.md), and
   [Fidelity Rewards](architecture/bank-requests/fidelity.md).
@@ -49,6 +49,7 @@ Every diagram that has such a step defines the style `waits`.
 | `core/` | [system](architecture/system.md), [changes](architecture/changes.md), [access](architecture/access.md), [interface](architecture/interface.md) (settings) |
 | `demo/` | [access](architecture/access.md), [system](architecture/system.md) |
 | `ingest/` | [import](architecture/import.md), [sync](architecture/sync.md), [bank requests](architecture/bank-requests/README.md) |
+| `sync/` | [sync](architecture/sync.md) (providers of every kind, sync one and sync all) |
 | `ledger/` | [ledger](architecture/ledger.md), [transactions](architecture/transactions.md), [categories](architecture/categories.md), [accounts](architecture/accounts.md), [contacts](architecture/contacts.md) |
 | `migrations/` | Alembic revisions. Never edit a revision that has run; add a new one. |
 | `reconcile/` | [reconciliation](architecture/reconciliation.md) |
@@ -68,6 +69,7 @@ Every diagram that has such a step defines the style `waits`.
 
 - [Build omsync instead of using Sure](adr/0001-build-omsync-instead-of-using-sure.md)
 - [Download statements from bank websites instead of using an aggregator](adr/0002-download-statements-instead-of-using-an-aggregator.md)
+- [Read Amazon orders from the payment history instead of the data export](adr/0003-read-amazon-orders-from-the-payment-history.md)
 
 To install and start omsync, see the [project README](../README.md). Engineering instructions are in
 [AGENTS.md](../AGENTS.md), with the review standards.

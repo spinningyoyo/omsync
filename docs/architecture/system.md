@@ -10,12 +10,13 @@ and goals.
 
 ```mermaid
 flowchart LR
-    Banks[Bank websites] --> Connectors
+    Banks[Bank and store websites] --> Connectors
     Vault[Bitwarden vault, optional] --> Connectors
     Connectors --> Files[Statement files on disk]
+    Connectors --> ReceiptFiles[Receipt files on disk]
     Files --> Import
     Import --> Ledger[(SQLite ledger)]
-    ReceiptFiles[Receipt files] --> Receipts --> Ledger
+    ReceiptFiles --> Receipts --> Ledger
     Ledger <--> Reconciliation
     Ledger --> Reports
     Ledger --> Plan[Budgets, goals, recurring]
@@ -35,7 +36,8 @@ flowchart TD
     CLI[cli: Typer] --> Demo
     Demo[demo] --> Reports[reports]
     Reports --> Plan[plan]
-    Plan --> Receipts[receipts]
+    Plan --> Sync[sync: providers of every kind]
+    Sync --> Receipts[receipts]
     Receipts --> Ingest[ingest]
     Ingest --> Reconcile[reconcile]
     Reconcile --> Ledger[ledger]
@@ -57,6 +59,8 @@ flowchart LR
 
 - **The server listens on 127.0.0.1 only.** Sign-in is still necessary, because a website in your
   browser can send requests to the server. See [access](access.md).
+- **Code that bank sync and receipt sync share is in `sync`.** Bank sync in `ingest` and receipt
+  sync in `receipts` each do one kind. Only `sync` chooses the kind of a provider.
 - **Transactions come only from statement files.** Each format reads the files of one bank. There is
   no manual entry and no general CSV mapper.
 - **Financial rules run only on the server.** JavaScript moves focus, opens dialogs, and draws

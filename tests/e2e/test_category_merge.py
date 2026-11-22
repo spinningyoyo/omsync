@@ -75,7 +75,10 @@ def test_a_merge_moves_lines_of_other_months_and_undo_restores_both(budgeted) ->
     budget(client, KEY, ids["Groceries"], "200")
     budget(client, OTHER, ids["Dining"], "80")
     client.post(f"/plan/budget/{KEY}/flex-number", data={"amount": "500"})
-    client.post("/categories/keywords/costco-food", data={"category_id": ids["Dining"]})
+    client.post(
+        "/categories/keywords/item-code",
+        data={"list_key": "costco", "code": "E", "category_id": ids["Dining"]},
+    )
     before = lines(ledger)
     assert len(before) == 3
     assert costco_food(ledger) == ids["Dining"]

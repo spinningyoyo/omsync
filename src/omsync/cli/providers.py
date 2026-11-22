@@ -1,6 +1,6 @@
 """`omsync providers`: the bank providers, which connector and login each uses, and its accounts.
 
-Providers are added, edited, and deleted on the Bank sync page of the web app, where each change is
+Providers are added, edited, and deleted on the Data sync page of the web app, where each change is
 a batch that `omsync batches undo` can reverse.
 """
 
@@ -17,7 +17,7 @@ def providers_list() -> None:
     with ready_session() as (_settings, session):
         providers = list_providers(session)
     if not providers:
-        typer.echo("No providers yet. Add one on the Bank sync page of the web app.")
+        typer.echo("No providers yet. Add one on the Data sync page of the web app.")
         return
     for provider in providers:
         login = "login set" if provider.vault_item_id else "no login"

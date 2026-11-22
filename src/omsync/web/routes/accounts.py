@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
-from omsync.core.batches import BatchError
+from omsync.core.batches import CHANGED_ELSEWHERE, BatchError
 from omsync.ingest.institutions import recent_syncs
 from omsync.ledger.accounts_view import (
     AccountDetail,
@@ -59,7 +59,6 @@ DbSession = Annotated[Session, Depends(get_db)]
 PAGE = "pages/account.html"
 MISSING = "pages/account_missing.html"
 FRAGMENTS = "accounts/fragments.html"
-STALE_MESSAGE = "This changed elsewhere, reload."
 
 
 @router.get("/accounts/{account_id}", response_class=HTMLResponse)
@@ -122,7 +121,7 @@ def edit_account(
     except ValueError as exc:
         return _fragment(request, "frag_edit_error", status_code=422, message=str(exc))
     except BatchError:
-        return _fragment(request, "frag_edit_error", status_code=409, message=STALE_MESSAGE)
+        return _fragment(request, "frag_edit_error", status_code=409, message=CHANGED_ELSEWHERE)
     label = str((batch.summary or {}).get("label", "Change saved"))
     return _saved(request, db, account_id, label=label, batch_id=batch.id)
 

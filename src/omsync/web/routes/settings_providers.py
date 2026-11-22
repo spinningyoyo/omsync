@@ -11,18 +11,13 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
-from omsync.core.batches import BatchError
+from omsync.core.batches import CHANGED_ELSEWHERE, BatchError
 from omsync.core.vault import VaultError, VaultLocked, is_locked
-from omsync.ingest.connectors.config import ProviderError
 from omsync.ingest.institutions import provider_group
-from omsync.ingest.providers import ProviderSetupError, edit_provider, remove_provider
+from omsync.ingest.providers import ProviderSetupError
 from omsync.ledger.accounts_view import update_account
-from omsync.receipts.profiles import (
-    delete_vendor_profile,
-    get_vendor_profile,
-    update_vendor_profile,
-)
-from omsync.receipts.sync import ALL, plan_sync
+from omsync.sync.providers import edit_provider, remove_provider
+from omsync.sync.run import ALL, plan_sync
 from omsync.web.accounts_panel import account_groups
 from omsync.web.deps import get_db
 from omsync.web.fragments import render_block
@@ -166,10 +161,10 @@ def edit_route(
     was chosen from a search."""
     card = _card(request, db, provider_key)
     try:
-        batch = _save(
-            request,
+        batch = edit_provider(
             db,
-            provider_key,
+            request.app.state.settings,
+            provider_key=provider_key,
             name=name.strip() or None,
             login_id=vault_item_id.strip() or None,
             account_ids=account or [],
@@ -177,43 +172,9 @@ def edit_route(
         )
     except ProviderSetupError as exc:
         return _failure(request, str(exc), 409 if exc.conflict else 422)
-    except ProviderError as exc:
-        return _failure(request, str(exc), 422)
     if batch is None:
         return _fragment(request, "frag_provider_message", message="Nothing changed.", error=False)
     return _saved(request, db, batch, message=f"Saved {name.strip() or card.name}.")
-
-
-def _save(
-    request: Request,
-    db: Session,
-    provider_key: str,
-    *,
-    name: str | None,
-    login_id: str | None,
-    account_ids: list[str],
-    idempotency_key: str,
-) -> Batch | None:
-    settings = request.app.state.settings
-    profile = get_vendor_profile(db, provider_key)
-    if profile is None:
-        return edit_provider(
-            db,
-            settings,
-            provider_key=provider_key,
-            login_id=login_id,
-            account_ids=account_ids,
-            idempotency_key=idempotency_key,
-            name=name,
-        )
-    return update_vendor_profile(
-        db,
-        settings,
-        key=provider_key,
-        name=name or profile.name,
-        vault_item_id=login_id or profile.vault_item_id,
-        idempotency_key=idempotency_key,
-    )
 
 
 # Linking statement accounts
@@ -260,7 +221,7 @@ def rename_account_route(
     except ValueError as exc:
         return _failure(request, str(exc), 422)
     except BatchError:
-        return _failure(request, "This changed elsewhere, reload.", 409)
+        return _failure(request, CHANGED_ELSEWHERE, 409)
     return _saved(request, db, batch, message=str((batch.summary or {}).get("label", "Renamed.")))
 
 
@@ -280,14 +241,9 @@ def delete_route(
     settings = request.app.state.settings
     key = idempotency_key or uuid4().hex
     try:
-        if get_vendor_profile(db, provider_key) is None:
-            batch = remove_provider(db, settings, provider_key=provider_key, idempotency_key=key)
-        else:
-            batch = delete_vendor_profile(db, settings, key=provider_key, idempotency_key=key)
+        batch = remove_provider(db, settings, provider_key=provider_key, idempotency_key=key)
     except ProviderSetupError as exc:
         return _failure(request, str(exc), 409 if exc.conflict else 422)
-    except ProviderError as exc:
-        return _failure(request, str(exc), 422)
     return _saved(request, db, batch, message=f"Deleted {card.name}.")
 
 

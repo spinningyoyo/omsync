@@ -20,8 +20,10 @@ from omsync.ledger.categorize import PAYEE_LIST, explain, find_conflicts, is_lis
 from omsync.ledger.payment_methods import METHOD_LABELS
 from omsync.ledger.receipt_vendors import (
     RECEIPT_VENDOR_KEYS,
-    costco_food_category,
-    set_costco_food_category,
+    item_code,
+    item_code_category,
+    set_item_code_category,
+    vendor_terms,
 )
 from omsync.web.categories_replies import (
     applied_toast,
@@ -320,26 +322,45 @@ def keyword_context(db: Session, list_key: str, *, query: str = "") -> dict[str,
         "total": admin.keyword_count(db, list_key),
         "choices": admin.category_choices(db),
         "form": keyword_form(list_key),
-        "food": costco_food_category(db) if list_key == "costco" else None,
+        "item_codes": item_code_settings(db, list_key),
     }
 
 
-@router.post("/categories/keywords/costco-food", response_class=HTMLResponse)
-def save_costco_food(
-    request: Request, db: DbSession, category_id: Annotated[str, Form()] = ""
+def item_code_settings(db: Session, list_key: str) -> list[dict[str, Any]]:
+    """One form per item code of the list's vendor. A list that is not a vendor's has none."""
+    vendor = vendor_terms(list_key)
+    if vendor is None:
+        return []
+    return [
+        {"list_key": list_key, "item": item, "chosen": item_code_category(db, item)}
+        for item in vendor.item_codes
+    ]
+
+
+@router.post("/categories/keywords/item-code", response_class=HTMLResponse)
+def save_item_code(
+    request: Request,
+    db: DbSession,
+    list_key: Annotated[str, Form()],
+    code: Annotated[str, Form()],
+    category_id: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """Set the category for Costco food items that no keyword matches, or turn it off when blank."""
+    """Set the category for a vendor's items with this code that no keyword matches, or turn it
+    off when blank."""
+    item = item_code(list_key, code)
+    if item is None:
+        raise HTTPException(status_code=404, detail="No such item code")
     chosen = int(category_id) if category_id.strip().isdigit() else None
     error = ""
     try:
-        set_costco_food_category(db, chosen)
+        set_item_code_category(db, item, chosen)
     except ValueError as exc:
         error = str(exc)
     return block(
         request,
-        "frag_costco_food",
+        "frag_item_code",
         status=422 if error else 200,
-        food=costco_food_category(db),
+        setting={"list_key": list_key, "item": item, "chosen": item_code_category(db, item)},
         choices=admin.category_choices(db),
         error=error,
         saved=not error,

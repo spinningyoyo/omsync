@@ -1,4 +1,5 @@
-"""`omsync sync` and `omsync sync-log`: fetch statements through providers, and read the sync log.
+"""`omsync sync` and `omsync sync-log`: fetch statements and receipts through providers, and read
+the sync log.
 
 With a vault, sync unlocks it first, asking for the master password with a hidden prompt, then runs
 each provider's connector. The password is passed to the vault and never printed or stored. Without
@@ -22,9 +23,9 @@ from omsync.core.vault import Vault, VaultError
 from omsync.core.vaults import open_vault
 from omsync.ingest.connectors.base import ConnectorError, DateRange
 from omsync.ingest.runs import SyncBusy
-from omsync.ingest.sync import SyncResult, sync_all
+from omsync.ingest.sync import SyncResult
 from omsync.ledger.models import Provider, ProviderKind, SyncRun, SyncStatus
-from omsync.receipts.sync import sync_one
+from omsync.sync.run import sync_all, sync_one
 
 
 class TyperPrompt:
@@ -84,9 +85,11 @@ def sync_command(
         ),
     ] = None,
 ) -> None:
-    """Fetch statement files with a provider's connector, then import them, one batch per file.
+    """Fetch a provider's statement files and import them, one batch per file, or fetch a receipt
+    provider's receipts.
 
-    Give a provider key or --all, not both. With a vault, asks for its master password first.
+    Give a provider key or --all, not both. --all syncs the banks first, then the receipt
+    providers. With a vault, asks for its master password first.
     Without one, asks you to sign in at each bank. With --all,
     a provider that fails does not stop the others. Exits 1 if any sync failed or needs you, or
     another is running.

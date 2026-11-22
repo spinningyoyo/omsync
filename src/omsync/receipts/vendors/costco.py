@@ -44,7 +44,6 @@ from pathlib import Path
 from typing import Any
 
 from omsync.core import money
-from omsync.ledger.receipt_vendors import is_costco_payee
 from omsync.receipts.model import (
     Charge,
     ChargeResult,
@@ -58,7 +57,6 @@ from omsync.receipts.model import (
 from omsync.receipts.vendor import BaseVendor
 
 VENDOR_KEY = "costco"
-VENDOR_LOGIN = "costco"
 FOLDER = "COSTCO"  # under the data directory's receipts folder
 CHARGE_WINDOW_DAYS = 5  # the earlier matcher looked up to five days after the purchase
 
@@ -117,9 +115,6 @@ class CostcoVendor(BaseVendor):
         # <provider folder>/<year>/<barcode>.json: the price adjustments look at the same provider.
         earlier = _earlier_items(path.parent.parent, receipt_date(data, path.name))
         return [parse_receipt(data, path.name, earlier, account=provider_key)]
-
-    def is_vendor_payee(self, payee: str) -> bool:
-        return is_costco_payee(payee)
 
     def charges(self, receipt: Receipt) -> ChargeResult:
         if not receipt.items:

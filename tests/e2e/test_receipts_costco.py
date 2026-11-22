@@ -214,7 +214,8 @@ def test_food_with_no_keyword_takes_the_food_category_and_a_keyword_still_wins(
 
     [(groceries,)] = ledger.query("SELECT id FROM category WHERE name = 'Groceries'")
     saved = web_client(ledger.data_dir).post(
-        "/categories/keywords/costco-food", data={"category_id": str(groceries)}
+        "/categories/keywords/item-code",
+        data={"list_key": "costco", "code": "E", "category_id": str(groceries)},
     )
     assert saved.status_code == 200, saved.text
     applied = ledger.cli("receipts", "run", "costco", "--apply")

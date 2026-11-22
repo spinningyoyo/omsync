@@ -56,6 +56,8 @@ flowchart TD
 
 - **Keyword:** a text pattern that sets a category. A list scopes it: Payees, or one receipt
   vendor's items.
+- **Item code category:** the category for a vendor's items with one item code, such as Costco
+  food, when no keyword matches. It is on the vendor's keyword list. A merge moves it.
 - **Payment method:** how money moved: transfer, check, cash, PayPal, Square, and others.
 - **Rule:** an ordered condition on payment method, amount, counterparty, or account that sets a
   category.
