@@ -102,6 +102,9 @@ max-complexity = 10  # ruff's default; split a function that grows past it, do n
 # The scripts drive a real browser and local tools with fixed argument lists and no shell.
 "scripts/bank_record.py" = ["S603"]
 "scripts/guide-screenshots.py" = ["S310", "S607"]
+# The verification helper prints its results, starts the server and local tools with fixed
+# argument lists, and checks only 127.0.0.1.
+".claude/skills/verify-omsync/scripts/verify.py" = ["T201", "S310", "S603", "S607"]
 "src/omsync/demo/statements.py" = ["S311", "A001"]  # S311: seeded random numbers for fake data; A001: `credits` is the domain word
 "src/omsync/reconcile/rules/transfers.py" = ["A001"]
 "tests/e2e/test_cli_sync.py" = ["A002"]  # `input` is the CliRunner argument

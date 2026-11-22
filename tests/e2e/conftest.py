@@ -100,3 +100,33 @@ def app(client: TestClient) -> FastAPI:
 def signed_in(client: TestClient) -> TestClient:
     sign_in(client)
     return client
+
+
+# The browser journeys (see browser_support.py). The demo is built once per run and copied for each
+# journey, so no journey sees another's writes.
+
+
+@pytest.fixture(scope="session")
+def demo_pristine(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    from browser_support import build_pristine
+
+    return build_pristine(tmp_path_factory.mktemp("demo"))
+
+
+@pytest.fixture
+def live(demo_pristine: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The app the journeys drive. The keychain holds no vault API key, as on a new install."""
+    from browser_support import serve
+
+    monkeypatch.setattr(keyring, "get_password", lambda *args, **kwargs: None)
+    with serve(demo_pristine, tmp_path) as app:
+        yield app
+
+
+@pytest.fixture
+def user(page, live):
+    """The browser, signed in to its own copy of the demo data, on Home."""
+    from browser_support import sign_in as browser_sign_in
+
+    browser_sign_in(page, live)
+    return page

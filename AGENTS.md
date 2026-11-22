@@ -31,6 +31,8 @@ sections.
   source or the lock entry by hand.
 - A change to the website automation of an institution needs live validation at that institution.
   Say so when you cannot run it.
+- The `verify-omsync` skill drives the real app in a browser on throwaway data. Ask the owner
+  before you run it, and say which features you would drive.
 
 ## Review
 
@@ -60,6 +62,7 @@ git config core.hooksPath .githooks   # once per clone: pre-commit and commit-ms
 sh scripts/check.sh                   # ruff, Biome (JS and CSS), import layers
 uv run playwright install chromium    # once: the browser tests need it
 uv run pytest -q
+uv run pytest -m browser              # browser journeys, about 90 seconds: run after a page change
 eval "$(sh scripts/dev-data.sh | tail -n 1)"   # disposable data seeded from tests/fixtures
 uv run omsync serve --demo            # needs no credentials
 uv run omsync serve                   # sign-in needs the owner's Bitwarden account
