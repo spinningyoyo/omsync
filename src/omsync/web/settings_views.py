@@ -11,9 +11,10 @@ from uuid import uuid4
 from omsync.ingest.discovery import DiscoveredAccount, mask_account_numbers
 from omsync.ingest.institutions import AccountLine, InstitutionGroup, ProviderLine
 from omsync.ingest.pipeline import ImportReport
-from omsync.ingest.providers import connector_label
-from omsync.ledger.models import AccountType
+from omsync.ledger.models import AccountType, ProviderKind
 from omsync.ledger.sources import account_digits
+from omsync.ledger.sync_runs import RecentSync
+from omsync.receipts.connectors import get_connector
 from omsync.receipts.profiles import VendorProfile
 from omsync.web.account_page import SyncView, local_time, sync_views
 from omsync.web.accounts_panel import TYPE_LABELS
@@ -59,7 +60,10 @@ SETTINGS_NAV: tuple[NavSection, ...] = (
     ),
     NavSection(
         "Transactions",
-        (NavItem("Categories", "/settings/categories", "shapes"),),
+        (
+            NavItem("Categories", "/settings/categories", "shapes"),
+            NavItem("Tags", "/settings/tags", "tag"),
+        ),
     ),
 )
 
@@ -99,6 +103,14 @@ def type_hint_value(hint: str | None) -> str:
 
 
 @dataclass(frozen=True)
+class TagView:
+    id: int
+    name: str
+    color: str
+    count: int
+
+
+@dataclass(frozen=True)
 class AccountRowView:
     id: int
     name: str
@@ -120,18 +132,26 @@ class AccountChoiceView:
 
 @dataclass(frozen=True)
 class ProviderCardView:
+    """One provider, of either kind, as its card draws it. A bank provider has accounts and
+    choices; a receipt provider has receipt_count and latest_date."""
+
     key: str
-    connector: str  # the card's Method line, without the bank name its header already shows
-    bank: str  # the connector's full name, for the edit dialog
-    vault: str
-    locked: bool  # the vault is locked, so the edit form offers its unlock form first
+    name: str
+    kind: ProviderKind
+    logo_key: str
+    login: str  # whether a vault login is picked, or how you sign in
+    locked: bool  # the vault is locked, so a login search cannot run
     sync_busy: bool  # a sync job is running, so this provider's Sync button is disabled
     sync: SyncView | None
-    accounts: list[AccountRowView]
-    choices: list[AccountChoiceView]
     edit_key: str
     delete_key: str
     synced_at: datetime | None = None  # when its last sync started, for the page's summary
+    accounts: list[AccountRowView] = field(default_factory=list)
+    choices: list[AccountChoiceView] = field(default_factory=list)
+    receipt_count: int = 0
+    latest_date: date | None = None
+    uses_vault: bool = True  # the connector can sign in with a vault login
+    login_picked: bool = False  # a vault login is picked, so its edit dialog can name it
 
     @property
     def open_accounts(self) -> list[AccountRowView]:
@@ -150,73 +170,44 @@ class InstitutionGroupView:
     not_synced: list[AccountRowView]
 
 
-@dataclass(frozen=True)
-class VendorCardView:
-    key: str
-    vendor_key: str
-    name: str
-    account: str
-    folder: str
-    method: str
-    vault: str
-    vault_item_id: str | None
-    locked: bool
-    sync_busy: bool
-    receipt_count: int
-    latest_date: date | None
-    edit_key: str
-    delete_key: str
-    can_delete: bool = True
-    sync: SyncView | None = None
-    synced_at: datetime | None = None
-
-
-def vendor_card_view(
+def receipt_card_view(
     profile: VendorProfile,
-    vault_text: str,
+    login: str,
     receipt_count: int,
     latest_date: date | None,
+    *,
     locked: bool,
     busy: bool,
-    can_delete: bool = True,
-    sync: SyncView | None = None,
-    synced_at: datetime | None = None,
-) -> VendorCardView:
-    method = (
-        "Costco receipt download" if profile.vendor_key == "costco" else "Amazon receipt download"
-    )
-    folder_name = profile.account or profile.key
-    folder = f"receipts/{profile.vendor_key.upper()}/{folder_name}"
-    return VendorCardView(
+    run: RecentSync | None,
+) -> ProviderCardView:
+    return ProviderCardView(
         key=profile.key,
-        vendor_key=profile.vendor_key,
         name=profile.name,
-        account=folder_name,
-        folder=folder,
-        method=method,
-        vault=vault_text,
-        vault_item_id=profile.vault_item_id,
+        kind=ProviderKind.receipt,
+        logo_key=profile.vendor_key,
+        login=login,
         locked=locked,
         sync_busy=busy,
-        receipt_count=receipt_count,
-        latest_date=latest_date,
+        sync=_run_view(run),
         edit_key=uuid4().hex,
         delete_key=uuid4().hex,
-        can_delete=can_delete,
-        sync=sync,
-        synced_at=synced_at,
+        synced_at=run.started_at if run is not None else None,
+        receipt_count=receipt_count,
+        latest_date=latest_date,
+        uses_vault=get_connector(profile.vendor_key).uses_vault,
+        login_picked=profile.vault_item_id is not None,
     )
 
 
 def institution_group_view(
-    group: InstitutionGroup, vault_texts: dict[str, str], locked: bool, busy: bool
+    group: InstitutionGroup, logins: dict[str, str], locked: bool, busy: bool
 ) -> InstitutionGroupView:
     """One institution's providers, and its open accounts that no provider fetches."""
     return InstitutionGroupView(
         key=group.key,
         name=group.name,
         providers=[
-            provider_card_view(group, provider, vault_texts.get(provider.key, ""), locked, busy)
+            provider_card_view(group, provider, logins.get(provider.key, ""), locked, busy)
             for provider in group.providers
         ],
         not_synced=[
@@ -228,17 +219,21 @@ def institution_group_view(
 
 
 def provider_card_view(
-    group: InstitutionGroup, provider: ProviderLine, vault_text: str, locked: bool, busy: bool
+    group: InstitutionGroup, provider: ProviderLine, login: str, locked: bool, busy: bool
 ) -> ProviderCardView:
     fetched = set(provider.account_ids)
     return ProviderCardView(
         key=provider.key,
-        connector=_method_text(group, provider),
-        bank=_bank_text(provider),
-        vault=vault_text,
+        name=provider.name,
+        kind=ProviderKind.bank,
+        logo_key=group.key,
+        login=login,
         locked=locked,
         sync_busy=busy,
-        sync=_sync_view(provider),
+        sync=_run_view(provider.last_sync),
+        edit_key=uuid4().hex,
+        delete_key=uuid4().hex,
+        synced_at=provider.last_sync.started_at if provider.last_sync is not None else None,
         accounts=[account_row(account) for account in group.accounts if account.id in fetched],
         choices=[
             _choice_view(provider, account)
@@ -246,17 +241,14 @@ def provider_card_view(
             if account.id in fetched
             or (not account.closed and group.provider_of(account.id) is None)
         ],
-        edit_key=uuid4().hex,
-        delete_key=uuid4().hex,
-        synced_at=provider.last_sync.started_at if provider.last_sync is not None else None,
+        login_picked=provider.vault_item_id is not None,
     )
 
 
-def providers_summary(groups: list[InstitutionGroupView]) -> str:
+def providers_summary(cards: list[ProviderCardView]) -> str:
     """The page's line under its title: how many providers, and when the latest sync ran."""
-    cards = [card for group in groups for card in group.providers]
     if not cards:
-        return "Banks omsync syncs, and the accounts each one fetches."
+        return "Where omsync signs in to fetch your statements and receipts."
     count = f"{len(cards)} provider" + ("" if len(cards) == 1 else "s")
     synced = [card.synced_at for card in cards if card.synced_at is not None]
     when = f"last sync {local_time(max(synced))}" if synced else "no sync yet"
@@ -274,27 +266,8 @@ def _choice_view(provider: ProviderLine, account: AccountLine) -> AccountChoiceV
     )
 
 
-def _sync_view(provider: ProviderLine) -> SyncView | None:
-    syncs = sync_views([provider.last_sync]) if provider.last_sync is not None else []
-    return syncs[0] if syncs else None
-
-
-def _bank_text(provider: ProviderLine) -> str:
-    return connector_label(provider.connector_key) + (
-        "" if provider.connector_enabled else " (turned off)"
-    )
-
-
-def _method_text(group: InstitutionGroup, provider: ProviderLine) -> str:
-    """How the provider fetches, for the card's Method line. The card's header already names the
-    institution, so a label's bank name is dropped when it is that name. A name that goes further,
-    such as Chase Business under Chase, is kept: it says which login the provider uses."""
-    label = connector_label(provider.connector_key)
-    bank, separator, method = label.partition(": ")
-    name = group.name.casefold()
-    if separator and (bank.casefold() == name or not bank.casefold().startswith(name)):
-        label = method
-    return label + ("" if provider.connector_enabled else " (turned off)")
+def _run_view(run: RecentSync | None) -> SyncView | None:
+    return sync_views([run])[0] if run is not None else None
 
 
 def account_row(account: AccountLine) -> AccountRowView:

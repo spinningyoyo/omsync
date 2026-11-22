@@ -41,6 +41,18 @@ from omsync.ledger.filters import apply as apply_filter
 from omsync.ledger.links import Link, LinkKind
 from omsync.ledger.sources import Account, account_digits
 from omsync.ledger.statements import StatementFile, StatementRow
+from omsync.ledger.tags import (
+    SplitTag,
+    Tag,
+    TagLink,
+    TransactionTag,
+    check_tags_exist,
+    link_changes,
+    link_owner,
+    new_tag_change,
+    retag_changes,
+    split_tag_deletes,
+)
 from omsync.ledger.transactions import (
     CategoryOrigin,
     ContactOrigin,
@@ -54,6 +66,15 @@ SplitLine = tuple[int, int | None, str | None]  # amount_cents, category_id, mem
 
 
 @dataclass(frozen=True)
+class TagRow:
+    """One tag of a transaction or split, as the register shows it."""
+
+    id: int
+    name: str
+    color: str
+
+
+@dataclass(frozen=True)
 class SplitRow:
     """One split line of a transaction, as the register shows it."""
 
@@ -62,6 +83,7 @@ class SplitRow:
     category_id: int | None
     category: str | None
     memo: str | None
+    tags: list[TagRow] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -113,6 +135,7 @@ class RegisterRow:
     memo: str | None
     splits: list[SplitRow] = field(default_factory=list)
     links: list[RowLink] = field(default_factory=list)
+    tags: list[TagRow] = field(default_factory=list)
 
     @property
     def is_split(self) -> bool:
@@ -174,7 +197,11 @@ def row_version(row: RegisterRow) -> str:
         row.category_id,
         row.category_origin.value,
         row.memo,
-        [[split.id, split.amount_cents, split.category, split.memo] for split in row.splits],
+        [
+            [split.id, split.amount_cents, split.category, split.memo, [t.id for t in split.tags]]
+            for split in row.splits
+        ],
+        [t.id for t in row.tags],
     ]
     return hashlib.sha256(json.dumps(state).encode()).hexdigest()[:20]
 
@@ -184,7 +211,6 @@ def field_version(row: RegisterRow, field_name: str) -> str:
     was rendered with, so a change to that field made elsewhere refuses the save. Changes to the
     other fields do not, so each cell in a row saves on its own."""
     state = {
-        "memo": row.memo,
         "category": [row.category_id, row.category_origin.value, row.is_split],
     }[field_name]
     return hashlib.sha256(json.dumps([field_name, state]).encode()).hexdigest()[:20]
@@ -301,6 +327,121 @@ def edit_memo(session: Session, txn_id: int, memo: str | None, *, idempotency_ke
     )
 
 
+def edit_tags(
+    session: Session, txn_id: int, tag_ids: Sequence[int], *, idempotency_key: str
+) -> Batch | None:
+    """Set the tags of a transaction. Returns None when it already has exactly these."""
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    current = _transaction_values(session, txn_id)
+    changes = retag_changes(session, TransactionTag, txn_id, tag_ids)
+    if not changes:
+        return None
+    return _write(
+        session,
+        kind="register.tags",
+        txn_id=txn_id,
+        field="tags",
+        label=f"Update tags of {current['payee']}",
+        changes=changes,
+        idempotency_key=idempotency_key,
+    )
+
+
+def toggle_transaction_tag(
+    session: Session, txn_id: int, tag_id: int, *, idempotency_key: str
+) -> Batch | None:
+    """Put a tag on a transaction, or take it off if it has it. Returns None for a tag that no
+    longer exists, so a stale picker changes nothing."""
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    current = _transaction_values(session, txn_id)
+    tag_name = session.scalar(select(Tag.name).where(Tag.id == tag_id))
+    if tag_name is None:
+        return None
+    has = session.scalar(
+        select(TransactionTag.id).where(
+            TransactionTag.transaction_id == txn_id, TransactionTag.tag_id == tag_id
+        )
+    )
+    pair = [(txn_id, tag_id)]
+    if has is None:
+        changes = link_changes(session, TransactionTag, add=pair)
+        label = f"Added tag {tag_name} to {current['payee']}"
+    else:
+        changes = link_changes(session, TransactionTag, remove=pair)
+        label = f"Removed tag {tag_name} from {current['payee']}"
+    return _write(
+        session,
+        kind="register.tags",
+        txn_id=txn_id,
+        field="tags",
+        label=label,
+        changes=changes,
+        idempotency_key=idempotency_key,
+    )
+
+
+def create_tag_on_transaction(
+    session: Session, txn_id: int, name: str, color: str, *, idempotency_key: str
+) -> Batch:
+    """Create a tag and put it on a transaction, as one batch, so one undo removes both. Raises
+    ValueError for a bad name or color, or a name that a tag already has."""
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    current = _transaction_values(session, txn_id)
+    new_id, clean_name, created = new_tag_change(session, name, color)
+    changes = [created, *link_changes(session, TransactionTag, add=[(txn_id, new_id)])]
+    return _write(
+        session,
+        kind="register.tags",
+        txn_id=txn_id,
+        field="tags",
+        label=f"Created tag {clean_name} on {current['payee']}",
+        changes=changes,
+        idempotency_key=idempotency_key,
+    )
+
+
+def edit_split_tags(
+    session: Session, split_id: int, tag_ids: Sequence[int], *, idempotency_key: str
+) -> Batch | None:
+    """Set the tags of a split line. Returns None when it already has exactly these."""
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    split_row = session.get(Split, split_id)
+    if split_row is None:
+        raise LookupError(f"No such split {split_id}")
+    changes = retag_changes(session, SplitTag, split_id, tag_ids)
+    if not changes:
+        return None
+    return _write(
+        session,
+        kind="register.split_tags",
+        txn_id=split_row.transaction_id,
+        field="tags",
+        label="Update split tags",
+        changes=changes,
+        idempotency_key=idempotency_key,
+    )
+
+
+def toggle_split_tag(
+    session: Session, split_id: int, tag_id: int, *, idempotency_key: str
+) -> Batch | None:
+    """Put a tag on a split line, or take it off if it has it."""
+    replay = applied_batch_for_key(session, idempotency_key)
+    if replay is not None:
+        return replay
+    current = set(session.scalars(select(SplitTag.tag_id).where(SplitTag.split_id == split_id)))
+    wanted = current - {tag_id} if tag_id in current else current | {tag_id}
+    return edit_split_tags(session, split_id, sorted(wanted), idempotency_key=idempotency_key)
+
+
 def set_category(
     session: Session, txn_id: int, category_id: int | None, *, idempotency_key: str
 ) -> Batch:
@@ -372,15 +513,17 @@ def set_splits(
     txn_id: int,
     lines: Sequence[SplitLine],
     *,
+    tags: Sequence[Sequence[int]] | None = None,
     idempotency_key: str,
 ) -> Batch:
     """Replace the splits with `lines`, each (amount_cents, category_id, memo).
 
-    One batch: the old split rows are deleted, the new ones are inserted with ids that no row
-    holds yet, and the transaction's own category is cleared. The lines must pass
+    One batch: the old split rows and their tags are deleted, the new ones are inserted with ids
+    that no row holds yet, and the transaction's own category is cleared. The lines must pass
     check_split_lines. Each split's origin is manual. A new line keeps the counterparty of the old
     line at the same position, so editing amounts or categories does not forget who a part is
-    owed by. Raises ValueError otherwise.
+    owed by. `tags` gives each new line its tag ids, in line order. Without it, a new line keeps
+    the tags of the old line at the same position. Raises ValueError otherwise.
     """
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
@@ -393,12 +536,25 @@ def set_splits(
 
     old_ids = _split_ids(session, txn_id)
     old = [snapshot(session, "split", split_id) or {} for split_id in old_ids]
-    changes = [
+    if tags is None:
+        carried = _split_tag_ids(session, old_ids)
+        line_tags = [
+            carried.get(old_ids[i], []) if i < len(old_ids) else [] for i in range(len(rows))
+        ]
+    else:
+        if len(tags) != len(rows):
+            raise ValueError("Give each split line its tags.")
+        line_tags = [list(ids) for ids in tags]
+        check_tags_exist(session, {tag_id for ids in line_tags for tag_id in ids})
+    changes = split_tag_deletes(session, old_ids)
+    changes += [
         Change("split", str(split_id), before, None)
         for split_id, before in zip(old_ids, old, strict=True)
     ]
     next_id = next_primary_key(session, Split.__table__)
+    new_tags: list[tuple[int, int]] = []
     for position, (amount, category_id, memo) in enumerate(rows):
+        new_tags.extend((next_id, tag_id) for tag_id in line_tags[position])
         kept = old[position] if position < len(old) else {}
         changes.append(
             Change(
@@ -420,6 +576,7 @@ def set_splits(
             )
         )
         next_id += 1
+    changes += link_changes(session, SplitTag, add=new_tags)
     before = {"category_id": current["category_id"], "category_origin": current["category_origin"]}
     after = {"category_id": None, "category_origin": CategoryOrigin.none.value}
     changes += _field_changes(txn_id, before, after)
@@ -451,7 +608,8 @@ def clear_splits(session: Session, txn_id: int, *, idempotency_key: str) -> Batc
     split_ids = _split_ids(session, txn_id)
     if not split_ids:
         raise ValueError("This transaction is not split.")
-    changes = [
+    changes = split_tag_deletes(session, split_ids)
+    changes += [
         Change("split", str(split_id), snapshot(session, "split", split_id), None)
         for split_id in split_ids
     ]
@@ -480,6 +638,7 @@ class SplitDraft:
     amount: str = ""
     category_id: int | None = None
     memo: str = ""
+    tag_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -499,15 +658,16 @@ class SplitBalance:
 class SplitCheck:
     """What checking proposed split lines found.
 
-    `lines` holds the accepted lines, or is None when anything is wrong. `line_errors` has one
-    entry per proposed line, empty when the line is fine. `message` is the overall problem, empty
-    when `lines` is set.
+    `lines` holds the accepted lines, or is None when anything is wrong, and `line_tags` has the
+    tag ids of each accepted line. `line_errors` has one entry per proposed line, empty when the
+    line is fine. `message` is the overall problem, empty when `lines` is set.
     """
 
     lines: list[SplitLine] | None
     line_errors: list[str]
     message: str
     balance: SplitBalance
+    line_tags: list[tuple[int, ...]] = field(default_factory=list)
 
 
 def split_balance(total_cents: int, amounts: Sequence[str]) -> SplitBalance:
@@ -534,6 +694,7 @@ def check_split_drafts(
     check_split_lines."""
     errors: list[str] = []
     lines: list[SplitLine] = []
+    line_tags: list[tuple[int, ...]] = []
     for draft in drafts:
         if not (draft.amount.strip() or draft.category_id is not None or draft.memo.strip()):
             errors.append("")
@@ -548,8 +709,9 @@ def check_split_drafts(
             continue
         errors.append("")
         lines.append((cents, draft.category_id, draft.memo.strip() or None))
+        line_tags.append(draft.tag_ids)
     balance = split_balance(total_cents, [draft.amount for draft in drafts])
-    return _conclude_split_check(total_cents, errors, lines, balance)
+    return _conclude_split_check(total_cents, errors, lines, balance, line_tags)
 
 
 def check_split_lines(session: Session, total_cents: int, lines: Sequence[SplitLine]) -> SplitCheck:
@@ -578,6 +740,7 @@ def _conclude_split_check(
     errors: list[str],
     lines: list[SplitLine],
     balance: SplitBalance,
+    line_tags: list[tuple[int, ...]] | None = None,
 ) -> SplitCheck:
     """The whole-split rules, applied once every line is individually acceptable."""
     if any(errors):
@@ -590,7 +753,7 @@ def _conclude_split_check(
             f"Amount left: {format_cents(unplaced)}."
         )
     else:
-        return SplitCheck(lines, errors, "", balance)
+        return SplitCheck(lines, errors, "", balance, line_tags or [])
     return SplitCheck(None, errors, message, balance)
 
 
@@ -629,6 +792,7 @@ def _rows(
     ids = [txn.id for txn, _, _ in found]
     splits = _splits_for(session, ids)
     links = _links_for(session, ids)
+    tags = _tags_on(session, TransactionTag, ids)
     return [
         RegisterRow(
             id=txn.id,
@@ -644,6 +808,7 @@ def _rows(
             memo=txn.memo,
             splits=splits.get(txn.id, []),
             links=links.get(txn.id, []),
+            tags=tags.get(txn.id, []),
         )
         for txn, account, category in found
     ]
@@ -720,11 +885,47 @@ def _splits_for(session: Session, txn_ids: list[int]) -> dict[int, list[SplitRow
         .where(Split.transaction_id.in_(txn_ids))
         .order_by(Split.transaction_id, Split.position)
     ).all()
+    split_ids = [split.id for split, _ in found]
+    split_tags = _tags_on(session, SplitTag, split_ids)
     grouped: dict[int, list[SplitRow]] = {}
     for split, category_name in found:
         grouped.setdefault(split.transaction_id, []).append(
-            SplitRow(split.id, split.amount_cents, split.category_id, category_name, split.memo)
+            SplitRow(
+                split.id,
+                split.amount_cents,
+                split.category_id,
+                category_name,
+                split.memo,
+                tags=split_tags.get(split.id, []),
+            )
         )
+    return grouped
+
+
+def _tags_on(session: Session, link: TagLink, owner_ids: list[int]) -> dict[int, list[TagRow]]:
+    """The tags that transactions or split lines carry, by owner id, ordered by name."""
+    if not owner_ids:
+        return {}
+    owner = link_owner(link)
+    found = session.execute(
+        select(owner, Tag.id, Tag.name, Tag.color)
+        .join(Tag, Tag.id == link.tag_id)
+        .where(owner.in_(owner_ids))
+        .order_by(func.lower(Tag.name))
+    ).all()
+    grouped: dict[int, list[TagRow]] = {}
+    for owner_id, tag_id, name, color in found:
+        grouped.setdefault(owner_id, []).append(TagRow(tag_id, name, color))
+    return grouped
+
+
+def _split_tag_ids(session: Session, split_ids: list[int]) -> dict[int, list[int]]:
+    grouped: dict[int, list[int]] = {}
+    if split_ids:
+        for split_id, tag_id in session.execute(
+            select(SplitTag.split_id, SplitTag.tag_id).where(SplitTag.split_id.in_(split_ids))
+        ):
+            grouped.setdefault(split_id, []).append(tag_id)
     return grouped
 
 

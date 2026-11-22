@@ -1,4 +1,4 @@
-{# Fragment blocks for the add-provider wizard's replies (routes/settings_wizard.py). A block renders
+{# Fragment blocks for the add-bank wizard's replies (routes/settings_wizard.py). A block renders
    without this file's top-level code, so each one imports the macros it uses. The wizard blocks
    replace #wizard-step. #}
 
@@ -14,16 +14,12 @@
 
 {% block frag_step_login %}
 {% from "settings/parts.html" import login_step %}
-{% from "components/vault_status.html" import vault_status_oob %}
-{{ login_step(state, form_key, locked, logins, query, message, unlock_message) }}
-{%- if vault_status is defined %}
-{{ vault_status_oob(vault_status, page=false) }}
-{%- endif %}
+{{ login_step(state, form_key, locked, logins, query, message) }}
 {% endblock %}
 
 {% block frag_vault_results %}
-{% from "settings/parts.html" import vault_results, state_fields %}
-{{ vault_results(locked, logins, "", message|default(""), unlock_action="/settings/providers/new/unlock", unlock_target="#wizard-step", unlock_hidden=state_fields(state)) }}
+{% from "settings/parts.html" import vault_results %}
+{{ vault_results(locked, logins, message|default("")) }}
 {% endblock %}
 
 {% block frag_step_accounts %}

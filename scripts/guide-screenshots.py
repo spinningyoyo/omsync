@@ -60,7 +60,7 @@ class Shot:
 
 SHOTS = (
     Shot("tour-home", "/", None, accounts=True),
-    Shot("statements-bank-sync", "/settings/providers", SETTINGS_CONTENT),
+    Shot("statements-bank-sync", "/settings/sync", SETTINGS_CONTENT),
     Shot("categorize-rules", "/settings/categories?tab=rules", SETTINGS_CONTENT, height=900),
     Shot(
         "reconcile-page",

@@ -47,6 +47,7 @@ from omsync.reconcile.rules.transfers import (
     rule_card_bill_payment,
     rule_card_credit_refund,
     rule_transfer_names_account,
+    rule_transfer_opposite_amount,
     rule_transfer_same_amount,
     rule_transfer_same_confirmation,
     rule_transfer_same_transaction_id,
@@ -105,6 +106,11 @@ RULES: tuple[Rule, ...] = (
         "return_other_account_same_store",
         rule_return_other_account_same_store,
         DESCRIPTIONS["return_other_account_same_store"],
+    ),
+    Rule(
+        "transfer_opposite_amount",
+        rule_transfer_opposite_amount,
+        DESCRIPTIONS["transfer_opposite_amount"],
     ),
 )
 

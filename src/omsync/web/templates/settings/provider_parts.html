@@ -1,7 +1,7 @@
-{# The Bank sync parts: the row of provider and Not synced cards, the edit and delete dialogs of a
-   card, and the edit form's vault search. The list region is replaced whole when a change is saved
-   or undone, so the dialogs and the cards are re-rendered with it. Macros import what they use,
-   because a fragment block renders without this file's top level. #}
+{# The Data sync parts: the lists of provider cards, one card for every provider of either kind, the
+   edit and delete dialogs of a card, and the edit form's vault search. A list is replaced whole when
+   a change is saved or undone, so the dialogs and the cards are re-rendered with it. Macros import
+   what they use, because a fragment block renders without this file's top level. #}
 {% from "components/button.html" import button %}
 {% from "components/dialog.html" import dialog with context %}
 {% from "components/institution_logo.html" import institution_logo with context %}
@@ -9,18 +9,31 @@
 {% from "settings/parts.html" import step_error, vault_results %}
 {% from "settings/sync_parts.html" import sync_button %}
 
-{# The providers, as cards that wrap into rows, so every bank is in view: a card for each provider,
-   then a Not synced card for an institution with open accounts that no provider fetches.
+{# The top of a card: the logo and the name, and what the card holds under it. #}
+{% macro card_header(logo_key, name, title_id, subtitle="", subtitle_id="") -%}
+<div class="flex min-w-0 flex-1 items-center gap-3">
+  {{ institution_logo(logo_key, name, 36) }}
+  <div class="min-w-0">
+    <h3 id="{{ title_id }}" class="break-words font-medium text-primary">{{ name }}</h3>
+    {%- if subtitle %}
+    <p id="{{ subtitle_id }}" class="break-words text-xs text-secondary">{{ subtitle }}</p>
+    {%- endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+{# The bank providers, as cards that wrap into rows, so every bank is in view: a card for each
+   provider, then a Not synced card for an institution with open accounts that no provider fetches.
    oob=true swaps it in place after a change or an undo. #}
 {% macro provider_list(groups, oob=false) -%}
 <div id="providers-list" class="flex flex-col gap-4"{% if oob %} hx-swap-oob="true"{% endif %}>
   {%- if not (groups | selectattr("providers") | list) %}
-  <p class="text-sm text-secondary">No providers yet. Add one to sign in to a bank and fetch the accounts you pick.</p>
+  <p class="text-sm text-secondary">No banks yet. Add one to sign in and fetch the accounts you pick.</p>
   {%- endif %}
-  <div class="grid items-start gap-4 md:grid-cols-2 2xl:grid-cols-3" role="list" aria-label="Providers">
+  <div class="grid items-start gap-4 md:grid-cols-2 2xl:grid-cols-3" role="list" aria-label="Banks">
     {%- for group in groups %}
     {%- for card in group.providers %}
-    {{ provider_card(card, group) }}
+    {{ provider_card(card) }}
     {%- endfor %}
     {%- if group.not_synced %}
     {{ not_synced_card(group) }}
@@ -30,13 +43,16 @@
 </div>
 {%- endmacro %}
 
-{# The top of a card: the institution's logo and name, and what the card holds under it. #}
-{% macro card_header(group, title_id, subtitle, subtitle_id) -%}
-<div class="flex min-w-0 flex-1 items-center gap-3">
-  {{ institution_logo(group.key, group.name, 36) }}
-  <div class="min-w-0">
-    <h3 id="{{ title_id }}" class="font-medium text-primary">{{ group.name }}</h3>
-    <p id="{{ subtitle_id }}" class="break-words text-xs text-secondary">{{ subtitle }}</p>
+{# The receipt providers, as cards in the same grid. #}
+{% macro receipt_list(cards, oob=false) -%}
+<div id="receipts-list" class="flex flex-col gap-4"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {%- if not cards %}
+  <p class="text-sm text-secondary">No receipts yet. Add a store to fetch its itemized receipts.</p>
+  {%- endif %}
+  <div class="grid items-start gap-4 md:grid-cols-2 2xl:grid-cols-3" role="list" aria-label="Receipts">
+    {%- for card in cards %}
+    {{ provider_card(card) }}
+    {%- endfor %}
   </div>
 </div>
 {%- endmacro %}
@@ -47,7 +63,7 @@
 {# An institution's open accounts that no provider fetches. #}
 {% macro not_synced_card(group) -%}
 <article id="not-synced-{{ group.key }}" role="listitem" class="{{ CARD }}" aria-labelledby="not-synced-{{ group.key }}-title not-synced-{{ group.key }}-subtitle">
-  <header class="flex items-start gap-2">{{ card_header(group, "not-synced-" ~ group.key ~ "-title", "Not synced", "not-synced-" ~ group.key ~ "-subtitle") }}</header>
+  <header class="flex items-start gap-2">{{ card_header(group.key, group.name, "not-synced-" ~ group.key ~ "-title", "Not synced", "not-synced-" ~ group.key ~ "-subtitle") }}</header>
   <p class="text-xs text-secondary">Not fetched by any provider. Edit a provider to add them.</p>
   {{ account_list(group.not_synced, "Accounts not synced at " ~ group.name) }}
 </article>
@@ -66,7 +82,7 @@
         {%- if account.closed %}{{ pill("Closed", tone="gray") }}{% endif %}
       </span>
     </span>
-    {% call dialog(id="rename-account-" ~ account.id, title="Rename account", trigger="Rename", trigger_size="sm", trigger_icon="pencil", trigger_tip_class="icon-tip--left", subtitle="The name appears on the accounts panel and in the register.", width="sm") %}
+    {% call dialog(id="rename-account-" ~ account.id, title="Rename account", trigger="Rename", trigger_aria="Rename " ~ account.name, trigger_size="sm", trigger_icon="pencil", trigger_tip_class="icon-tip--left", subtitle="The name appears on the accounts panel and in the register.", width="sm") %}
       {{ account_rename(account) }}
     {% endcall %}
   </li>
@@ -76,7 +92,7 @@
 
 {# The rename dialog's body: just the name. The account's other settings stay on its own page. #}
 {% macro account_rename(account) -%}
-<form class="flex flex-col gap-4" hx-post="/settings/providers/accounts/{{ account.id }}/rename" hx-target="#rename-status-{{ account.id }}" hx-swap="innerHTML">
+<form class="flex flex-col gap-4" hx-post="/settings/sync/accounts/{{ account.id }}/rename" hx-target="#rename-status-{{ account.id }}" hx-swap="innerHTML">
   <input type="hidden" name="idempotency_key" value="{{ account.rename_key }}">
   <label class="form-field">
     <span class="form-field__label">Name</span>
@@ -90,27 +106,29 @@
 </form>
 {%- endmacro %}
 
-{# One provider: its institution, bank, vault login, last sync, and the accounts it fetches. Sync starts
-   a sync of this provider; Edit and Delete open their dialogs. They are icons, named on hover. #}
-{% macro provider_card(card, group) -%}
-<article id="provider-{{ card.key }}" role="listitem" class="{{ CARD }}" aria-labelledby="provider-{{ card.key }}-title provider-{{ card.key }}-key">
+{# One provider of either kind: its logo and name, its login, its last sync, and what it holds: a
+   bank's accounts, or a receipt provider's receipts. Sync starts a sync of this provider; Edit and
+   Delete open their dialogs. They are icons, named on hover. #}
+{% macro provider_card(card) -%}
+{%- set bank = card.kind.value == "bank" %}
+<article id="provider-{{ card.key }}" role="listitem" class="{{ CARD }}" aria-labelledby="provider-{{ card.key }}-title">
   <header class="flex items-start gap-2">
-    {{ card_header(group, "provider-" ~ card.key ~ "-title", card.key, "provider-" ~ card.key ~ "-key") }}
+    {{ card_header(card.logo_key, card.name, "provider-" ~ card.key ~ "-title") }}
     <div class="flex shrink-0 items-center">
-      {{ sync_button(card.key, card.sync_busy) }}
-      {% call dialog(id="edit-provider-" ~ card.key, title="Edit " ~ card.key, trigger="Edit", trigger_size="sm", trigger_icon="pencil", width="md") %}
-        {{ provider_edit(card, card.locked) }}
+      {{ sync_button(card.key, card.sync_busy, card.name) }}
+      {% call dialog(id="edit-provider-" ~ card.key, title="Edit " ~ card.name, trigger="Edit", trigger_size="sm", trigger_icon="pencil", trigger_aria="Edit " ~ card.name, width="md") %}
+        {{ provider_edit(card) }}
       {% endcall %}
-      {% call dialog(id="delete-provider-" ~ card.key, title="Delete " ~ card.key ~ "?", trigger="Delete", trigger_size="sm", trigger_icon="trash-2", width="sm") %}
+      {% call dialog(id="delete-provider-" ~ card.key, title="Delete " ~ card.name ~ "?", trigger="Delete", trigger_size="sm", trigger_icon="trash-2", trigger_aria="Delete " ~ card.name, width="sm") %}
         {{ provider_delete(card) }}
       {% endcall %}
     </div>
   </header>
   <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-    <dt class="text-secondary">Method</dt>
-    <dd class="min-w-0 break-words text-primary">{{ card.connector }}</dd>
+    {%- if card.uses_vault %}
     <dt class="text-secondary">{{ "Vault login" if has_vault else "Sign-in" }}</dt>
-    <dd class="min-w-0 break-words text-primary">{{ card.vault }}</dd>
+    <dd class="min-w-0 break-words text-primary">{{ card.login }}</dd>
+    {%- endif %}
     <dt class="text-secondary">Last sync</dt>
     <dd class="min-w-0 break-words text-primary">
       {%- if card.sync %}{{ card.sync.status }}, {{ card.sync.when }}, {{ card.sync.files }}
@@ -118,42 +136,57 @@
       {%- else %}No syncs yet{% endif %}
     </dd>
   </dl>
-  {%- if card.accounts %}
-  {{ account_list(card.open_accounts, "Accounts fetched by " ~ card.key) }}
+  {%- if not bank %}
+  <p class="text-sm text-primary">
+    {{- card.receipt_count }} receipt{% if card.receipt_count != 1 %}s{% endif %}
+    {%- if card.latest_date %} · latest {{ card.latest_date.isoformat() }}{% endif %}
+  </p>
+  {%- elif card.accounts %}
+  {{ account_list(card.open_accounts, "Accounts fetched by " ~ card.name) }}
   {%- if card.closed_accounts %}
   <details class="text-sm">
     <summary class="cursor-pointer text-secondary">Closed ({{ card.closed_accounts|length }})</summary>
-    {{ account_list(card.closed_accounts, "Closed accounts of " ~ card.key) }}
+    {{ account_list(card.closed_accounts, "Closed accounts of " ~ card.name) }}
   </details>
   {%- endif %}
   {%- else %}
-  <p class="text-sm text-secondary">Fetches no accounts yet. Edit the provider to choose them.</p>
+  <p class="text-sm text-secondary">Fetches no accounts yet. Edit it to choose them.</p>
   {%- endif %}
 </article>
 {%- endmacro %}
 
-{# The edit dialog's body. The vault login is searched beside the form, because an unlock form cannot
-   sit inside another form; the login radios belong to the form by their form attribute. The bank is
-   shown and not editable. A reply to the unlock form replaces this whole container. #}
-{% macro provider_edit(card, locked, logins=none, query="", unlock_message="", message="") -%}
+{# The edit dialog's body, for either kind. The vault login is searched beside the form, because the
+   search results hold radios that belong to the form by their form attribute. A bank also lists
+   the accounts it fetches. A locked vault shows a button that opens the vault panel, and the search
+   runs again once it is unlocked. #}
+{% macro provider_edit(card) -%}
 <div id="provider-edit-{{ card.key }}" class="flex flex-col gap-4">
+  {%- if card.uses_vault %}
   <div class="flex flex-col gap-3">
     {%- if has_vault %}
-    <p class="text-sm text-primary">Vault login: <span class="text-secondary">{{ card.vault }}</span></p>
+    {#- The name needs a vault search, so it is asked for only when the dialog opens, and again
+        when the vault is unlocked while it is open. #}
+    <p class="text-sm text-primary">Vault login: <span class="text-secondary"
+      {%- if card.login_picked %} hx-get="/settings/sync/{{ card.key }}/edit/login" hx-trigger="intersect once, vault-unlocked[this.closest('dialog').open] from:body" hx-swap="innerHTML"{% endif %}>{{ card.login }}</span></p>
     <label class="form-field">
       <span class="form-field__label">Search logins to use another</span>
-      <input type="search" name="q" value="{{ query }}" autocomplete="off" class="form-field__input" aria-controls="provider-vault-results-{{ card.key }}" hx-get="/settings/providers/{{ card.key }}/edit/logins" hx-trigger="input changed delay:300ms, search" hx-target="#provider-vault-results-{{ card.key }}">
+      <input type="search" name="q" autocomplete="off" class="form-field__input" aria-controls="provider-vault-results-{{ card.key }}" hx-get="/settings/sync/{{ card.key }}/edit/logins" hx-trigger="input changed delay:300ms, search, vault-unlocked from:body" hx-target="#provider-vault-results-{{ card.key }}">
     </label>
     <div id="provider-vault-results-{{ card.key }}" aria-live="polite" class="flex flex-col gap-2">
-      {{ vault_results(locked, logins, unlock_message, "", unlock_action="/settings/providers/" ~ card.key ~ "/edit/unlock", unlock_target="#provider-edit-" ~ card.key, form_id="provider-edit-form-" ~ card.key, choice_required=false) }}
+      {{ vault_results(card.locked, none, "", form_id="provider-edit-form-" ~ card.key, choice_required=false) }}
     </div>
     {%- else %}
-    <p class="text-sm text-primary">Sign-in: <span class="text-secondary">{{ card.vault }}</span></p>
+    <p class="text-sm text-primary">Sign-in: <span class="text-secondary">{{ card.login }}</span></p>
     {%- endif %}
-    <p class="text-xs text-secondary">To change banks, add a new provider.</p>
   </div>
-  <form id="provider-edit-form-{{ card.key }}" class="flex flex-col gap-4" hx-post="/settings/providers/{{ card.key }}/edit" hx-target="#provider-edit-status-{{ card.key }}" hx-swap="innerHTML">
+  {%- endif %}
+  <form id="provider-edit-form-{{ card.key }}" class="flex flex-col gap-4" hx-post="/settings/sync/{{ card.key }}/edit" hx-target="#provider-edit-status-{{ card.key }}" hx-swap="innerHTML">
     <input type="hidden" name="idempotency_key" value="{{ card.edit_key }}">
+    <label class="form-field">
+      <span class="form-field__label">Name</span>
+      <input name="name" value="{{ card.name }}" required maxlength="60" autocomplete="off" class="form-field__input">
+    </label>
+    {%- if card.kind.value == "bank" %}
     <fieldset class="flex flex-col gap-1">
       <legend class="text-sm font-medium text-primary">Accounts it fetches</legend>
       {%- for choice in card.choices %}
@@ -165,7 +198,8 @@
       <p class="text-sm text-secondary">No accounts left: another provider fetches them all.</p>
       {%- endfor %}
     </fieldset>
-    <div id="provider-edit-status-{{ card.key }}" aria-live="polite">{{ step_error(message) }}</div>
+    {%- endif %}
+    <div id="provider-edit-status-{{ card.key }}" aria-live="polite"></div>
     <div class="flex justify-end gap-2">
       {{ button("Cancel", variant="outline", attrs={"data-action": "dialog#close"}) }}
       {{ button("Save", variant="primary", type="submit") }}
@@ -174,15 +208,15 @@
 </div>
 {%- endmacro %}
 
-{# The delete dialog's body. It says what stays, because the accounts and their history are kept. #}
+{# The delete dialog's body. It says what stays. #}
 {% macro provider_delete(card) -%}
-<form class="flex flex-col gap-4" hx-post="/settings/providers/{{ card.key }}/delete" hx-target="#provider-delete-status-{{ card.key }}" hx-swap="innerHTML">
-  <p class="text-sm text-secondary">Stops syncing. Your accounts and transactions stay.</p>
+<form class="flex flex-col gap-4" hx-post="/settings/sync/{{ card.key }}/delete" hx-target="#provider-delete-status-{{ card.key }}" hx-swap="innerHTML">
+  <p class="text-sm text-secondary">{{ "Stops syncing. Your accounts and transactions stay." if card.kind.value == "bank" else "Stops fetching and removes its receipts from omsync. Their files stay in your data folder." }}</p>
   <input type="hidden" name="idempotency_key" value="{{ card.delete_key }}">
   <div id="provider-delete-status-{{ card.key }}" aria-live="assertive"></div>
   <div class="flex justify-end gap-2">
     {{ button("Cancel", variant="outline", attrs={"data-action": "dialog#close"}) }}
-    {{ button("Delete", variant="destructive", type="submit") }}
+    {{ button("Delete", variant="primary", type="submit") }}
   </div>
 </form>
 {%- endmacro %}

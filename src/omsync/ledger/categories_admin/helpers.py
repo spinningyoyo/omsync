@@ -23,7 +23,6 @@ from omsync.ledger.categories_admin.rows import (
     _BY_HAND,
     _ICON_NAME,
     COSTCO_FOOD_USE,
-    RENTAL_NAME_USE,
     SAVED_FILTER_USE,
     CategoryRow,
     RuleDraft,
@@ -48,7 +47,6 @@ from omsync.ledger.payment_methods import (
 )
 from omsync.ledger.preferences import get_pref
 from omsync.ledger.receipt_vendors import COSTCO_FOOD_CATEGORY
-from omsync.ledger.rental import RENTAL_CATEGORIES, get_rental_categories
 
 
 def _write(
@@ -212,8 +210,8 @@ def _category_columns() -> dict[str, list[Any]]:
 
 def _category_usage(session: Session) -> dict[int, Counter[str]]:
     """What points at each category, by kind: rows with a foreign key to it, saved filters that name
-    it, rental category names that match it, and the Costco food setting. A category nothing points
-    at is absent.
+    it, and the Costco food setting. A category nothing points at is absent. Its rental mark is its
+    own, so it is not a use.
 
     Each table names a category in one column, so counting each column counts each row once.
     """
@@ -232,10 +230,6 @@ def _category_usage(session: Session) -> dict[int, Counter[str]]:
     for saved in session.scalars(select(SavedFilter)):
         for category_id in _filter_category_ids(saved.conditions):
             tally(category_id, SAVED_FILTER_USE)
-    ids_by_name = dict(session.execute(select(Category.name, Category.id)).all())
-    for name in {name.strip() for name in get_rental_categories(session)}:
-        if name in ids_by_name:
-            tally(int(ids_by_name[name]), RENTAL_NAME_USE)
     food = get_pref(session, COSTCO_FOOD_CATEGORY)
     if isinstance(food, int) and not isinstance(food, bool):
         tally(food, COSTCO_FOOD_USE)
@@ -391,19 +385,14 @@ def _saved_filter_changes(session: Session, source_id: int, target_id: int) -> l
     return changes
 
 
-def _rental_name_changes(session: Session, source_name: str, target_name: str) -> list[Change]:
-    """The rental category names that name the source now name the target, once each. The preference
-    is a batch change, so undo puts the names back. The defaults apply until it is saved."""
-    names = get_rental_categories(session)
-    if not any(name.strip() == source_name for name in names):
+def _rental_mark_changes(session: Session, source_id: int, target_id: int) -> list[Change]:
+    """A rental category moved into one that is not makes the target a rental category, so the
+    rental report keeps counting what moved."""
+    source = session.get(Category, source_id)
+    target = snapshot(session, "category", target_id)
+    if source is None or target is None or not source.rental or target["rental"]:
         return []
-    renamed = [target_name if name.strip() == source_name else name.strip() for name in names]
-    value = list(dict.fromkeys(renamed))
-    before = snapshot(session, "preference", RENTAL_CATEGORIES)
-    after = (
-        {"key": RENTAL_CATEGORIES, "value": value} if before is None else {**before, "value": value}
-    )
-    return [Change("preference", RENTAL_CATEGORIES, before, after)]
+    return [Change("category", str(target_id), target, {**target, "rental": True})]
 
 
 def _costco_food_changes(session: Session, source_id: int, target_id: int) -> list[Change]:

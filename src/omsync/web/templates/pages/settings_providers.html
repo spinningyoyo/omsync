@@ -1,20 +1,20 @@
 {% extends "layouts/settings.html" %}
 {% from "layouts/shell_parts.html" import page_header %}
 {% from "components/alert.html" import alert with context %}
+{% from "components/button.html" import link_button %}
 {% from "components/tabs.html" import tabs %}
-{% from "settings/provider_parts.html" import provider_list %}
-{% from "settings/vendor_parts.html" import vendor_list %}
-{% from "settings/sync_parts.html" import sync_all_control, sync_banks_control, sync_vendors_control, sync_region, sync_question, vault_control %}
+{% from "settings/provider_parts.html" import provider_list, receipt_list %}
+{% from "settings/sync_parts.html" import sync_all_control, sync_region, sync_question, vault_control %}
 
 {% block settings_page %}
 {% if demo_mode %}
-{{ alert("Demo: bank sync is off.", variant="info") }}
+{{ alert("Demo: sync is off.", variant="info") }}
 {% endif %}
 {% call page_header(page_title, summary) %}
   {{ vault_control(vault_status, vault_email) }}
   {{ sync_all_control(sync.running) }}
 {% endcall %}
-{{ sync_region(sync, vault_status) }}
+{{ sync_region(sync) }}
 <section id="link-accounts" aria-live="polite" class="rounded-xl bg-container p-6 shadow-border-xs empty:hidden"></section>
 {{ sync_question(sync.question, sync.notice) }}
 
@@ -22,31 +22,31 @@
 <section class="flex flex-col gap-4">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
-      <h2 class="text-base font-medium text-primary">Bank accounts</h2>
+      <h2 class="text-base font-medium text-primary">Banks</h2>
       <p class="text-xs text-secondary">Banks omsync signs in to, and the accounts each one fetches.</p>
     </div>
-    {{ sync_banks_control(sync.running) }}
+    {{ link_button("Add bank", href="/settings/sync/new/bank", variant="outline", icon="plus") }}
   </div>
   {{ provider_list(groups) }}
 </section>
 {% endset %}
 
-{% set vendors_body %}
+{% set receipts_body %}
 <section class="flex flex-col gap-4">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
-      <h2 class="text-base font-medium text-primary">Receipt vendors</h2>
-      <p class="text-xs text-secondary">Download itemized receipts from Costco and Amazon directly into your ledger.</p>
+      <h2 class="text-base font-medium text-primary">Receipts</h2>
+      <p class="text-xs text-secondary">Stores that send itemized receipts.</p>
     </div>
-    {{ sync_vendors_control(sync.running) }}
+    {{ link_button("Add store", href="/settings/sync/new/receipt", variant="outline", icon="plus") }}
   </div>
-  {{ vendor_list(vendor_cards) }}
+  {{ receipt_list(receipt_cards) }}
 </section>
 {% endset %}
 
 {{ tabs("sync-tabs", [
   {"id": "banks", "label": "Banks", "body": banks_body},
-  {"id": "vendors", "label": "Vendors", "body": vendors_body},
+  {"id": "receipts", "label": "Receipts", "body": receipts_body},
 ], tab|default("banks"), "Data sync sections", url_param="tab") }}
 <div id="toast-region" aria-live="polite"></div>
 {% endblock %}

@@ -150,7 +150,7 @@
     {{ menu_item("Update “" ~ state.saved.name ~ "”", attrs={"hx-post": "/transactions/saved-filters/" ~ state.saved.id ~ "/update", "hx-include": "#register-state", "hx-vals": '{"idempotency_key": "' ~ state.form_key ~ '"}', "hx-target": "#toast-region", "hx-swap": "innerHTML"}) }}
     {%- endif %}
     {%- if state.saved %}
-    {{ menu_item("Delete “" ~ state.saved.name ~ "”", icon_name="trash-2", destructive=true, attrs={"data-action": "filter#openDialog", "data-dialog-id": "delete-filter-dialog"}) }}
+    {{ menu_item("Delete", attrs={"hx-post": "/transactions/saved-filters/" ~ state.saved.id ~ "/delete", "hx-include": "#register-state", "hx-vals": '{"idempotency_key": "' ~ state.form_key ~ '"}', "hx-target": "#toast-region", "hx-swap": "innerHTML"}) }}
     {%- endif %}
   {% endcall %}
 
@@ -163,23 +163,11 @@
       </label>
       <p id="saved-filter-status" class="text-sm text-destructive" role="alert"></p>
       <div class="flex items-center justify-end gap-2">
-        {{ button("Cancel", variant="ghost", size="sm", attrs={"data-action": "filter#closeDialog"}) }}
+        {{ button("Cancel", variant="outline", size="sm", attrs={"data-action": "filter#closeDialog"}) }}
         {{ button("Save", variant="primary", size="sm", type="submit") }}
       </div>
     </form>
   </dialog>
 
-  {%- if state.saved %}
-  <dialog id="delete-filter-dialog" class="m-auto bg-transparent p-0 text-primary backdrop:bg-overlay" aria-labelledby="delete-filter-title" data-action="close->filter#restoreFocus">
-    <div class="flex w-80 max-w-full flex-col gap-3 rounded-xl bg-container p-4 shadow-border-xs">
-      <h2 id="delete-filter-title" class="font-medium text-primary">Delete “{{ state.saved.name }}”?</h2>
-      <p class="text-sm text-secondary">You can undo this.</p>
-      <div class="flex items-center justify-end gap-2">
-        {{ button("Cancel", variant="ghost", size="sm", attrs={"data-action": "filter#closeDialog"}) }}
-        {{ button("Delete", variant="destructive", size="sm", attrs={"hx-post": "/transactions/saved-filters/" ~ state.saved.id ~ "/delete", "hx-include": "#register-state", "hx-vals": '{"idempotency_key": "' ~ state.form_key ~ '"}', "hx-target": "#toast-region", "hx-swap": "innerHTML"}) }}
-      </div>
-    </div>
-  </dialog>
-  {%- endif %}
 </div>
 {%- endmacro %}

@@ -1,0 +1,24 @@
+{# Fragment blocks for the Tags page. Each route renders one block (see routes/settings_tags.py).
+   A block imports the macros it uses from tag_parts.html, because it renders without this file's
+   top-level code. #}
+
+{% block frag_list %}
+{% from "settings/tag_parts.html" import tag_list %}
+{{ tag_list(tags) }}
+{% endblock %}
+
+{% block frag_form %}
+{% from "settings/tag_parts.html" import tag_form %}
+{{ tag_form(form) }}
+{% endblock %}
+
+{% block frag_delete %}
+{% from "settings/tag_parts.html" import tag_delete %}
+{{ tag_delete(tag, count, others, key, error) }}
+{% endblock %}
+
+{# The reply to a write: its toast, out of band. The dialog closes on the event the reply raises. #}
+{% block frag_done %}
+{% from "transactions/parts.html" import toast_region %}
+{%- if label %}{{ toast_region(label, batch_id) }}{% endif %}
+{% endblock %}

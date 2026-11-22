@@ -26,7 +26,7 @@ from omsync.ledger.categories_admin.helpers import (
     _costco_food_changes,
     _ensure_name_free,
     _icon,
-    _rental_name_changes,
+    _rental_mark_changes,
     _repoint_changes,
     _rule_changes,
     _saved_filter_changes,
@@ -180,7 +180,7 @@ def hide_category(
 
 def delete_category(session: Session, category_id: int, *, idempotency_key: str) -> Batch:
     """Delete a category that nothing uses. Raises ValueError("in use: hide it instead") if a
-    transaction, split, keyword, rule, saved filter, rental name, or any other row still
+    transaction, split, keyword, rule, saved filter, or any other row still
     points at it. delete_and_move deletes one that is in use."""
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
@@ -233,7 +233,7 @@ def move_preview(session: Session, category_id: int, target_id: int) -> MovePrev
         *_rule_changes(session, category_id, target_id),
         *_repoint_changes(session, category_id, target_id),
         *_saved_filter_changes(session, category_id, target_id),
-        *_rental_name_changes(session, source_name, target.name),
+        *_rental_mark_changes(session, category_id, target_id),
         *_costco_food_changes(session, category_id, target_id),
         Change("category", str(category_id), source, None),
     ]
@@ -268,8 +268,8 @@ def delete_and_move(
     digest: str | None = None,
 ) -> Batch:
     """Move every use of a category to another one, then delete the category, as one batch that undo
-    reverses. Keywords move as they are, transactions and splits keep their origin, and rental
-    category names become the target's name. See move_preview for what is refused.
+    reverses. Keywords move as they are, transactions and splits keep their origin, and a rental
+    category makes the target one. See move_preview for what is refused.
 
     `digest` is the digest of the preview the person saw. When it no longer matches the move,
     nothing is written and StalePreview is raised. The same key applies at most once.

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from fastapi.testclient import TestClient
 
-from omsync.core.vault import VaultError
+from omsync.core.vault import LoginSummary, VaultError, VaultLocked
 
 EMAIL = "ana@example.test"
 PASSWORD = "correct-horse-battery"
@@ -42,6 +42,20 @@ class FakeVault:
 
     def is_unlocked(self) -> bool:
         return self.unlocked
+
+    def verify(self) -> None:
+        if not self.unlocked:
+            raise VaultLocked("Vault is locked; unlock it first")
+
+    def find_logins(self, search: str) -> list[LoginSummary]:
+        self.verify()
+        return [login for login in FAKE_LOGINS if search.lower() in login.name.lower()]
+
+
+FAKE_LOGINS = (
+    LoginSummary("item-amazon", "Amazon (Ana)", "ana@example.test"),
+    LoginSummary("item-chase", "Chase (Ana)", "ana@example.test"),
+)
 
 
 @dataclass

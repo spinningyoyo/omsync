@@ -9,10 +9,11 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from web_support import EMAIL, PASSWORD, SESSION_COOKIE, FakeOwnerCheck, FakeVault
 
-from omsync.core.sync_models import SyncKind, SyncRun, SyncStatus
-from omsync.receipts.profiles import VendorProfile, save_vendor_profile
+from omsync.ledger.models import Provider, SyncRun, SyncStatus
+from omsync.receipts.profiles import VendorProfile, create_vendor_profile
 
 
 def _cookie(set_cookie_header: str) -> Morsel:
@@ -89,53 +90,77 @@ def test_the_bank_sync_vault_panel_disconnects_and_connects(
     config = tmp_path / "omsync.toml"
     monkeypatch.setenv("OMSYNC_CONFIG", str(config))
 
-    disconnected = signed_in.post("/settings/providers/vault/disconnect")
+    disconnected = signed_in.post("/settings/sync/vault/disconnect")
     assert disconnected.headers["hx-refresh"] == "true"
     assert app.state.vault is None
     assert vault.lock_calls == 1
-    assert "No vault" in signed_in.get("/settings/providers").text
+    assert "No vault" in signed_in.get("/settings/sync").text
 
     connected = FakeVault()
     app.state.vault_opener = lambda settings: connected
     refused = signed_in.post(
-        "/settings/providers/vault/connect", data={"email": EMAIL, "password": "wrong"}
+        "/settings/sync/vault/connect", data={"email": EMAIL, "password": "wrong"}
     )
     assert refused.status_code == 422
     assert "Incorrect master password" in refused.text
     assert app.state.vault is None
 
-    signed_in.post("/settings/providers/vault/connect", data={"email": EMAIL, "password": PASSWORD})
+    signed_in.post("/settings/sync/vault/connect", data={"email": EMAIL, "password": PASSWORD})
     assert app.state.vault is connected and connected.is_unlocked()
     assert tomllib.loads(config.read_text()) == {"vault": "bitwarden", "email": EMAIL}
-    assert "Vault unlocked" in signed_in.get("/settings/providers").text
+    assert "Vault unlocked" in signed_in.get("/settings/sync").text
 
     with app.state.session_factory() as db:
-        save_vendor_profile(
+        create_vendor_profile(
             db,
             VendorProfile(
                 key="amazon_personal",
                 vendor_key="amazon",
                 name="Amazon Personal",
-                account="personal",
+                vault_item_id="item-amazon",
             ),
+            idempotency_key="test-amazon-personal",
         )
         db.add(
             SyncRun(
-                kind=SyncKind.receipt,
-                target_key="amazon_personal",
-                connector_key="amazon",
-                source_key="amazon",
+                provider_id=db.scalars(
+                    select(Provider.id).where(Provider.key == "amazon_personal")
+                ).one(),
                 started_at=datetime(2026, 11, 18, 12, 7, 0, tzinfo=UTC).replace(tzinfo=None),
                 finished_at=datetime(2026, 11, 18, 12, 8, 0, tzinfo=UTC).replace(tzinfo=None),
                 status=SyncStatus.succeeded,
                 items_fetched=14,
-                files_fetched=14,
             )
         )
         db.commit()
 
-    sync_page = signed_in.get("/settings/sync?tab=vendors")
+    sync_page = signed_in.get("/settings/sync?tab=receipts")
     assert sync_page.status_code == 200
     assert "Last sync" in sync_page.text
     assert "Succeeded" in sync_page.text
     assert "14 receipts" in sync_page.text
+    assert "Amazon Personal" in sync_page.text
+    assert ">amazon_personal<" not in sync_page.text
+
+    assert signed_in.get("/settings/sync/amazon_personal/edit/login").text == "Amazon (Ana)"
+
+    locked = signed_in.post("/settings/sync/vault/lock")
+    assert locked.status_code == 200 and "Unlock" in locked.text
+    assert not connected.is_unlocked()
+    assert "Picked" in signed_in.get("/settings/sync?tab=receipts").text
+    assert signed_in.get("/settings/sync/amazon_personal/edit/login").text == "Picked"
+
+    search = signed_in.get("/settings/sync/amazon_personal/edit/logins?q=amazon")
+    assert "hx-trigger" not in search.headers
+    assert 'name="place" value="inline"' in search.text
+    assert 'id="provider-edit-form-amazon_personal-password"' in search.text
+
+    inline = {"place": "inline", "form_id": "provider-edit-form-amazon_personal"}
+    refused = signed_in.post("/settings/sync/vault/unlock", data={**inline, "password": "wrong"})
+    assert refused.status_code == 422 and 'name="place" value="inline"' in refused.text
+    assert not connected.is_unlocked()
+
+    unlocked = signed_in.post("/settings/sync/vault/unlock", data={**inline, "password": PASSWORD})
+    assert "vault-unlocked" in unlocked.headers["hx-trigger"]
+    assert connected.is_unlocked() and "Vault unlocked." in unlocked.text
+    assert 'id="vault-panel"' in unlocked.text and "Lock" in unlocked.text

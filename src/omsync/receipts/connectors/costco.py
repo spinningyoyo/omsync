@@ -1,7 +1,9 @@
 """Costco warehouse receipt acquisition through an authenticated Chrome session."""
 
 import json
+import subprocess
 import time
+from collections.abc import Mapping
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -14,14 +16,14 @@ from omsync.core.vault import Vault
 from omsync.ingest.connectors.base import ConnectorError, NeedsUserAction, Prompt, SyncCancelled
 from omsync.receipts.connectors.base import VendorConnector
 from omsync.receipts.connectors.registry import register
-from omsync.receipts.vendors.costco import RECEIPTS_FOLDER, receipt_date
+from omsync.receipts.vendors import get_vendor
+from omsync.receipts.vendors.costco import receipt_date
 
 ACCOUNT_HOME_URL = "https://www.costco.com/myaccount/"
 GRAPHQL_URL = "https://ecom-api.costco.com/ebusiness/order/v1/orders/graphql"
 CLIENT_IDENTIFIER = "481b1aec-aa3b-454b-b81b-48187e28f205"  # hardcoded in the site's web app
 GRAPHQL_TIMEOUT = 120  # seconds, for the browser request and the script timeout
 CHUNK_MONTHS = 3
-BROWSER_MODE = "chrome-attach"
 
 SIGN_IN_QUESTION = (
     "Sign in to Costco in the browser window (including any verification code), "
@@ -235,7 +237,7 @@ class CostcoConnector(VendorConnector):
 
     key = "costco"
     label = "Costco"
-    browser_mode = "chrome-attach"
+    uses_vault = False
 
     def download_receipts(
         self,
@@ -243,21 +245,19 @@ class CostcoConnector(VendorConnector):
         settings: Settings,
         prompt: Prompt,
         *,
-        start: date | None = None,
-        end: date | None = None,
-        account: str = "default",
+        provider_key: str,
+        held: Mapping[str, Path | None],
+        start: date,
+        end: date,
         vault: Vault | None = None,
         vault_item_id: str | None = None,
     ) -> list[Path]:
-        """Sign in and download Costco receipts into the receipts directory."""
-        if start is None or end is None:
-            raise ValueError("start and end are required for Costco receipt downloads")
+        """Sign in and download the provider's Costco receipts that it does not hold yet."""
         driver.get(ACCOUNT_HOME_URL)
         if not self.signed_in(driver):
             driver = self._sign_in_with_clean_chrome(prompt)
         self.ensure_account_home(driver)
-        root = settings.receipts_dir / RECEIPTS_FOLDER / account
-        return self.download_new(driver, root, start, end)
+        return self.download_new(driver, settings.receipts_dir, provider_key, held, start, end)
 
     def _sign_in_with_clean_chrome(self, prompt: Prompt) -> Any:
         """Sign in via an un-debugged Chrome so Akamai Bot Manager allows authentication.
@@ -281,7 +281,7 @@ class CostcoConnector(VendorConnector):
                 proc.terminate()
                 try:
                     proc.wait(timeout=5)
-                except TimeoutError:
+                except subprocess.TimeoutExpired:
                     proc.kill()
 
         driver = self.get_driver(self.browser_mode)
@@ -353,8 +353,16 @@ class CostcoConnector(VendorConnector):
             pass
         return CLIENT_IDENTIFIER
 
-    def download_new(self, driver: Any, root: Path, start: date, end: date) -> list[Path]:
-        """Download and write all receipts not yet present on disk for the range."""
+    def download_new(
+        self,
+        driver: Any,
+        receipts_dir: Path,
+        provider_key: str,
+        held: Mapping[str, Path | None],
+        start: date,
+        end: date,
+    ) -> list[Path]:
+        """Download and write the receipts of the range that the provider does not hold."""
         id_token = self.get_id_token(driver)
         client_id = self.get_client_id(driver)
         if not id_token or not client_id:
@@ -362,7 +370,7 @@ class CostcoConnector(VendorConnector):
         client_identifier = self.get_client_identifier(driver)
         headers = _graphql_headers(client_id, id_token, client_identifier)
 
-        existing = _existing_barcodes(root)
+        vendor = get_vendor("costco")
         seen: set[str] = set()
         written: list[Path] = []
         for chunk_start, chunk_end in quarter_ranges(start, end):
@@ -371,11 +379,14 @@ class CostcoConnector(VendorConnector):
                 if not barcode or barcode in seen:
                     continue
                 seen.add(barcode)
-                stem = _file_stem(barcode)
-                if stem in existing:
+                if barcode in held:
                     continue
-                day = _day(receipt)
-                target = root / str(day.year) / f"{stem}.json"
+                try:
+                    target = vendor.receipt_file(receipts_dir, provider_key, _day(receipt), barcode)
+                except ValueError:
+                    raise ConnectorError(
+                        "Costco returned a receipt whose barcode cannot be a file name"
+                    ) from None
                 _write_json(target, receipt)
                 written.append(target)
         return written
@@ -408,9 +419,9 @@ def _parse_receipts_response(response: Any) -> list[dict[str, Any]]:
     if not response.get("ok"):
         if response.get("kind") == "timeout":
             raise NeedsUserAction("Costco did not respond in time; sync again")
-        raise _http_error(response.get("status"), response)
+        raise _http_error(response.get("status"))
     if response.get("status") != 200:
-        raise _http_error(response.get("status"), response)
+        raise _http_error(response.get("status"))
 
     data = response.get("response")
     if not isinstance(data, dict):
@@ -426,15 +437,10 @@ def _parse_receipts_response(response: Any) -> list[dict[str, Any]]:
     return receipts
 
 
-def _http_error(status: Any, response: Any = None) -> Exception:
+def _http_error(status: Any) -> Exception:
     if status in (401, 403):
         return NeedsUserAction("Costco rejected the session; sign in again, then sync")
-    detail = ""
-    if isinstance(response, dict):
-        resp_body = response.get("response")
-        if resp_body:
-            detail = f": {resp_body}"
-    return ConnectorError(f"Costco's receipts request failed (status {status}{detail})")
+    return ConnectorError(f"Costco's receipts request failed (status {status})")
 
 
 def _graphql_headers(
@@ -495,29 +501,11 @@ def _cached_client_id(driver: Any) -> str | None:
     return None
 
 
-def _existing_barcodes(root: Path) -> set[str]:
-    if not root.exists():
-        return set()
-    return {path.stem for path in root.rglob("*.json") if path.is_file()}
-
-
 def _day(receipt: dict[str, Any]) -> date:
     try:
         return receipt_date(receipt)
     except ValueError:
         raise ConnectorError("Costco returned a receipt with no usable date") from None
-
-
-def _file_stem(barcode: str) -> str:
-    """The barcode as a file name. Anything that could name another folder is refused."""
-    if (
-        barcode != Path(barcode).name
-        or barcode in (".", "..")
-        or "\\" in barcode
-        or "\0" in barcode
-    ):
-        raise ConnectorError("Costco returned a receipt whose barcode cannot be a file name")
-    return barcode
 
 
 def _write_json(target: Path, receipt: dict[str, Any]) -> None:

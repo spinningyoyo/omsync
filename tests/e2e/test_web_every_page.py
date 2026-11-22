@@ -28,11 +28,11 @@ PAGES = (
     "/settings/categories",
     "/settings/guides",
     "/settings/sync",
-    "/settings/providers",
-    "/settings/providers/new",
-    "/settings/vendors/new",
+    "/settings/sync/new/bank",
+    "/settings/sync/new/receipt",
     "/settings/contacts",
     "/settings/rental",
+    "/settings/tags",
     "/settings/about",
 )
 

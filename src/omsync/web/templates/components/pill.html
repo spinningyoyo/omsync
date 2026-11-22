@@ -3,6 +3,7 @@
    error, destructive, info, neutral. Styles: soft, filled, outline. marker=true gives the
    uppercase stage marker (Beta, NEW). Import with context for icons. #}
 {% from "components/icon.html" import icon with context %}
+{% from "components/_util.html" import html_attrs %}
 
 {% set PALETTE = {
   "violet": {"bg": "var(--color-violet-50)", "bg_dark": "var(--color-violet-tint-10)", "text": "color-mix(in oklab, var(--color-violet-700), black 30%)", "text_dark": "var(--color-violet-200)", "border": "var(--color-violet-200)", "dot": "var(--color-violet-500)", "fill": "var(--color-violet-700)"},
@@ -33,12 +34,28 @@
 {%- if marker -%}
   {%- set shape = "rounded-md uppercase " ~ ("px-2 py-1 text-[11px] tracking-wide gap-1" if size == "md" else "px-1.5 py-0.5 text-[10px] tracking-wider gap-1") -%}
 {%- else -%}
-  {%- set shape = "rounded-full " ~ ("px-2 py-1 text-sm gap-1.5" if size == "md" else "px-1.5 py-0.5 text-xs gap-1") -%}
+  {%- set shape = "rounded-full " ~ ("px-2.5 py-1 text-sm gap-1.5" if size == "md" else "px-2.5 py-0.5 text-xs gap-1.5") -%}
 {%- endif -%}
 <span class="inline-flex items-center align-middle font-medium border leading-none {{ shape }} {{ 'max-w-full min-w-0' if truncate else 'whitespace-nowrap shrink-0' }}" style="{{ box_style }}" title="{{ title or label }}">
   {%- if icon_name %}<span class="shrink-0">{{ icon(icon_name, 12, "") }}</span>
   {%- elif dot_show %}<span class="inline-block shrink-0 rounded-full" style="width: {{ 6 if size == 'md' else 5 }}px; height: {{ 6 if size == 'md' else 5 }}px; background-color: {{ dot_color }};"></span>
   {%- endif -%}
   {%- if truncate %}<span class="min-w-0 truncate">{{ label }}</span>{% else %}{{ label }}{% endif -%}
+</span>
+{%- endmacro %}
+
+{% macro tag_pill(name, color="#6b7280", size="sm", removable=false, remove_attrs=none, truncate=false, title=none) -%}
+{%- set shape = "px-2 py-0.5 text-[11px] gap-1.5" if size == "xs" else ("px-3 py-1 text-sm gap-2" if size == "md" else "px-2.5 py-0.5 text-xs gap-1.5") -%}
+{%- set dot_size = "w-1.5 h-1.5" if size == "xs" else ("w-2 h-2" if size == "sm" else "w-2.5 h-2.5") -%}
+<span class="inline-flex items-center align-middle font-medium rounded-full border leading-none {{ shape }} {{ 'max-w-full min-w-0' if truncate else 'whitespace-nowrap shrink-0' }}"
+      style="background-color: {{ color }}18; color: {{ color }}; border-color: {{ color }}38;"
+      title="{{ title or name }}">
+  <span class="{{ dot_size }} rounded-full shrink-0" style="background-color: {{ color }};"></span>
+  {%- if truncate %}<span class="min-w-0 truncate">{{ name }}</span>{% else %}<span>{{ name }}</span>{% endif -%}
+  {%- if removable %}
+  <button type="button" class="inline-flex items-center justify-center -mr-1 ml-0.5 rounded-full p-0.5 opacity-60 hover:opacity-100 hover:bg-black/10 focus-ring cursor-pointer" aria-label="Remove {{ name }}" {{ html_attrs(remove_attrs) }}>
+    {{ icon("x", 12) }}
+  </button>
+  {%- endif %}
 </span>
 {%- endmacro %}

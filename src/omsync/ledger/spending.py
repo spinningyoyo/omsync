@@ -48,6 +48,7 @@ from omsync.ledger.models import (
     Split,
     Transaction,
 )
+from omsync.ledger.tags import SplitTag, TransactionTag
 
 PRESETS: tuple[str, ...] = ("this_month", "last_month", "this_quarter", "ytd", "last_12_months")
 EXCLUDED_LINK_KINDS: tuple[LinkKind, ...] = (LinkKind.transfer, LinkKind.joint_settlement)
@@ -170,11 +171,14 @@ class ReportLine:
 # Public queries
 
 
-def summary(session: Session, period: Period, *, joint_share: bool) -> Summary:
-    """Income, expenses, net, and savings rate for the period, against the previous period."""
+def summary(
+    session: Session, period: Period, *, joint_share: bool, tag_ids: Sequence[int] = ()
+) -> Summary:
+    """Income, expenses, net, and savings rate for the period, against the previous period. With
+    `tag_ids`, only lines that carry one of those tags count (see report_lines)."""
     prior_period = period.previous()
-    figures = _figures(report_lines(session, period, joint_share=joint_share))
-    prior = _figures(report_lines(session, prior_period, joint_share=joint_share))
+    figures = _figures(report_lines(session, period, joint_share=joint_share, tag_ids=tag_ids))
+    prior = _figures(report_lines(session, prior_period, joint_share=joint_share, tag_ids=tag_ids))
     savings_delta = None
     if figures.savings_rate_bp is not None and prior.savings_rate_bp is not None:
         savings_delta = figures.savings_rate_bp - prior.savings_rate_bp
@@ -191,15 +195,18 @@ def summary(session: Session, period: Period, *, joint_share: bool) -> Summary:
     )
 
 
-def by_category(session: Session, period: Period, *, joint_share: bool) -> list[CategoryLine]:
+def by_category(
+    session: Session, period: Period, *, joint_share: bool, tag_ids: Sequence[int] = ()
+) -> list[CategoryLine]:
     """Spending by category for the period, largest first. Categories with spending in either the
-    period or the previous one are listed. Their amounts add up to the period's expenses."""
+    period or the previous one are listed. Their amounts add up to the period's expenses. With
+    `tag_ids`, only lines that carry one of those tags count (see report_lines)."""
     prior_period = period.previous()
     months = _month_starts(period.end, SPARK_MONTHS)
-    current = report_lines(session, period, joint_share=joint_share)
-    prior = report_lines(session, prior_period, joint_share=joint_share)
+    current = report_lines(session, period, joint_share=joint_share, tag_ids=tag_ids)
+    prior = report_lines(session, prior_period, joint_share=joint_share, tag_ids=tag_ids)
     recent = report_lines(
-        session, Period(months[0], month_end(months[-1])), joint_share=joint_share
+        session, Period(months[0], month_end(months[-1])), joint_share=joint_share, tag_ids=tag_ids
     )
 
     spent = _spending_by_category(current)
@@ -231,14 +238,22 @@ def by_category(session: Session, period: Period, *, joint_share: bool) -> list[
 
 
 def monthly_trend(
-    session: Session, months: int = TREND_MONTHS, *, end: date, joint_share: bool
+    session: Session,
+    months: int = TREND_MONTHS,
+    *,
+    end: date,
+    joint_share: bool,
+    tag_ids: Sequence[int] = (),
 ) -> list[MonthPoint]:
     """Income, expenses, and net for each of the last `months` calendar months, oldest first.
-    The last month is the one that contains `end`, and each month is counted in full."""
+    The last month is the one that contains `end`, and each month is counted in full. With
+    `tag_ids`, only lines that carry one of those tags count (see report_lines)."""
     if months < 1:
         raise ValueError("a trend needs at least one month")
     starts = _month_starts(end, months)
-    lines = report_lines(session, Period(starts[0], month_end(starts[-1])), joint_share=joint_share)
+    lines = report_lines(
+        session, Period(starts[0], month_end(starts[-1])), joint_share=joint_share, tag_ids=tag_ids
+    )
     by_month: dict[tuple[int, int], list[ReportLine]] = defaultdict(list)
     for line in lines:
         by_month[(line.posted_on.year, line.posted_on.month)].append(line)
@@ -270,10 +285,12 @@ def spending_by_month(
     return {month: dict(by_category) for month, by_category in spent.items()}
 
 
-def uncategorized_total(session: Session, period: Period, *, joint_share: bool) -> int:
+def uncategorized_total(
+    session: Session, period: Period, *, joint_share: bool, tag_ids: Sequence[int] = ()
+) -> int:
     """The net outflow of the period's uncategorized lines, as a positive number like expenses.
     Uncategorized inflows reduce it. These lines are not in income or expenses."""
-    lines = report_lines(session, period, joint_share=joint_share)
+    lines = report_lines(session, period, joint_share=joint_share, tag_ids=tag_ids)
     return -sum(line.amount_cents for line in lines if line.category_id is None)
 
 
@@ -285,13 +302,22 @@ def has_transactions(session: Session) -> bool:
 # Lines
 
 
-def report_lines(session: Session, period: Period, *, joint_share: bool) -> list[ReportLine]:
+def report_lines(
+    session: Session, period: Period, *, joint_share: bool, tag_ids: Sequence[int] = ()
+) -> list[ReportLine]:
     """Every counted line posted in the period, with explained amounts and joint share applied.
     Lines of a category that reports leave out are dropped here, so every figure shares one
-    definition of a line."""
+    definition of a line.
+
+    With `tag_ids`, only lines that carry any of those tags are kept. A split line is kept when it
+    has the tag or its transaction has it, and a transaction without splits when it has the tag.
+    The amounts are worked out before the lines are chosen, so a kept line shows the same amount
+    as it does without the tags."""
     explained = explained_cents(session, period)
+    tagged_txns, tagged_splits = _tagged(session, tag_ids)
     split_rows = session.execute(
         select(
+            Split.id.label("split_id"),
             Split.transaction_id,
             Transaction.posted_on,
             Split.amount_cents,
@@ -333,11 +359,31 @@ def report_lines(session: Session, period: Period, *, joint_share: bool) -> list
             continue  # its links explain the whole transaction
         parts = splits_of.get(row.id)
         if parts is None:
-            lines.append(_line(row.id, row, counted))
+            if tagged_txns is None or row.id in tagged_txns:
+                lines.append(_line(row.id, row, counted))
             continue
         shares = counted_splits(row.amount_cents, [part.amount_cents for part in parts], counted)
-        lines += [_line(row.id, part, share) for part, share in zip(parts, shares, strict=True)]
+        lines += [
+            _line(row.id, part, share)
+            for part, share in zip(parts, shares, strict=True)
+            if tagged_txns is None or row.id in tagged_txns or part.split_id in tagged_splits
+        ]
     return [line for line in lines if _counts(line)]
+
+
+def _tagged(session: Session, tag_ids: Sequence[int]) -> tuple[set[int] | None, set[int]]:
+    """The ids of transactions and of split lines that carry any of the tags. None for the
+    transactions when no tags are asked for, which means every line counts."""
+    if not tag_ids:
+        return None, set()
+    wanted = set(tag_ids)
+    transactions = set(
+        session.scalars(
+            select(TransactionTag.transaction_id).where(TransactionTag.tag_id.in_(wanted))
+        )
+    )
+    splits = set(session.scalars(select(SplitTag.split_id).where(SplitTag.tag_id.in_(wanted))))
+    return transactions, splits
 
 
 def _line(transaction_id: int, row: Row, amount: int) -> ReportLine:

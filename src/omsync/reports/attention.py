@@ -17,10 +17,9 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from omsync.ingest.models import SyncRun, SyncStatus
 from omsync.ledger.bulk import count_matching
 from omsync.ledger.filters import Condition, FilterSpec
-from omsync.ledger.models import Institution, Provider
+from omsync.ledger.models import Institution, Provider, SyncRun, SyncStatus
 from omsync.ledger.register import open_review_count
 from omsync.plan.recurring import needs_attention
 from omsync.reconcile.engine import run as run_reconciliation
@@ -77,15 +76,11 @@ def recurring_attention_this_month(session: Session, *, today: date) -> int:
 
 
 def problem_providers(session: Session) -> tuple[ProviderIssue, ...]:
-    newest = (
-        select(func.max(SyncRun.id))
-        .where(SyncRun.provider_key.is_not(None))
-        .group_by(SyncRun.provider_key)
-    )
+    newest = select(func.max(SyncRun.id)).group_by(SyncRun.provider_id)
     rows = session.execute(
         select(Provider.key, Institution.name, SyncRun.status)
         .join(Institution, Institution.id == Provider.institution_id)
-        .join(SyncRun, SyncRun.provider_key == Provider.key)
+        .join(SyncRun, SyncRun.provider_id == Provider.id)
         .where(SyncRun.id.in_(newest), SyncRun.status.in_(SYNC_PROBLEMS))
         .order_by(Institution.name, Provider.key)
     ).all()

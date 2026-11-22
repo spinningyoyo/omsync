@@ -1,4 +1,4 @@
-"""Syncs started from the Bank sync page. Each job runs in a background thread of the server
+"""Syncs started from the Data sync page. Each job runs in a background thread of the server
 process, one job at a time, and shares the sync lock with the CLI. When a connector asks a
 question, such as for an MFA code, the question waits on the page for an answer, or for a timeout.
 A connector can also show a notice, such as a QR to scan, and a job can be cancelled: the bank in
@@ -14,24 +14,20 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
-from selenium.common.exceptions import WebDriverException
 from sqlalchemy.orm import Session
 
 from omsync.core.settings import Settings
-from omsync.core.sync_models import SyncKind, SyncRun, SyncStatus, utc_now
 from omsync.core.vault import Vault
-from omsync.ingest.connectors.base import ConnectorError, NeedsUserAction, SyncCancelled
+from omsync.ingest.connectors.base import ConnectorError, SyncCancelled
 from omsync.ingest.discovery import mask_account_numbers
 from omsync.ingest.pipeline import ImportReport
-from omsync.ingest.sync import ProviderSync, SyncBusy, SyncResult, sync_all, sync_provider
-from omsync.receipts.profiles import get_vendor_profile, sync_vendor_profile
+from omsync.ingest.runs import SyncBusy
+from omsync.ingest.sync import ProviderSync, SyncResult, sync_all
+from omsync.ledger.models import ProviderKind, SyncStatus
+from omsync.receipts.sync import ALL, sync_one
 
 logger = logging.getLogger(__name__)
 
-# Scopes for sync operations.
-ALL = "*"
-BANKS = "banks"
-RECEIPTS = "receipts"
 PROMPT_TIMEOUT_SECONDS = 600.0
 CONFIRMED = "confirmed"  # the answer a button-only question's form sends
 ANSWER_LIMIT = 200
@@ -95,7 +91,7 @@ class ProviderProgress:
     key: str
     phase: ProviderPhase
     message: str | None = None
-    files_fetched: int = 0
+    items_fetched: int = 0
     created: int = 0
     joined: int = 0
     review: int = 0
@@ -129,7 +125,7 @@ class _Job:
     scope: str
     providers: dict[str, ProviderProgress]
     bank_keys: list[str] = field(default_factory=list)
-    vendor_keys: list[str] = field(default_factory=list)
+    receipt_keys: list[str] = field(default_factory=list)
     phase: JobPhase = JobPhase.running
     current: str | None = None
     pending: _Pending | None = None
@@ -200,26 +196,19 @@ class SyncRunner:
     def start(
         self,
         scope: str,
-        provider_keys: list[str],
-        vendor_keys: list[str] | None = None,
+        bank_keys: list[str],
+        receipt_keys: list[str] | None = None,
     ) -> None:
-        """Start a job that syncs providers and vendor profiles."""
-        v_keys = list(vendor_keys or [])
+        """Start a job that syncs bank providers and receipt providers."""
+        r_keys = list(receipt_keys or [])
         with self._lock:
             if self._job is not None and self._job.phase is JobPhase.running:
                 raise SyncRefused(ALREADY_RUNNING)
             providers: dict[str, ProviderProgress] = {
-                key: ProviderProgress(key, ProviderPhase.queued) for key in provider_keys
+                key: ProviderProgress(key, ProviderPhase.queued) for key in [*bank_keys, *r_keys]
             }
-            for v_key in v_keys:
-                providers[f"vendor:{v_key}"] = ProviderProgress(
-                    f"vendor:{v_key}", ProviderPhase.queued
-                )
             job = _Job(
-                scope=scope,
-                providers=providers,
-                bank_keys=list(provider_keys),
-                vendor_keys=v_keys,
+                scope=scope, providers=providers, bank_keys=list(bank_keys), receipt_keys=r_keys
             )
             self._job = job
         threading.Thread(target=self._work, args=(job,), name="omsync-sync", daemon=True).start()
@@ -282,10 +271,22 @@ class SyncRunner:
         try:
             session = self._session_factory()
             prompt = WebPrompt(self, job, self._prompt_timeout)
-            if job.bank_keys:
-                self._work_banks(job, session, prompt)
-            if not job.cancel.is_set() and job.vendor_keys:
-                self._work_vendors(job, session, prompt)
+            if job.scope == ALL and job.bank_keys:
+                sync_all(
+                    session,
+                    self._settings,
+                    vault=self._vault,
+                    prompt=prompt,
+                    on_progress=lambda key, outcome: self._progress(job, key, outcome),
+                )
+            # sync_all already ran the banks of an ALL job; one provider's job is in either list.
+            single_keys = (
+                job.receipt_keys if job.scope == ALL else [*job.bank_keys, *job.receipt_keys]
+            )
+            for key in single_keys:
+                if job.cancel.is_set():
+                    break
+                self._sync_single(job, session, prompt, key)
             if job.cancel.is_set():
                 self._cancel_unstarted(job)
         except SyncBusy:
@@ -304,122 +305,20 @@ class SyncRunner:
                 job.notice = None
                 job.current = None
 
-    def _work_banks(self, job: _Job, session: Session, prompt: WebPrompt) -> None:
-        if job.scope in (ALL, BANKS):
-            sync_all(
-                session,
-                self._settings,
-                vault=self._vault,
-                prompt=prompt,
-                on_progress=lambda key, outcome: self._progress(job, key, outcome),
-            )
-            return
-        for key in job.bank_keys:
-            if job.cancel.is_set():
-                break
-            self._progress(job, key, None)
-            result = sync_provider(
+    def _sync_single(self, job: _Job, session: Session, prompt: WebPrompt, key: str) -> None:
+        self._progress(job, key, None)
+        try:
+            result = sync_one(
                 session,
                 self._settings,
                 provider_key=key,
                 vault=self._vault,
                 prompt=prompt,
             )
-            self._progress(job, key, ProviderSync(key, result, None))
-
-    def _work_vendors(self, job: _Job, session: Session, prompt: WebPrompt) -> None:
-        for v_key in job.vendor_keys:
-            if job.cancel.is_set():
-                break
-            self._sync_single_vendor(job, session, prompt, v_key)
-
-    def _sync_single_vendor(
-        self, job: _Job, session: Session, prompt: WebPrompt, v_key: str
-    ) -> None:
-        p_key = f"vendor:{v_key}"
-        self._progress_vendor(job, p_key, ProviderPhase.running)
-        profile = get_vendor_profile(session, v_key)
-        if profile is None:
-            self._progress_vendor(
-                job, p_key, ProviderPhase.failed, message="Vendor profile not found"
-            )
+        except ConnectorError as exc:
+            self._progress(job, key, ProviderSync(key, None, str(exc)))
             return
-
-        run = SyncRun(
-            kind=SyncKind.receipt,
-            target_key=profile.key,
-            connector_key=profile.vendor_key,
-            source_key=profile.vendor_key,
-            started_at=utc_now(),
-            status=SyncStatus.running,
-            items_fetched=0,
-            files_fetched=0,
-        )
-        session.add(run)
-        session.commit()
-
-        try:
-            files = sync_vendor_profile(session, self._settings, profile, self._vault, prompt)
-            count = len(files)
-            noun = "receipt" if count == 1 else "receipts"
-            msg = f"Saved {count} new {noun}." if count else "No new receipts."
-            run.status = SyncStatus.succeeded
-            run.finished_at = utc_now()
-            run.items_fetched = count
-            run.files_fetched = count
-            run.message = msg
-            session.commit()
-            self._progress_vendor(
-                job,
-                p_key,
-                ProviderPhase.succeeded,
-                files_fetched=count,
-                message=msg,
-            )
-        except SyncCancelled:
-            run.status = SyncStatus.cancelled
-            run.finished_at = utc_now()
-            run.message = "cancelled"
-            session.commit()
-            self._progress_vendor(job, p_key, ProviderPhase.cancelled)
-        except NeedsUserAction as exc:
-            run.status = SyncStatus.needs_user_action
-            run.finished_at = utc_now()
-            run.message = str(exc)[:500]
-            session.commit()
-            self._progress_vendor(job, p_key, ProviderPhase.needs_action, message=str(exc))
-        except (ConnectorError, WebDriverException, OSError, RuntimeError) as exc:
-            run.status = SyncStatus.failed
-            run.finished_at = utc_now()
-            run.message = str(exc)[:500]
-            session.commit()
-            self._progress_vendor(job, p_key, ProviderPhase.failed, message=str(exc))
-        except Exception as exc:
-            session.rollback()
-            logger.exception("The sync worker failed unexpectedly for vendor %s", v_key)
-            try:
-                run.status = SyncStatus.failed
-                run.finished_at = utc_now()
-                run.message = f"unexpected error ({type(exc).__name__})"
-                session.commit()
-            except Exception:  # noqa: BLE001
-                session.rollback()
-            self._progress_vendor(job, p_key, ProviderPhase.failed, message=str(exc))
-
-    def _progress_vendor(
-        self,
-        job: _Job,
-        key: str,
-        phase: ProviderPhase,
-        files_fetched: int = 0,
-        message: str | None = None,
-    ) -> None:
-        with self._lock:
-            if phase is ProviderPhase.running:
-                job.current = key
-            else:
-                job.current = None
-            _update(job, key, phase=phase, files_fetched=files_fetched, message=message)
+        self._progress(job, key, ProviderSync(key, result, None))
 
     def _progress(self, job: _Job, key: str, outcome: ProviderSync | None) -> None:
         with self._lock:
@@ -494,12 +393,13 @@ def _outcome_fields(outcome: ProviderSync) -> dict[str, object]:
     result = outcome.result
     fields = _result_fields(result)
     if result.status is SyncStatus.succeeded:
-        return {"phase": ProviderPhase.succeeded, "message": None, **fields}
+        message = result.message if result.kind is ProviderKind.receipt else None
+        return {"phase": ProviderPhase.succeeded, "message": message, **fields}
     if result.status is SyncStatus.cancelled:
         return {"phase": ProviderPhase.cancelled, "message": None, **fields}
     if result.status is SyncStatus.needs_user_action:
         phase = ProviderPhase.needs_action
-        fallback = "the bank needs you; sync again"
+        fallback = "it needs you; sync again"
     else:
         phase = ProviderPhase.failed
         fallback = "the sync failed"
@@ -510,7 +410,7 @@ def _result_fields(result: SyncResult) -> dict[str, object]:
     report: ImportReport | None = result.report
     files = report.files if report is not None else ()
     return {
-        "files_fetched": result.files_fetched,
+        "items_fetched": result.items_fetched,
         "created": sum(item.created for item in files),
         "joined": sum(item.joined for item in files),
         "review": sum(item.review for item in files),

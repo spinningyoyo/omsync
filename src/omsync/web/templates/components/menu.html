@@ -6,7 +6,7 @@
      {% call menu(id="row-actions", label="Row actions") %}
        {{ menu_item("Edit", icon_name="pencil") }}
        {{ menu_separator() }}
-       {{ menu_item("Delete", icon_name="trash-2", destructive=true) }}
+       {{ menu_item("Delete", icon_name="trash-2") }}
      {% endcall %}
    The trigger is an icon button with the label as its accessible name. Pass `trigger` for a text
    button instead, such as "+ Filter"; its text is then the accessible name. Import with context. #}
@@ -43,18 +43,16 @@
 {%- endmacro %}
 
 {# attrs adds HTML attributes to the item, such as htmx or Stimulus attributes. #}
-{% macro menu_item(text, icon_name=none, href=none, destructive=false, attrs=none) -%}
+{% macro menu_item(text, icon_name=none, href=none, attrs=none) -%}
 <div class="px-1" role="none">
-  {%- set tone = "text-destructive" if destructive else "text-primary" -%}
-  {%- set hover = "hover:bg-red-tint-5 theme-dark:hover:bg-red-tint-10" if destructive else "hover:bg-container-hover" -%}
-  {%- set classes = "flex items-center gap-2 p-2 rounded-md w-full focus-ring " ~ hover -%}
+  {%- set classes = "flex items-center gap-2 p-2 rounded-md w-full focus-ring hover:bg-container-hover" -%}
   {%- if href %}
   <a href="{{ href }}" role="menuitem" tabindex="-1" class="{{ classes }}"{{ html_attrs(attrs) }}>
   {%- else %}
   <button type="button" role="menuitem" tabindex="-1" class="{{ classes }}"{{ html_attrs(attrs) }}>
   {%- endif %}
-    {%- if icon_name %}{{ icon(icon_name, 20, "text-destructive" if destructive else "") }}{% endif %}
-    <span class="text-sm {{ tone }}">{{ text }}</span>
+    {%- if icon_name %}{{ icon(icon_name, 20, "") }}{% endif %}
+    <span class="text-sm text-primary">{{ text }}</span>
   {%- if href %}
   </a>
   {%- else %}

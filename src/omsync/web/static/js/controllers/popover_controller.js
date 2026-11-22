@@ -14,6 +14,11 @@ export default class extends Controller {
     this.setOpen(!this.isOpen);
   }
 
+  open() {
+    this.setOpen(true);
+    this.panelTarget.querySelector("[data-autofocus]")?.focus();
+  }
+
   setOpen(open) {
     this.panelTarget.hidden = !open;
     this.buttonTarget.setAttribute("aria-expanded", String(open));

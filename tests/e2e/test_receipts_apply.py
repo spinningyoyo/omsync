@@ -33,8 +33,11 @@ def ready(ledger: Ledger, tmp_path: Path) -> Ledger:
     keywords = tmp_path / "amazon-keywords.json"
     keywords.write_text(KEYWORDS, encoding="utf-8")
     ledger.cli("keywords", "import", keywords, "--list", "amazon", "--apply")
+    ledger.add_receipt_provider("amazon")
     for login in ("Orders_A", "Orders_B"):
-        shutil.copytree(EXPORTS / login, ledger.data_dir / "receipts" / "AMAZON" / login)
+        shutil.copytree(
+            EXPORTS / login, ledger.data_dir / "receipts" / "AMAZON" / "default" / login
+        )
     return ledger
 
 

@@ -1,7 +1,8 @@
-"""The receipts service: read a vendor's folder, match its receipts, and apply them as one batch.
+"""The receipts service: read a vendor's providers, match their receipts, and apply them.
 
-run_vendor reads <data_dir>/receipts/<VENDOR KEY>/ through the vendor, matches every charge to
-a transaction, and plans the apply. It writes nothing. The report lists the outcome counts, the
+run_vendor reads the folder of each receipt provider of the vendor, <data_dir>/receipts/<VENDOR
+KEY>/<provider key>/, through the vendor, matches every charge to a transaction, and plans the
+apply. It writes nothing. The report lists the outcome counts, the
 lines to review, and the plan. apply_report writes that plan as one batch.
 
 A period (start and end) limits the plan to matched charges whose transaction posted inside it.
@@ -9,11 +10,11 @@ Matching still covers all history, so a transaction two charges claim, or one th
 charges, stays ambiguous whichever period is chosen. apply_digest binds a preview to its period.
 
 A vendor raises ValueError for a file it cannot read. That file goes to review, and the other
-files are still used. A receipt that two files describe differently is excluded and reviewed.
+files are still used. A receipt that two files of a provider describe differently is excluded and
+reviewed. A receipt that another provider holds is matched once, under the provider that holds it.
 """
 
 import hashlib
-from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import date
 from enum import StrEnum
@@ -27,7 +28,7 @@ from omsync.core import money
 from omsync.core.batch_models import Batch
 from omsync.core.batches import preview_digest
 from omsync.core.settings import Settings
-from omsync.ledger.models import CategoryOrigin, Split, Transaction
+from omsync.ledger.models import CategoryOrigin, Provider, ProviderKind, Split, Transaction
 from omsync.receipts.apply import (
     YOU_SET_IT,
     ApplyPlan,
@@ -38,6 +39,7 @@ from omsync.receipts.apply import (
 )
 from omsync.receipts.match import MatchOutcome, MatchReport, MatchStatus, match_receipts
 from omsync.receipts.model import Charge, Receipt
+from omsync.receipts.store import read_provider_files
 from omsync.receipts.vendor import ReceiptVendor
 from omsync.receipts.vendors import BUILT_IN_VENDORS, get_vendor
 from omsync.reconcile.auto import TRIGGER_KEY
@@ -111,8 +113,8 @@ def registered_vendors() -> tuple[ReceiptVendor, ...]:
 
 
 def vendor_folder(settings: Settings, vendor_key: str) -> Path:
-    """Where a vendor's exports live: <data_dir>/receipts/<VENDOR KEY>/."""
-    return settings.receipts_dir / vendor_key.upper()
+    """The folder that holds the folders of the vendor's providers."""
+    return settings.receipts_dir / get_vendor(vendor_key).folder
 
 
 def run_vendor(
@@ -139,15 +141,31 @@ def run_vendor(
         raise ValueError("start is after end")
     vendor = get_vendor(vendor_key)
     folder = vendor_folder(settings, vendor_key)
-    files = vendor.discover(folder) if folder.is_dir() else []
-    receipts, parse_errors = _read_receipts(vendor, folder, files)
+    receipts: list[Receipt] = []
+    parse_errors: list[ReviewLine] = []
+    files_read = 0
+    providers = session.scalars(
+        select(Provider)
+        .where(Provider.kind == ProviderKind.receipt, Provider.connector_key == vendor_key)
+        .order_by(Provider.id)
+    ).all()
+    for provider in providers:
+        read = read_provider_files(
+            session, settings, vendor, provider_id=provider.id, provider_key=provider.key
+        )
+        files_read += read.files
+        receipts.extend(read.receipts)
+        parse_errors.extend(
+            ReviewLine("parse_error", f"{problem.label}: {problem.message}")
+            for problem in read.problems
+        )
     report = match_receipts(session, vendor, receipts, today=today)
     in_period, outside = _in_period(session, report, start, end)
     plan = plan_apply(session, in_period, keyword_categories(session, vendor_key))
     return ServiceReport(
         vendor_key=vendor_key,
         folder=folder,
-        files_read=len(files),
+        files_read=files_read,
         receipts_read=len(receipts),
         counts=_counts(report, plan, outside),
         review=(*parse_errors, *_review_lines(session, report, plan)),
@@ -197,32 +215,6 @@ def apply_after_keyword(
     tagged = replace(preview, summary={**preview.summary, TRIGGER_KEY: triggered_by})
     plan = replace(report.plan, preview=tagged)
     return apply_receipts(session, plan, idempotency_key=f"receipts-after-keyword:{triggered_by}")
-
-
-def _read_receipts(
-    vendor: ReceiptVendor, folder: Path, files: Iterable[Path]
-) -> tuple[list[Receipt], list[ReviewLine]]:
-    """Parse every file. One receipt ID is one receipt; a conflicting copy excludes it."""
-    by_id: dict[str, Receipt] = {}
-    conflicts: set[str] = set()
-    errors: list[ReviewLine] = []
-    for path in files:
-        label = path.relative_to(folder).as_posix()
-        try:
-            parsed = vendor.parse(path)
-        except ValueError as exc:
-            errors.append(ReviewLine("parse_error", f"{label}: {exc}"))
-            continue
-        for receipt in parsed:
-            known = by_id.get(receipt.receipt_id)
-            if known is None:
-                by_id[receipt.receipt_id] = receipt
-            elif known.revision != receipt.revision:
-                conflicts.add(receipt.receipt_id)
-    for receipt_id in sorted(conflicts):
-        by_id.pop(receipt_id, None)
-        errors.append(ReviewLine("parse_error", f"{receipt_id}: two files describe it differently"))
-    return list(by_id.values()), errors
 
 
 def _in_period(

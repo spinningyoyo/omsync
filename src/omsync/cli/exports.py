@@ -6,14 +6,16 @@ Without --output a file goes to the exports directory under the data directory.
 
 from pathlib import Path
 from typing import Annotated
+from uuid import uuid4
 
 import typer
 from sqlalchemy import select
 
 from omsync.cli.common import fail, ready_session
 from omsync.cli.groups import export_app, rental_app
+from omsync.core.batches import BatchError
 from omsync.ledger import rental as rental_settings
-from omsync.ledger.models import Account, Category
+from omsync.ledger.models import Account
 from omsync.ledger.sources import account_digits
 from omsync.reports import exports as workbooks
 
@@ -73,7 +75,7 @@ def rental_accounts() -> None:
             return
         found = {row.id: row for row in session.scalars(select(Account))}
         typer.echo(f"{'id':>4}  {'label':<24}  {'account':<20}  last4")
-        for account_id, label in sorted(accounts.items(), key=lambda item: item[1].casefold()):
+        for account_id, label in accounts.items():
             account = found.get(account_id)
             name = account.name if account else "(missing)"
             last4 = "-"
@@ -94,8 +96,10 @@ def rental_add(
     """Mark an account as a rental property with a label, or relabel it."""
     with ready_session() as (_settings, session):
         try:
-            rental_settings.set_rental_account(session, account_id, label)
-        except ValueError as exc:
+            rental_settings.set_rental_account(
+                session, account_id, label, idempotency_key=uuid4().hex
+            )
+        except (LookupError, ValueError, BatchError) as exc:
             fail(str(exc))
     typer.echo(f"Rental account {account_id} is {label.strip()}.")
 
@@ -108,9 +112,12 @@ def rental_remove(
 ) -> None:
     """Stop treating an account as a rental property. Its transactions are not changed."""
     with ready_session() as (_settings, session):
-        removed = rental_settings.remove_rental_account(session, account_id)
-    if not removed:
-        fail(f"account {account_id} is not a rental account")
+        try:
+            rental_settings.remove_rental_account(session, account_id, idempotency_key=uuid4().hex)
+        except LookupError:
+            fail(f"account {account_id} is not a rental account")
+        except BatchError as exc:
+            fail(str(exc))
     typer.echo(f"Removed rental account {account_id}. Its transactions are unchanged.")
 
 
@@ -123,7 +130,7 @@ def rental_categories(
         ),
     ] = None,
 ) -> None:
-    """Show, or with names set, replace the category names that count as rental expenses.
+    """Show, or with names set, replace the categories that count as rental expenses.
 
     Names match your category names exactly, so quote a name that has spaces.
     """
@@ -133,14 +140,11 @@ def rental_categories(
                 typer.echo(name)
             return
         try:
-            saved = rental_settings.set_rental_categories(session, names)
-        except ValueError as exc:
+            rental_settings.set_rental_categories(session, names, idempotency_key=uuid4().hex)
+        except (ValueError, BatchError) as exc:
             fail(str(exc))
-        known = set(session.scalars(select(Category.name)))
+        saved = rental_settings.get_rental_categories(session)
     typer.echo(f"Rental categories: {', '.join(saved)}")
-    for name in saved:
-        if name not in known:
-            typer.echo(f"warning: no category named {name!r} yet")
 
 
 def _explicit(output: Path | None) -> Path | None:

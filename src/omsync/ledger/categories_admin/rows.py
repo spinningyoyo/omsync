@@ -26,9 +26,6 @@ STALE = "This changed elsewhere. Preview again."
 SAVED_FILTER_USE = "saved_filter"
 
 
-RENTAL_NAME_USE = "rental_name"
-
-
 COSTCO_FOOD_USE = "costco_food"
 
 
@@ -41,7 +38,6 @@ _USE_NAMES = {
     "budget_line": ("budget line", "budget lines"),
     "recurring_series": ("recurring series", "recurring series"),
     SAVED_FILTER_USE: ("saved filter", "saved filters"),
-    RENTAL_NAME_USE: ("rental category name", "rental category names"),
     COSTCO_FOOD_USE: ("Costco food setting", "Costco food settings"),
 }
 
@@ -73,7 +69,7 @@ class CategoryRow:
 @dataclass(frozen=True)
 class CategoryUse:
     """How many rows of one kind point at a category. The kind is a table name, or one of the
-    kinds for saved filters and rental category names."""
+    kinds for saved filters and the Costco food setting."""
 
     kind: str
     count: int

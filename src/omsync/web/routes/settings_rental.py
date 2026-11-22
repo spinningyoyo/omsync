@@ -1,20 +1,24 @@
-"""Rental account labels and category preference responses."""
+"""The Rental properties page: the accounts you rent out with their labels, and the categories that
+count as rental expenses. Each write is one batch, answered with the whole region and an undo
+toast."""
 
 from dataclasses import dataclass
 from typing import Annotated, Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from omsync.core.batch_models import Batch
+from omsync.core.batches import BatchError
 from omsync.ledger.models import Account, Category
 from omsync.ledger.rental import (
     get_rental_accounts,
-    get_rental_categories,
     remove_rental_account,
     set_rental_account,
-    set_rental_categories,
+    set_rental_category,
 )
 from omsync.web.deps import get_db
 from omsync.web.fragments import render_block
@@ -26,19 +30,17 @@ DbSession = Annotated[Session, Depends(get_db)]
 PAGE = "settings/rental.html"
 FRAGMENTS = "settings/rental_fragments.html"
 PATH = "/settings/rental"
-BLANK_LABEL = "Give the property a label."
 NO_ACCOUNT = "Choose an account from the list."
-NOT_A_PROPERTY = "That account is not a rental property."
 NO_CATEGORY = "Choose a category from the list."
-NOT_A_RENTAL_CATEGORY = "That category is not a rental category."
-LAST_CATEGORY = "Keep at least one rental category."
 
 
 @dataclass(frozen=True)
 class PropertyRow:
     account_id: int
     label: str
-    account: str  # the account's name and ••last4, or a note when the account is gone
+    account: str  # the account's name and ••last4
+    edit_key: str
+    remove_key: str
 
 
 @dataclass(frozen=True)
@@ -48,176 +50,191 @@ class AccountChoice:
 
 
 @dataclass(frozen=True)
-class CategoryChip:
+class CategoryRow:
+    id: int
     name: str
-    exists: bool  # False when no category has this name yet
+    remove_key: str
 
 
 @dataclass(frozen=True)
 class RentalView:
     properties: list[PropertyRow]
     account_choices: list[AccountChoice]  # open accounts that are not properties yet
-    categories: list[CategoryChip]
-    category_choices: list[str]  # visible categories that are not rental categories yet
+    categories: list[CategoryRow]
+    category_choices: list[CategoryRow]  # visible categories that are not rental categories yet
+    add_property_key: str
+    add_category_key: str
     message: str = ""  # the reason a change was refused
-    error: bool = False
-    saved: bool = False  # a change was saved, so the reply shows the Saved toast
 
 
-# Pages
-
-
-@router.get("/settings/rental", response_class=HTMLResponse)
+@router.get(PATH, response_class=HTMLResponse)
 def rental_page(request: Request, db: DbSession) -> HTMLResponse:
     context: dict[str, Any] = shell_context(request, db, active="", title="Rental properties")
     context.update(
-        nav=SETTINGS_NAV,
-        active_href=PATH,
-        page_title="Rental properties",
-        view=_view(db),
+        nav=SETTINGS_NAV, active_href=PATH, page_title="Rental properties", view=_view(db)
     )
     return request.app.state.templates.TemplateResponse(request, PAGE, context)
 
 
-# Writes. Each one answers with the whole region, so the list and the choices stay in step.
-
-
-@router.post("/settings/rental/accounts", response_class=HTMLResponse)
+@router.post(f"{PATH}/accounts", response_class=HTMLResponse)
 def add_property(
     request: Request,
     db: DbSession,
     account_id: Annotated[str, Form()] = "",
     label: Annotated[str, Form()] = "",
+    idempotency_key: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    account = _account(db, account_id)
-    if account is None:
-        return _reply(request, db, error=NO_ACCOUNT, status=422)
-    return _label(request, db, account.id, label)
+    chosen = _account(db, account_id)
+    if chosen is None or chosen.rental_label is not None:
+        return _refused(request, db, NO_ACCOUNT)
+    return _write(
+        request,
+        db,
+        lambda key: set_rental_account(db, chosen.id, label, idempotency_key=key),
+        idempotency_key,
+    )
 
 
-@router.post("/settings/rental/accounts/{account_id}", response_class=HTMLResponse)
+@router.post(f"{PATH}/accounts/{{account_id}}", response_class=HTMLResponse)
 def relabel_property(
     request: Request,
     db: DbSession,
     account_id: int,
     label: Annotated[str, Form()] = "",
+    idempotency_key: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     if account_id not in get_rental_accounts(db):
-        return _reply(request, db, error=NOT_A_PROPERTY, status=422)
-    return _label(request, db, account_id, label)
+        return _refused(request, db, "That account is not a rental property.")
+    return _write(
+        request,
+        db,
+        lambda key: set_rental_account(db, account_id, label, idempotency_key=key),
+        idempotency_key,
+    )
 
 
-@router.post("/settings/rental/accounts/{account_id}/remove", response_class=HTMLResponse)
-def remove_property(request: Request, db: DbSession, account_id: int) -> HTMLResponse:
+@router.post(f"{PATH}/accounts/{{account_id}}/remove", response_class=HTMLResponse)
+def remove_property(
+    request: Request,
+    db: DbSession,
+    account_id: int,
+    idempotency_key: Annotated[str, Form()] = "",
+) -> HTMLResponse:
     """Stop treating the account as a rental property. Its transactions are not changed."""
-    if not remove_rental_account(db, account_id):
-        return _reply(request, db, error=NOT_A_PROPERTY, status=422)
-    return _reply(request, db, saved=True)
+    return _write(
+        request,
+        db,
+        lambda key: remove_rental_account(db, account_id, idempotency_key=key),
+        idempotency_key,
+    )
 
 
-@router.post("/settings/rental/categories/add", response_class=HTMLResponse)
+@router.post(f"{PATH}/categories", response_class=HTMLResponse)
 def add_category(
-    request: Request, db: DbSession, name: Annotated[str, Form()] = ""
+    request: Request,
+    db: DbSession,
+    category_id: Annotated[str, Form()] = "",
+    idempotency_key: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """Add a category you already have to the rental categories."""
-    chosen = name.strip()
-    offered = select(Category.id).where(Category.name == chosen, Category.hidden.is_(False))
-    if not chosen or db.scalar(offered) is None:
-        return _reply(request, db, error=NO_CATEGORY, status=422)
-    set_rental_categories(db, [*get_rental_categories(db), chosen])
-    return _reply(request, db, saved=True)
+    chosen = _category_id(category_id)
+    if chosen is None:
+        return _refused(request, db, NO_CATEGORY)
+    return _write(
+        request,
+        db,
+        lambda key: set_rental_category(db, chosen, True, idempotency_key=key),
+        idempotency_key,
+    )
 
 
-@router.post("/settings/rental/categories/remove", response_class=HTMLResponse)
+@router.post(f"{PATH}/categories/{{category_id}}/remove", response_class=HTMLResponse)
 def remove_category(
-    request: Request, db: DbSession, name: Annotated[str, Form()] = ""
+    request: Request,
+    db: DbSession,
+    category_id: int,
+    idempotency_key: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    current = get_rental_categories(db)
-    chosen = name.strip()
-    if chosen not in current:
-        return _reply(request, db, error=NOT_A_RENTAL_CATEGORY, status=422)
-    kept = [saved for saved in current if saved != chosen]
-    if not kept:
-        return _reply(request, db, error=LAST_CATEGORY, status=422)
-    set_rental_categories(db, kept)
-    return _reply(request, db, saved=True)
+    return _write(
+        request,
+        db,
+        lambda key: set_rental_category(db, category_id, False, idempotency_key=key),
+        idempotency_key,
+    )
 
 
-# Helpers
+def rental_undo_reply(request: Request, db: Session, message: str) -> HTMLResponse:
+    """After an undo of a rental batch: the toast, and the region out of band."""
+    return render_block(request, FRAGMENTS, "frag_undo_reply", message=message, view=_view(db))
 
 
-def _label(request: Request, db: Session, account_id: int, label: str) -> HTMLResponse:
-    """Set a property's label. A blank label is refused before anything is written."""
-    name = label.strip()
-    if not name:
-        return _reply(request, db, error=BLANK_LABEL, status=422)
+def _write(request: Request, db: Session, write: Any, idempotency_key: str) -> HTMLResponse:
+    """Run one write, then answer with the region and its undo toast, or with why it was refused."""
     try:
-        set_rental_account(db, account_id, name)
-    except ValueError as exc:  # the account vanished between the check and the write
-        return _reply(request, db, error=str(exc), status=422)
-    return _reply(request, db, saved=True)
+        batch: Batch = write(idempotency_key or uuid4().hex)
+    except (LookupError, ValueError, BatchError) as exc:
+        return _refused(request, db, str(exc))
+    label = str((batch.summary or {}).get("label", "Saved"))
+    return render_block(
+        request, FRAGMENTS, "frag_rental", view=_view(db), message=label, batch_id=batch.id
+    )
+
+
+def _refused(request: Request, db: Session, message: str) -> HTMLResponse:
+    return render_block(
+        request, FRAGMENTS, "frag_rental", status=422, view=_view(db, message=message)
+    )
 
 
 def _account(db: Session, raw: str) -> Account | None:
     """The account a form names, or None when the value is not an ID of an existing account."""
     try:
-        account_id = int(raw)
+        return db.get(Account, int(raw))
     except ValueError:
         return None
-    return db.get(Account, account_id)
 
 
-def _reply(
-    request: Request,
-    db: Session,
-    *,
-    error: str = "",
-    status: int = 200,
-    saved: bool = False,
-) -> HTMLResponse:
-    view = _view(db, message=error, error=bool(error), saved=saved)
-    return render_block(request, FRAGMENTS, "frag_rental", status=status, view=view)
+def _category_id(raw: str) -> int | None:
+    try:
+        return int(raw)
+    except ValueError:
+        return None
 
 
-def _view(
-    db: Session, *, message: str = "", error: bool = False, saved: bool = False
-) -> RentalView:
-    accounts = get_rental_accounts(db)  # account ID to label, in the order they were added
-    found = {row.id: row for row in db.scalars(select(Account))}
+def _view(db: Session, *, message: str = "") -> RentalView:
+    accounts = list(db.scalars(select(Account)))
     properties = [
         PropertyRow(
-            account_id=account_id,
-            label=label,
-            account=_account_text(found.get(account_id)),
+            account_id=account.id,
+            label=str(account.rental_label),
+            account=_account_text(account),
+            edit_key=uuid4().hex,
+            remove_key=uuid4().hex,
         )
-        for account_id, label in sorted(accounts.items(), key=lambda item: item[1].casefold())
+        for account in accounts
+        if account.rental_label is not None
     ]
+    properties.sort(key=lambda row: (row.label.casefold(), row.account_id))
     open_accounts = sorted(
-        (row for row in found.values() if not row.closed and row.id not in accounts),
+        (row for row in accounts if not row.closed and row.rental_label is None),
         key=lambda row: (row.name.casefold(), row.id),
     )
-    chosen = get_rental_categories(db)
-    existing = set(db.scalars(select(Category.name)))
-    visible = sorted(
-        (name for name in db.scalars(select(Category.name).where(Category.hidden.is_(False)))),
-        key=str.casefold,
-    )
+    categories = sorted(db.scalars(select(Category)), key=lambda row: row.name.casefold())
     return RentalView(
         properties=properties,
-        account_choices=[
-            AccountChoice(account_id=row.id, text=_account_text(row)) for row in open_accounts
+        account_choices=[AccountChoice(row.id, _account_text(row)) for row in open_accounts],
+        categories=[CategoryRow(row.id, row.name, uuid4().hex) for row in categories if row.rental],
+        category_choices=[
+            CategoryRow(row.id, row.name, "")
+            for row in categories
+            if not row.rental and not row.hidden
         ],
-        categories=[CategoryChip(name=name, exists=name in existing) for name in chosen],
-        category_choices=[name for name in visible if name not in chosen],
+        add_property_key=uuid4().hex,
+        add_category_key=uuid4().hex,
         message=message,
-        error=error,
-        saved=saved,
     )
 
 
-def _account_text(account: Account | None) -> str:
-    if account is None:
-        return "(missing)"
+def _account_text(account: Account) -> str:
     last4 = f" {last4_text(account.last4, account.alias_last4)}" if account.last4 else ""
     closed = " (closed)" if account.closed else ""
     return f"{account.name}{last4}{closed}"

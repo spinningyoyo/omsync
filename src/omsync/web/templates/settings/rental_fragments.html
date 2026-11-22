@@ -1,12 +1,19 @@
-{# Fragment block for the Rental properties replies (routes/settings_rental.py). The region is the
-   target. A saved change also sends the Saved toast out of band, with no undo, because these are
-   view settings and not batches. #}
+{# Fragment blocks for the Rental properties replies (routes/settings_rental.py and the shared undo
+   route). The region is the target of every write; a saved change sends its toast out of band, and
+   the toast's Undo posts to the shared undo route. #}
 
 {% block frag_rental %}
 {% from "settings/rental_parts.html" import rental_region %}
-{% from "transactions/parts.html" import toast_region %}
+{% from "components/toast.html" import toast_region with context %}
 {{ rental_region(view) }}
-{%- if view.saved %}
-{{ toast_region("Saved") }}
+{%- if batch_id %}
+{{ toast_region(message, undo_url(batch_id, source="rental")) }}
 {%- endif %}
+{% endblock %}
+
+{% block frag_undo_reply %}
+{% from "settings/rental_parts.html" import rental_region %}
+{% from "components/toast.html" import toast with context %}
+{{ toast(message) }}
+{{ rental_region(view, oob=true) }}
 {% endblock %}

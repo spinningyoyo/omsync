@@ -198,3 +198,40 @@ def test_a_linked_row_opens_both_transactions_of_its_link(
     assert "Zelle payment to Self" in shown
     assert "Zelle payment from Self" in shown
     assert "ACME CAFE" not in shown
+
+
+def test_opposite_amount_transfer_proposed_for_review_and_approved(
+    data_dir: Path, make_client: MakeClient
+) -> None:
+    statement(
+        data_dir, "checking.ofx", CHECKING, "checking", [(1, -5_000, "FUNDS TRANSFER OUT", "")]
+    )
+    statement(data_dir, "savings.ofx", SAVINGS, "savings", [(2, 5_000, "ELECTRONIC DEPOSIT", "")])
+    import_all(data_dir)
+
+    client = make_client()
+    sign_in(client)
+
+    # 1. Not auto-approved because it lacks deterministic reference tokens
+    assert links(client) == []
+
+    # 2. Proposed in the Review queue
+    with database(client) as db:
+        proposals = [
+            d
+            for d in run(db, start=START, end=END).drafts
+            if d.rule_key == "transfer_opposite_amount"
+        ]
+        assert len(proposals) == 1
+        assert proposals[0].queue.value == "review"
+        sig = signature(proposals[0])
+
+    # 3. Approve proposal in Reconcile
+    approved = client.post(
+        "/reconcile/approve",
+        data={**RANGE, "signature": [sig], "idempotency_key": "app1"},
+    )
+    assert approved.status_code == 200
+    [link] = links(client)
+    assert link.kind.value == "transfer"
+    assert link.evidence["rule"] == "transfer_opposite_amount"

@@ -30,8 +30,11 @@ from omsync.ledger.sources import (
     Institution,
     Provider,
     ProviderAccount,
+    ProviderKind,
 )
 from omsync.ledger.statements import BalanceKind, StatementBalance, StatementFile, StatementRow
+from omsync.ledger.sync_runs import RecentSync, SyncRun, SyncStatus
+from omsync.ledger.tags import SplitTag, Tag, TransactionTag
 from omsync.ledger.transactions import (
     CategoryOrigin,
     ContactOrigin,
@@ -73,15 +76,22 @@ __all__ = [
     "Preference",
     "Provider",
     "ProviderAccount",
+    "ProviderKind",
+    "RecentSync",
     "RejectedProposal",
     "RejectionReason",
     "ReviewStatus",
     "RuleCounterparty",
     "SavedFilter",
     "Split",
+    "SplitTag",
     "StatementBalance",
     "StatementFile",
     "StatementRow",
+    "SyncRun",
+    "SyncStatus",
+    "Tag",
     "Transaction",
     "TransactionRow",
+    "TransactionTag",
 ]

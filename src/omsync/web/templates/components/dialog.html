@@ -7,19 +7,22 @@
        <p>Body markup.</p>
      {% endcall %}
    trigger_icon makes the trigger an icon-only button, with the trigger text as its name and its
-   hover label (the icon-tip class); trigger_tip_class can add icon-tip--left. dialog_panel is the
+   hover label (the icon-tip class); trigger_tip_class can add icon-tip--left. trigger_lead_icon
+   puts an icon before the trigger text instead, such as the plus of an Add button. trigger_aria
+   names an icon trigger for screen readers when the tip alone is ambiguous, such as "Edit Elm St"
+   beside a row. dialog_panel is the
    <dialog> without its trigger.
    Import with context for the close icon. #}
 {% from "components/icon.html" import icon with context %}
 {% from "components/button.html" import button with context %}
 
-{% macro dialog(id, title, trigger, trigger_variant="outline", subtitle=none, width="md", actions=none, trigger_size="md", trigger_icon=none, trigger_tip_class="") -%}
+{% macro dialog(id, title, trigger, trigger_variant="outline", subtitle=none, width="md", actions=none, trigger_size="md", trigger_icon=none, trigger_tip_class="", trigger_lead_icon=none, trigger_aria=none) -%}
 {%- set body = caller() -%}
 <div class="inline-block" data-controller="dialog">
   {%- if trigger_icon %}
-  {{ button(variant="icon", icon=trigger_icon, size=trigger_size, aria_label=trigger, class_=("icon-tip " ~ trigger_tip_class) | trim, attrs={"data-action": "dialog#open", "data-tip": trigger}) }}
+  {{ button(variant="icon", icon=trigger_icon, size=trigger_size, aria_label=trigger_aria or trigger, class_=("icon-tip " ~ trigger_tip_class) | trim, attrs={"data-action": "dialog#open", "data-tip": trigger}) }}
   {%- else %}
-  {{ button(text=trigger, variant=trigger_variant, size=trigger_size, attrs={"data-action": "dialog#open"}) }}
+  {{ button(text=trigger, variant=trigger_variant, size=trigger_size, icon=trigger_lead_icon, attrs={"data-action": "dialog#open"}) }}
   {%- endif %}
   {%- call dialog_panel(id, title, subtitle=subtitle, width=width, actions=actions) %}{{ body }}{% endcall %}
 </div>

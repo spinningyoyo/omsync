@@ -6,8 +6,8 @@ admin need only the keys, the payee wording, and the code categories, so they li
 of them.
 
 Costco marks each food item with the code E. The category for Costco food is a setting, stored as a
-preference and written directly like the rental settings (see ledger/rental.py). Deleting or merging
-categories moves it in the same batch (see ledger/categories_admin).
+preference and written directly. Deleting or merging categories moves it in the same batch (see
+ledger/categories_admin).
 """
 
 from sqlalchemy.orm import Session

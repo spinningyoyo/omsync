@@ -9,6 +9,7 @@
 {% from "components/pill.html" import pill with context %}
 {% from "components/dialog.html" import dialog with context %}
 {% from "layouts/shell_parts.html" import page_header %}
+{% from "components/section_list.html" import section_header, list_panel, ROW %}
 
 {% macro contacts_region(error="", oob=false) -%}
 <div id="contacts-region" class="flex flex-col gap-6" hx-target="#contacts-region" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
@@ -19,7 +20,7 @@
   {{ detail_view(detail) }}
   {%- else %}
   {% call page_header("Contacts", rows|length ~ " contact" ~ ("" if rows|length == 1 else "s") ~ ". Who your money moves with, and what's owed.") %}
-    {% call dialog(id="add-contact", title="Add contact", trigger="Add contact", trigger_variant="primary", subtitle="Leave the name parts blank to use the name as written.", width="md") %}
+    {% call dialog(id="add-contact", title="Add contact", trigger="Add contact", trigger_variant="primary", trigger_lead_icon="plus", subtitle="Leave the name parts blank to use the name as written.", width="md") %}
       {{ add_contact_form() }}
     {% endcall %}
   {% endcall %}
@@ -30,145 +31,98 @@
 {%- endmacro %}
 
 {# One contact's names, accounts outside the ledger with the patterns tied to them, and the
-   patterns that name no account. For you, only the patterns tied to an account matter. #}
+   patterns that name no account, each a section with its Add dialog and a list
+   (components/section_list.html). For you, only the patterns tied to an account matter. #}
 {% macro contact_editor(c) -%}
-<div class="flex flex-col gap-3">
-  <div>
-    <h3 class="text-sm font-medium text-primary">{{ "Your names" if c.is_owner else "Names" }}</h3>
-    <p class="text-sm text-secondary">As banks print it. Common variations are recognized.</p>
-  </div>
+<section class="flex flex-col gap-4" aria-labelledby="contact-names-title">
+  {% call section_header("contact-names-title", "Your names" if c.is_owner else "Names", "As banks print it. Common variations are recognized.") %}
+    {% call dialog(id="add-name-" ~ c.id, title="Add name", trigger="Add name", trigger_lead_icon="plus", width="sm") %}
+      {{ add_name_form(c) }}
+    {% endcall %}
+  {% endcall %}
   {%- if c.names %}
-  <ul class="flex flex-col divide-y divide-subdued">
+  {% call list_panel("Names", c.names|length) %}
     {%- for name in c.names %}
-    <li class="flex items-start justify-between gap-3 py-2">
+    <li class="{{ ROW }}">
       <span class="flex min-w-0 flex-col gap-0.5">
         <span class="break-all text-sm text-primary">{{ name.text }}</span>
         <span class="break-words text-xs text-secondary">Recognized as: {{ name.forms }}{% if name.matches is not none %} · matches {{ name.matches }} transaction{{ "" if name.matches == 1 else "s" }}{% endif %}</span>
       </span>
-      <form hx-post="/settings/contacts/names/{{ name.id }}/remove">
-        <input type="hidden" name="idempotency_key" value="{{ name.remove_key }}">
-        <input type="hidden" name="contact" value="{{ c.id }}">
-        {{ button("Remove", variant="outline", size="sm", type="submit", aria_label="Remove " ~ name.text) }}
-      </form>
+      {{ delete_button("/settings/contacts/names/" ~ name.id ~ "/remove", name.remove_key, c.id, "Delete " ~ name.text) }}
     </li>
     {%- endfor %}
-  </ul>
+  {% endcall %}
   {%- else %}
   <p class="text-sm text-secondary">No names saved yet.</p>
   {%- endif %}
-  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ c.id }}/names">
-    <input type="hidden" name="idempotency_key" value="{{ c.add_name_key }}">
-    <label class="form-field w-auto min-w-[10rem]">
-      <span class="form-field__label">Given name</span>
-      <input type="text" name="given" maxlength="80" required class="form-field__input">
-    </label>
-    <label class="form-field w-auto min-w-[10rem]">
-      <span class="form-field__label">Middle name (optional)</span>
-      <input type="text" name="middle" maxlength="80" class="form-field__input">
-    </label>
-    <label class="form-field w-auto min-w-[10rem]">
-      <span class="form-field__label">Family name (optional)</span>
-      <input type="text" name="family" maxlength="80" class="form-field__input">
-    </label>
-    {{ button("Add name", variant="primary", type="submit") }}
-  </form>
-</div>
+</section>
 
-<div class="flex flex-col gap-3">
-  <div>
-    <h3 class="text-sm font-medium text-primary">{{ "Your accounts outside omsync" if c.is_owner else "Accounts" }}</h3>
-    <p class="text-sm text-secondary">
-      {%- if c.is_owner %}Accounts you don't sync, like a brokerage. Found by last four digits or a pattern.
-      {%- else %}This contact's accounts. Found by last four digits or a pattern.{% endif %}</p>
-  </div>
+<section class="flex flex-col gap-4" aria-labelledby="contact-accounts-title">
+  {% call section_header("contact-accounts-title", "Your accounts outside omsync" if c.is_owner else "Accounts", "Accounts you don't sync, like a brokerage. Found by last four digits or a pattern." if c.is_owner else "This contact's accounts. Found by last four digits or a pattern.") %}
+    {% call dialog(id="add-account-" ~ c.id, title="Add account", trigger="Add account", trigger_lead_icon="plus", width="sm") %}
+      {{ add_account_form(c) }}
+    {% endcall %}
+  {% endcall %}
   {%- if c.accounts %}
-  <ul class="flex flex-col divide-y divide-subdued">
+  {% call list_panel("Accounts", c.accounts|length) %}
     {%- for account in c.accounts %}
-    <li class="flex flex-col gap-2 py-3">
+    <li class="flex flex-col gap-2 p-4 first:rounded-t-lg last:rounded-b-lg">
       <div class="flex items-center justify-between gap-3">
-        <span class="text-sm text-primary">{{ account.label }}{% if account.digits %} <span class="text-secondary">{{ account.digits }}</span>{% endif %}</span>
-        <form hx-post="/settings/contacts/accounts/{{ account.id }}/remove">
-          <input type="hidden" name="idempotency_key" value="{{ account.remove_key }}">
-          <input type="hidden" name="contact" value="{{ c.id }}">
-          {{ button("Remove", variant="outline", size="sm", type="submit", aria_label="Remove " ~ account.label) }}
-        </form>
+        <span class="text-sm font-medium text-primary">{{ account.label }}{% if account.digits %} <span class="font-normal text-secondary">{{ account.digits }}</span>{% endif %}</span>
+        <span class="flex shrink-0 items-center">
+          {% call dialog(id="add-account-pattern-" ~ account.id, title="Add pattern for " ~ account.label, trigger="Add pattern", trigger_aria="Add pattern for " ~ account.label, trigger_size="sm", trigger_icon="plus", width="sm") %}
+            {{ add_pattern_form(c, account.add_pattern_key, account.id) }}
+          {% endcall %}
+          {{ delete_button("/settings/contacts/accounts/" ~ account.id ~ "/remove", account.remove_key, c.id, "Delete " ~ account.label) }}
+        </span>
       </div>
       {%- for pattern in account.patterns %}
-      {{ pattern_line(c, pattern, account.label) }}
+      {{ pattern_line(c, pattern) }}
       {%- endfor %}
-      <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ c.id }}/patterns">
-        <input type="hidden" name="idempotency_key" value="{{ account.add_pattern_key }}">
-        <input type="hidden" name="account" value="{{ account.id }}">
-        {{ side_select() }}
-        <label class="form-field w-auto min-w-[14rem]">
-          <span class="form-field__label">Pattern for this account</span>
-          <input type="text" name="pattern" maxlength="200" required class="form-field__input" placeholder="Words in the description">
-        </label>
-        {{ button("Add pattern", variant="outline", type="submit") }}
-      </form>
     </li>
     {%- endfor %}
-  </ul>
+  {% endcall %}
   {%- else %}
   <p class="text-sm text-secondary">No accounts yet.</p>
   {%- endif %}
-  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ c.id }}/accounts">
-    <input type="hidden" name="idempotency_key" value="{{ c.add_account_key }}">
-    <label class="form-field w-auto min-w-[12rem]">
-      <span class="form-field__label">Account name</span>
-      <input type="text" name="label" maxlength="80" required class="form-field__input" placeholder="Brokerage">
-    </label>
-    <label class="form-field w-auto min-w-[8rem]">
-      <span class="form-field__label">Last four digits (optional)</span>
-      <input type="text" name="last4" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" class="form-field__input">
-    </label>
-    {{ button("Add account", variant="outline", type="submit") }}
-  </form>
-</div>
+</section>
 
 {%- if not c.is_owner or c.loose_patterns %}
-<div class="flex flex-col gap-3">
-  <div>
-    <h3 class="text-sm font-medium text-primary">Patterns</h3>
-    <p class="text-sm text-secondary">For bank wording the name doesn't catch (regex, any case).</p>
-  </div>
+<section class="flex flex-col gap-4" aria-labelledby="contact-patterns-title">
+  {% call section_header("contact-patterns-title", "Patterns", "For bank wording the name doesn't catch (regex, any case).") %}
+    {%- if not c.is_owner %}
+    {% call dialog(id="add-pattern-" ~ c.id, title="Add pattern", trigger="Add pattern", trigger_lead_icon="plus", width="sm") %}
+      {{ add_pattern_form(c, c.add_pattern_key, none) }}
+    {% endcall %}
+    {%- endif %}
+  {% endcall %}
   {%- if c.loose_patterns %}
-  <ul class="flex flex-col divide-y divide-subdued">
+  {% call list_panel("Patterns", c.loose_patterns|length) %}
     {%- for pattern in c.loose_patterns %}
-    <li class="py-2">{{ pattern_line(c, pattern, none) }}</li>
+    <li class="p-4 first:rounded-t-lg last:rounded-b-lg">{{ pattern_line(c, pattern) }}</li>
     {%- endfor %}
-  </ul>
+  {% endcall %}
   {%- else %}
   <p class="text-sm text-secondary">No patterns yet.</p>
   {%- endif %}
-  {%- if not c.is_owner %}
-  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ c.id }}/patterns">
-    <input type="hidden" name="idempotency_key" value="{{ c.add_pattern_key }}">
-    {{ side_select() }}
-    <label class="form-field w-auto min-w-[14rem]">
-      <span class="form-field__label">Pattern</span>
-      <input type="text" name="pattern" maxlength="200" required class="form-field__input" placeholder="Words in the description">
-    </label>
-    {%- if c.account_choices %}
-    <label class="form-field w-auto min-w-[10rem]">
-      <span class="form-field__label">Names an account (optional)</span>
-      <select name="account" class="form-field__input">
-        <option value="">No account</option>
-        {%- for account_id, label in c.account_choices %}
-        <option value="{{ account_id }}">{{ label }}</option>
-        {%- endfor %}
-      </select>
-    </label>
-    {%- endif %}
-    {{ button("Add pattern", variant="outline", type="submit") }}
-  </form>
-  {%- endif %}
-</div>
+</section>
 {%- endif %}
 {%- endmacro %}
 
+{# A row's Delete: an icon that writes at once. The toast can undo it. #}
+{% macro delete_button(url, key, contact_id, label) -%}
+{{ button(variant="icon", size="sm", icon="trash-2", aria_label=label, class_="icon-tip", attrs={"data-tip": "Delete", "hx-post": url, "hx-vals": {"idempotency_key": key, "contact": contact_id}|tojson|forceescape}) }}
+{%- endmacro %}
+
+{% macro pattern_line(c, pattern) -%}
+<div class="flex items-center justify-between gap-3">
+  <span class="min-w-0 break-all text-sm text-primary"><span class="text-secondary">{{ "You paid" if pattern.side == "out" else "You received" }}:</span> <code>{{ pattern.pattern }}</code></span>
+  {{ delete_button("/settings/contacts/patterns/" ~ pattern.id ~ "/remove", pattern.remove_key, c.id, "Delete the pattern " ~ pattern.pattern) }}
+</div>
+{%- endmacro %}
+
 {% macro side_select() -%}
-<label class="form-field w-auto min-w-[9rem]">
+<label class="form-field">
   <span class="form-field__label">Side</span>
   <select name="side" class="form-field__input">
     <option value="out">You paid</option>
@@ -177,12 +131,77 @@
 </label>
 {%- endmacro %}
 
-{% macro pattern_line(c, pattern, account_label) -%}
-<form class="flex items-center justify-between gap-3" hx-post="/settings/contacts/patterns/{{ pattern.id }}/remove">
-  <input type="hidden" name="idempotency_key" value="{{ pattern.remove_key }}">
-  <input type="hidden" name="contact" value="{{ c.id }}">
-  <span class="min-w-0 break-all text-sm text-primary"><span class="text-secondary">{{ "You paid" if pattern.side == "out" else "You received" }}:</span> <code>{{ pattern.pattern }}</code></span>
-  {{ button("Remove", variant="outline", size="sm", type="submit", aria_label="Remove the pattern " ~ pattern.pattern) }}
+{# The name parts, shared by Add name and your own name. #}
+{% macro name_fields(autofocus=false) -%}
+<label class="form-field">
+  <span class="form-field__label">Given name</span>
+  <input type="text" name="given" maxlength="80" required class="form-field__input"{% if autofocus %} data-autofocus{% endif %}>
+</label>
+<label class="form-field">
+  <span class="form-field__label">Middle name (optional)</span>
+  <input type="text" name="middle" maxlength="80" class="form-field__input">
+</label>
+<label class="form-field">
+  <span class="form-field__label">Family name (optional)</span>
+  <input type="text" name="family" maxlength="80" class="form-field__input">
+</label>
+{%- endmacro %}
+
+{# The Cancel and submit buttons at the foot of a dialog's form. #}
+{% macro dialog_actions(submit) -%}
+<div class="flex justify-end gap-2">
+  {{ button("Cancel", variant="outline", attrs={"data-action": "dialog#close"}) }}
+  {{ button(submit, variant="primary", type="submit") }}
+</div>
+{%- endmacro %}
+
+{% macro add_name_form(c) -%}
+<form class="flex flex-col gap-4" hx-post="/settings/contacts/{{ c.id }}/names">
+  <input type="hidden" name="idempotency_key" value="{{ c.add_name_key }}">
+  {{ name_fields(autofocus=true) }}
+  {{ dialog_actions("Add name") }}
+</form>
+{%- endmacro %}
+
+{% macro add_account_form(c) -%}
+<form class="flex flex-col gap-4" hx-post="/settings/contacts/{{ c.id }}/accounts">
+  <input type="hidden" name="idempotency_key" value="{{ c.add_account_key }}">
+  <label class="form-field">
+    <span class="form-field__label">Account name</span>
+    <input type="text" name="label" maxlength="80" required class="form-field__input" placeholder="Brokerage" data-autofocus>
+  </label>
+  <label class="form-field">
+    <span class="form-field__label">Last four digits (optional)</span>
+    <input type="text" name="last4" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" class="form-field__input">
+  </label>
+  {{ dialog_actions("Add account") }}
+</form>
+{%- endmacro %}
+
+{# account_id ties the pattern to that account; none lets the form offer the contact's accounts. #}
+{% macro add_pattern_form(c, key, account_id) -%}
+<form class="flex flex-col gap-4" hx-post="/settings/contacts/{{ c.id }}/patterns">
+  <input type="hidden" name="idempotency_key" value="{{ key }}">
+  {%- if account_id is not none %}
+  <input type="hidden" name="account" value="{{ account_id }}">
+  {%- endif %}
+  {{ side_select() }}
+  <label class="form-field">
+    <span class="form-field__label">Pattern</span>
+    <input type="text" name="pattern" maxlength="200" required class="form-field__input" placeholder="Words in the description" data-autofocus>
+  </label>
+  {%- if account_id is none and c.account_choices %}
+  <label class="form-field">
+    <span class="form-field__label">Names an account (optional)</span>
+    <select name="account" class="form-field__input">
+      <option value="">No account</option>
+      {%- for choice_id, label in c.account_choices %}
+      <option value="{{ choice_id }}">{{ label }}</option>
+      {%- endfor %}
+    </select>
+  </label>
+  {%- endif %}
+  {{ dialog_actions("Add pattern") }}
 </form>
 {%- endmacro %}
 
@@ -289,7 +308,24 @@
 
 {% macro detail_view(d) -%}
 <div>{{ link_button("Contacts", href="/settings/contacts", variant="ghost", size="sm", icon="chevron-left") }}</div>
-{{ page_header(d.editor.name, d.kind ~ (" · " ~ d.role if d.role else "")) }}
+{% call page_header(d.editor.name, d.kind ~ (" · " ~ d.role if d.role else "")) %}
+  {%- if not d.is_owner %}
+  {% call dialog(id="delete-contact", title="Delete " ~ d.editor.name, trigger="Delete", subtitle="The counterparty recorded for its transactions is cleared. You can undo this.", width="sm") %}
+    <form class="flex flex-col gap-4" hx-post="/settings/contacts/{{ d.editor.id }}/delete">
+      <input type="hidden" name="idempotency_key" value="{{ d.delete_key }}">
+      {{ dialog_actions("Delete") }}
+    </form>
+  {% endcall %}
+  {%- if d.merge_choices %}
+  {% call dialog(id="merge-contact", title="Merge " ~ d.editor.name, trigger="Merge", subtitle="Everything moves to the contact you choose, and " ~ d.editor.name ~ " is deleted.", width="sm") %}
+    {{ merge_form(d) }}
+  {% endcall %}
+  {%- endif %}
+  {%- endif %}
+  {% call dialog(id="edit-contact", title="Edit " ~ d.editor.name, trigger="Edit", trigger_variant="primary", width="sm") %}
+    {{ edit_form(d) }}
+  {% endcall %}
+{% endcall %}
 
 {%- if d.is_owner %}
 <section class="rounded-xl bg-container p-5 shadow-border-xs">
@@ -303,71 +339,58 @@
 </section>
 {%- endif %}
 
-<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="contact-edit-title">
-  <h3 id="contact-edit-title" class="font-medium text-primary">Details</h3>
-  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ d.editor.id }}/edit">
-    <input type="hidden" name="idempotency_key" value="{{ d.edit_key }}">
-    <label class="form-field w-auto min-w-[12rem]">
-      <span class="form-field__label">Name</span>
-      <input type="text" name="name" maxlength="80" required value="{{ d.editor.name }}" class="form-field__input">
-    </label>
-    {%- if not d.is_owner %}
-    <label class="form-field w-auto min-w-[9rem]">
-      <span class="form-field__label">Kind</span>
-      <select name="kind" class="form-field__input">
-        <option value="person"{% if d.kind_value == "person" %} selected{% endif %}>Person</option>
-        <option value="business"{% if d.kind_value == "business" %} selected{% endif %}>Business</option>
-      </select>
-    </label>
-    {%- endif %}
-    {{ button("Save", variant="outline", type="submit") }}
-  </form>
+{{ contact_editor(d.editor) }}
+{%- endmacro %}
+
+{# The Edit dialog: the name and kind, and for a contact its role, each saved on its own. #}
+{% macro edit_form(d) -%}
+<form class="flex flex-col gap-4" hx-post="/settings/contacts/{{ d.editor.id }}/edit">
+  <input type="hidden" name="idempotency_key" value="{{ d.edit_key }}">
+  <label class="form-field">
+    <span class="form-field__label">Name</span>
+    <input type="text" name="name" maxlength="80" required value="{{ d.editor.name }}" class="form-field__input" data-autofocus>
+  </label>
   {%- if not d.is_owner %}
-  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ d.editor.id }}/role">
-    <input type="hidden" name="idempotency_key" value="{{ d.role_key }}">
-    <label class="form-field w-auto min-w-[12rem]">
-      <span class="form-field__label">Role</span>
-      <select name="role" class="form-field__input">
-        <option value="other"{% if d.role_value == "other" %} selected{% endif %}>Contact</option>
-        <option value="co_owner"{% if d.role_value == "co_owner" %} selected{% endif %}>Co-owner of the joint accounts</option>
-      </select>
-    </label>
-    {{ button("Set role", variant="outline", type="submit") }}
-  </form>
-  <p class="text-sm text-secondary">Co-owner of your joint accounts. No balance is kept.</p>
+  <label class="form-field">
+    <span class="form-field__label">Kind</span>
+    <select name="kind" class="form-field__input">
+      <option value="person"{% if d.kind_value == "person" %} selected{% endif %}>Person</option>
+      <option value="business"{% if d.kind_value == "business" %} selected{% endif %}>Business</option>
+    </select>
+  </label>
   {%- endif %}
-</section>
-
-<section class="flex flex-col gap-5 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="contact-recognize-title">
-  <h3 id="contact-recognize-title" class="font-medium text-primary">How payments are recognized</h3>
-  {{ contact_editor(d.editor) }}
-</section>
-
+  {{ dialog_actions("Save") }}
+</form>
 {%- if not d.is_owner %}
-<section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="contact-remove-title">
-  <h3 id="contact-remove-title" class="font-medium text-primary">Merge or delete</h3>
-  {%- if d.merge_choices %}
-  <form class="flex flex-wrap items-end gap-3" hx-post="/settings/contacts/{{ d.editor.id }}/merge" hx-confirm="Merge {{ d.editor.name }} into the contact you chose? Its names, patterns, accounts, and transactions move there.">
-    <input type="hidden" name="idempotency_key" value="{{ d.merge_key }}">
-    <label class="form-field w-auto min-w-[14rem]">
-      <span class="form-field__label">Merge into</span>
-      <select name="into" class="form-field__input" required>
-        <option value="">Choose a contact</option>
-        {%- for contact_id, name in d.merge_choices %}
-        <option value="{{ contact_id }}">{{ name }}</option>
-        {%- endfor %}
-      </select>
-    </label>
-    {{ button("Merge", variant="outline", type="submit") }}
-  </form>
-  <p class="text-sm text-secondary">Everything moves to the contact you choose; {{ d.editor.name }} is deleted.</p>
-  {%- endif %}
-  <form hx-post="/settings/contacts/{{ d.editor.id }}/delete" hx-confirm="Delete {{ d.editor.name }}? The counterparty recorded for its transactions is cleared.">
-    <input type="hidden" name="idempotency_key" value="{{ d.delete_key }}">
-    {{ button("Delete " ~ d.editor.name, variant="destructive", size="sm", type="submit") }}
-  </form>
-</section>
+<form class="flex flex-col gap-4 border-t border-subdued pt-4" hx-post="/settings/contacts/{{ d.editor.id }}/role">
+  <input type="hidden" name="idempotency_key" value="{{ d.role_key }}">
+  <label class="form-field">
+    <span class="form-field__label">Role</span>
+    <select name="role" class="form-field__input">
+      <option value="other"{% if d.role_value == "other" %} selected{% endif %}>Contact</option>
+      <option value="co_owner"{% if d.role_value == "co_owner" %} selected{% endif %}>Co-owner of the joint accounts</option>
+    </select>
+  </label>
+  <p class="text-sm text-secondary">A co-owner of your joint accounts keeps no balance.</p>
+  <div class="flex justify-end">{{ button("Set role", variant="outline", type="submit") }}</div>
+</form>
 {%- endif %}
+{%- endmacro %}
+
+{% macro merge_form(d) -%}
+<form class="flex flex-col gap-4" hx-post="/settings/contacts/{{ d.editor.id }}/merge">
+  <input type="hidden" name="idempotency_key" value="{{ d.merge_key }}">
+  <label class="form-field">
+    <span class="form-field__label">Merge into</span>
+    <select name="into" class="form-field__input" required>
+      <option value="">Choose a contact</option>
+      {%- for contact_id, name in d.merge_choices %}
+      <option value="{{ contact_id }}">{{ name }}</option>
+      {%- endfor %}
+    </select>
+  </label>
+  {{ dialog_actions("Merge") }}
+</form>
 {%- endmacro %}
 
 {% macro balance_section(b) -%}

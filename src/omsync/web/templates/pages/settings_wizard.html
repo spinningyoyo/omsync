@@ -2,11 +2,14 @@
 {% from "layouts/shell_parts.html" import page_header %}
 {% from "settings/parts.html" import setup_step with context %}
 {% from "components/alert.html" import alert with context %}
+{% from "settings/sync_parts.html" import vault_control %}
 
 {% block settings_page %}
-{{ page_header(page_title, "Set up a provider in five steps.") }}
+{% call page_header(page_title, "Set up a bank in five steps.") %}
+  {{ vault_control(vault_status, vault_email) }}
+{% endcall %}
 {% if demo_mode %}
-{{ alert("Demo: bank sync is off. You can look through the steps.", variant="info") }}
+{{ alert("Demo: sync is off. You can look through the steps.", variant="info") }}
 {% endif %}
 <section class="flex max-w-2xl flex-col gap-6 rounded-xl bg-container p-6 shadow-border-xs">
   {{ setup_step(state, connectors, form_key, message) }}

@@ -275,7 +275,7 @@ def _create_refused(
     form = goals_view.goal_form(
         db,
         body_id=CREATE_ID,
-        title="New goal",
+        title="Add goal",
         action="/plan/goals",
         submit_label="Add goal",
         values=values,

@@ -4,8 +4,9 @@
 {% from "components/button.html" import button %}
 {% from "components/toast.html" import toast as base_toast, toast_region as base_toast_region with context %}
 {% from "components/pill.html" import pill with context %}
+{% from "components/tag_picker.html" import tag_picker with context %}
 
-{% macro detail_region(detail, error="", oob=false) -%}
+{% macro detail_region(detail, error="", oob=false, all_tags=()) -%}
 {%- set row = detail.row -%}
 <div id="txn-detail-region" class="flex flex-col gap-6" hx-target="#txn-detail-region" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
   <section class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="txn-title">
@@ -22,6 +23,19 @@
     {%- if detail.set_by_rule %}
     <p class="text-sm text-secondary">Set by rule: {{ detail.set_by_rule }}</p>
     {%- endif %}
+  </section>
+
+  <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="tags-title">
+    <div class="flex items-center justify-between gap-2">
+      <div>
+        <h2 id="tags-title" class="font-medium text-primary">Tags</h2>
+        <p class="text-sm text-secondary">Labels you put on this transaction.</p>
+      </div>
+      <a href="/settings/tags" class="text-xs text-secondary underline hover:text-primary">Manage tags</a>
+    </div>
+    <div class="max-w-xs">
+      {{ tag_picker(all_tags, row.tags|map(attribute="id")|list, "/transactions/" ~ row.id ~ "/tags/toggle", "/transactions/" ~ row.id ~ "/tags/create", "#txn-detail-region", "?from_detail=1") }}
+    </div>
   </section>
 
   <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="counterparty-title">
@@ -48,6 +62,9 @@
         <div class="flex flex-wrap justify-between gap-2 text-sm">
           <span class="text-primary">Split {{ part.number }}{% if part.split.category %} · {{ part.split.category }}{% endif %}{% if part.split.memo %} · {{ part.split.memo }}{% endif %}</span>
           <span class="tabular-nums text-primary">{{ part.split.amount_cents|money }}</span>
+        </div>
+        <div class="max-w-xs">
+          {{ tag_picker(all_tags, part.split.tags|map(attribute="id")|list, "/transactions/" ~ row.id ~ "/splits/" ~ part.split.id ~ "/tags/toggle", none, "#txn-detail-region", "?from_detail=1") }}
         </div>
         {{ counterparty_status(part.counterparty, detail.counterparty) }}
         {{ counterparty_form("/transactions/" ~ row.id ~ "/splits/" ~ part.split.id ~ "/counterparty", detail.groups, part.counterparty, part.set_key, part.clear_key, "split " ~ part.number) }}

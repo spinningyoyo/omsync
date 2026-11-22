@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Mapping
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -18,13 +19,12 @@ from omsync.core.vault import LoginCredentials, Vault
 from omsync.ingest.connectors.base import ConnectorError, NeedsUserAction, Prompt, SyncCancelled
 from omsync.receipts.connectors.base import VendorConnector
 from omsync.receipts.connectors.registry import register
+from omsync.receipts.vendors import get_vendor
 
 logger = logging.getLogger(__name__)
 
 ACCOUNT_TRANSACTIONS_URL = "https://www.amazon.com/cpe/yourpayments/transactions"
 INVOICE_URL = "https://www.amazon.com/gp/css/summary/print.html?orderID={order_id}"
-RECEIPTS_FOLDER = "AMAZON"
-BROWSER_MODE = "chrome-attach"
 
 SIGN_IN_QUESTION = (
     "Sign in to Amazon in the browser window (including any verification code), then press Enter"
@@ -34,11 +34,13 @@ SIGN_IN_NOT_DONE = "Amazon sign-in was not completed in the browser window; sign
 SESSION_MISSING = "Amazon did not return a session or UPX token; sign in again, then sync"
 
 INITIAL_DATA_SCRIPT = """
-const props = window.__NEXT_DATA__?.props?.pageProps;
+const props = window.__NEXT_DATA__?.props?.pageProps || {};
+const trs = props.state?.transactionResponseState || {};
+const visible = trs.visibleTransactionResponse || {};
 return {
-    token: props?.token || null,
-    transactionList: props?.transactionList || null,
-    lastEvaluatedKey: props?.lastEvaluatedPageKey || null,
+    token: props.token || null,
+    transactionList: visible.transactionList || props.transactionList || null,
+    lastEvaluatedKey: trs.lastEvaluatedPageKey || props.lastEvaluatedPageKey || null,
 };
 """
 
@@ -80,7 +82,7 @@ class AmazonConnector(VendorConnector):
 
     key = "amazon"
     label = "Amazon"
-    browser_mode = "chrome-attach"
+    uses_vault = True
 
     def download_receipts(
         self,
@@ -88,19 +90,21 @@ class AmazonConnector(VendorConnector):
         settings: Settings,
         prompt: Prompt,
         *,
-        start: date | None = None,
-        end: date | None = None,
-        account: str = "default",
+        provider_key: str,
+        held: Mapping[str, Path | None],
+        start: date,
+        end: date,
         vault: Vault | None = None,
         vault_item_id: str | None = None,
     ) -> list[Path]:
-        """Sign in and download Amazon order and refund JSON receipt files."""
+        """Sign in and download the provider's Amazon order and refund JSON receipt files."""
         credentials = None
         if vault is not None and vault_item_id is not None:
             credentials = vault.get_login(vault_item_id)
         self.sign_in(driver, prompt, credentials)
-        root = settings.receipts_dir / RECEIPTS_FOLDER / account
-        return self.download_new(driver, root, start=start, end=end)
+        return self.download_new(
+            driver, settings.receipts_dir, provider_key, held, start=start, end=end
+        )
 
     def sign_in(
         self,
@@ -207,12 +211,18 @@ class AmazonConnector(VendorConnector):
     def download_new(
         self,
         driver: Any,
-        root: Path,
+        receipts_dir: Path,
+        provider_key: str,
+        held: Mapping[str, Path | None],
         *,
-        start: date | None,
-        end: date | None,
+        start: date,
+        end: date,
     ) -> list[Path]:
-        """Fetch transactions and invoices, then write individual order JSON receipt files."""
+        """Fetch transactions and invoices, then write the provider's order JSON receipt files.
+
+        An order the provider holds is written again only when it has a charge or refund that its
+        stored file lacks. The new activity is merged into the stored file.
+        """
         initial = driver.execute_script(INITIAL_DATA_SCRIPT) or {}
         token = initial.get("token")
         if not token:
@@ -225,18 +235,16 @@ class AmazonConnector(VendorConnector):
             next_key=initial.get("lastEvaluatedKey"),
             start=start,
         )
-
         scoped = _filter_by_date(transactions, start, end)
         if not scoped:
+            logger.info("Amazon fetched %d transactions, wrote 0 orders", len(transactions))
             return []
 
-        orders_map = _group_by_order(scoped)
-        existing_files = _existing_order_files(root)
-
+        vendor = get_vendor("amazon")
         written: list[Path] = []
-        for oid, order_info in sorted(orders_map.items()):
-            existing_path = existing_files.get(oid)
-            existing_data = _read_json(existing_path) if existing_path else None
+        for oid, order_info in sorted(_group_by_order(scoped).items()):
+            existing_path = held.get(oid)
+            existing_data = _read_json(existing_path)
 
             if existing_data and not _has_new_activity(existing_data, order_info):
                 continue
@@ -272,11 +280,21 @@ class AmazonConnector(VendorConnector):
                 "refunds": refunds,
             }
 
-            stem = _file_stem(oid)
-            target = root / str(order_day.year) / f"{stem}.json"
+            if existing_data and existing_path is not None:
+                target = existing_path
+            else:
+                try:
+                    target = vendor.receipt_file(receipts_dir, provider_key, order_day, oid)
+                except ValueError:
+                    raise ConnectorError(
+                        "Amazon returned an order whose ID cannot be a file name"
+                    ) from None
             _write_json(target, order_json)
             written.append(target)
 
+        logger.info(
+            "Amazon fetched %d transactions, wrote %d orders", len(transactions), len(written)
+        )
         return written
 
     def fetch_transactions(
@@ -294,7 +312,8 @@ class AmazonConnector(VendorConnector):
             transactions.extend(initial_list)
 
         cursor = next_key
-        while cursor:
+        has_more = bool(cursor) or not bool(transactions)
+        while has_more:
             if start is not None and transactions:
                 oldest = _parse_date(transactions[-1].get("formattedDate", ""))
                 if oldest is not None and oldest < start:
@@ -313,11 +332,13 @@ class AmazonConnector(VendorConnector):
                 "applicationInstanceTraceId": f"OMSINST{int(time.time())}",
                 "transactionsViewRequest": {"filtersControls": {"includeFilters": True}},
                 "widgetName": "ViewTransactions",
-                "exclusiveStartKey": cursor,
             }
+            if cursor:
+                payload["exclusiveStartKey"] = cursor
 
             reply = driver.execute_async_script(GET_TRANSACTIONS_SCRIPT, payload, token)
             if not reply or not reply.get("ok"):
+                logger.warning("Amazon GetTransactions reply failed")
                 break
 
             data = reply.get("data", {})
@@ -328,6 +349,7 @@ class AmazonConnector(VendorConnector):
 
             transactions.extend(batch)
             cursor = display.get("lastEvaluatedKey")
+            has_more = bool(cursor)
             time.sleep(0.15)
 
         return transactions
@@ -493,7 +515,9 @@ def _all_comps(html: str, name: str) -> list[str]:
 
 
 def _parse_tax_cents(html: str) -> int:
-    tax_match = re.search(r"tax to be collected:.*?\$([\d,.]+)", html, re.IGNORECASE)
+    # As text, the label and its amount are neighbours whatever markup sits between them.
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+    tax_match = re.search(r"tax to be collected:?\s*\$\s*([\d,]+\.\d{2})", text, re.IGNORECASE)
     if tax_match:
         try:
             return money.to_cents(tax_match.group(1))
@@ -563,16 +587,6 @@ def _extract_order_id(display: str) -> str:
     return cleaned
 
 
-def _existing_order_files(root: Path) -> dict[str, Path]:
-    if not root.exists():
-        return {}
-    return {
-        path.stem: path
-        for path in root.rglob("*.json")
-        if path.is_file() and not path.name.startswith(".") and not path.parent.name.startswith(".")
-    }
-
-
 def _read_json(path: Path | None) -> dict[str, Any] | None:
     if not path or not path.exists():
         return None
@@ -580,18 +594,6 @@ def _read_json(path: Path | None) -> dict[str, Any] | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
-
-
-def _file_stem(order_id: str) -> str:
-    """The order ID as a file name. Anything that could name another folder is refused."""
-    if (
-        order_id != Path(order_id).name
-        or order_id in (".", "..")
-        or "\\" in order_id
-        or "\0" in order_id
-    ):
-        raise ConnectorError("Amazon returned an order whose ID cannot be a file name")
-    return order_id
 
 
 def _write_json(target: Path, receipt: dict[str, Any]) -> None:

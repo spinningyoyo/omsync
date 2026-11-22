@@ -118,7 +118,7 @@
     <label class="flex items-center gap-2 self-end pb-2 text-sm text-primary">
       <input type="checkbox" name="receipts_only" value="1"> The bank does not show it
     </label>
-    {{ button("Add", variant="outline", type="submit") }}
+    {{ button("Add number", variant="outline", type="submit") }}
   </form>
 </section>
 {%- endmacro %}
@@ -142,7 +142,7 @@
       <form class="flex items-center justify-between gap-3 py-2" hx-post="/accounts/{{ account_id }}/nicknames/{{ nickname.id }}/remove">
         <input type="hidden" name="idempotency_key" value="{{ nickname.remove_key }}">
         <span class="break-all text-sm text-primary">{{ nickname.nickname }}</span>
-        {{ button("Remove", variant="outline", size="sm", type="submit", aria_label="Remove " ~ nickname.nickname) }}
+        {{ button(variant="icon", size="sm", icon="trash-2", type="submit", aria_label="Delete " ~ nickname.nickname, class_="icon-tip", attrs={"data-tip": "Delete"}) }}
       </form>
     </li>
     {%- endfor %}
@@ -153,10 +153,10 @@
   <form class="flex flex-wrap items-end gap-3" hx-post="/accounts/{{ account_id }}/nicknames">
     <input type="hidden" name="idempotency_key" value="{{ add_key }}">
     <label class="form-field w-auto min-w-[14rem]">
-      <span class="form-field__label">Add a nickname</span>
+      <span class="form-field__label">Nickname</span>
       <input type="text" name="nickname" maxlength="80" required class="form-field__input" placeholder="As the payment app shows it">
     </label>
-    {{ button("Add", variant="outline", type="submit") }}
+    {{ button("Add nickname", variant="outline", type="submit") }}
   </form>
 </section>
 {%- endmacro %}

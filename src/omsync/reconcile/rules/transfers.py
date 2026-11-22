@@ -364,6 +364,40 @@ def rule_transfer_same_amount(pool: Pool, emit: Emitter) -> None:
         )
 
 
+OPPOSITE_AMOUNT_WINDOW_DAYS = 4
+
+
+def rule_transfer_opposite_amount(pool: Pool, emit: Emitter) -> None:
+    """Propose transfer for unlinked opposite-sign transactions across different accounts.
+
+    Mathematical heuristic matching: when an unlinked debit and credit across different
+    accounts have equal and opposite amounts within a 4-day window, propose it for review.
+    Does not auto-approve because it is heuristic (amounts only, not deterministic tokens).
+    """
+    debits = [t for t in pool if t.amount_cents < 0]
+    credits = [t for t in pool if t.amount_cents > 0]
+
+    def fits(debit: TxnView, credit: TxnView) -> bool:
+        return (
+            debit.account_id != credit.account_id
+            and abs(debit.amount_cents) == abs(credit.amount_cents)
+            and days_gap(debit, credit) <= OPPOSITE_AMOUNT_WINDOW_DAYS
+            and not is_pipeline_merchant(debit.payee_raw)
+            and not is_pipeline_merchant(credit.payee_raw)
+        )
+
+    pair_unambiguously(
+        pool,
+        emit,
+        rule="transfer_opposite_amount",
+        kind=LinkKind.transfer,
+        debits=debits,
+        credits=credits,
+        fits=fits,
+        queue=Queue.review,
+    )
+
+
 def _sides(
     pool: Pool, debit_re: re.Pattern[str], credit_re: re.Pattern[str]
 ) -> tuple[list[TxnView], list[TxnView]]:

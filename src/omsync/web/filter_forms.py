@@ -3,6 +3,7 @@ and how the submitted form becomes a condition. Presentation only; the rules are
 omsync.ledger.filters."""
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from omsync.core.money import to_cents
 from omsync.ledger.filters import FIELD_OPS, PICKED_FIELDS, Condition, FilterError
@@ -13,6 +14,7 @@ FIELD_LABELS: dict[str, str] = {
     "account": "Account",
     "payee": "Payee",
     "category": "Category",
+    "tag": "Tag",
     "amount": "Amount",
     "memo": "Memo",
     "origin": "Origin",
@@ -24,6 +26,7 @@ OP_LABELS: dict[str, dict[str, str]] = {
     "account": {"is": "is", "is_not": "is not"},
     "payee": {"contains": "contains", "is": "is", "not_contains": "does not contain"},
     "category": {"is": "is", "is_not": "is not", "is_empty": "is empty"},
+    "tag": {"is": "is", "is_not": "is not", "is_empty": "is untagged"},
     "amount": {"is": "is", "gt": "is greater than", "lt": "is less than", "between": "is between"},
     "memo": {"contains": "contains", "is_empty": "is empty"},
     "origin": {"is": "is"},
@@ -45,6 +48,7 @@ class FormValues:
     origin: str = "manual"
     account_ids: list[int] = field(default_factory=list)
     category_ids: list[int] = field(default_factory=list)
+    tag_ids: list[int] = field(default_factory=list)
     error: str = ""
 
     @property
@@ -63,26 +67,36 @@ def op_choices(field_name: str) -> list[tuple[str, str]]:
 def values_for(condition: Condition, index: int) -> FormValues:
     """Prefill the form from an existing condition, so it can be changed."""
     values = FormValues(field=condition.field, op=condition.op, index=str(index))
-    value = condition.value
-    if condition.field == "date":
-        if condition.op == "between":
+    _fill_values(values, condition.field, condition.op, condition.value)
+    return values
+
+
+def _fill_values(values: FormValues, field_name: str, op: str, value: Any) -> None:
+    if field_name == "date":
+        if op == "between":
             values.value, values.value_to = value[0].isoformat(), value[1].isoformat()
         elif value is not None:
             values.value = value.isoformat()
-    elif condition.field == "account":
-        values.account_ids = list(value)
-    elif condition.field == "category":
-        values.category_ids = list(value or ())
-    elif condition.field == "amount":
-        if condition.op == "between":
+    elif field_name in ("account", "category", "tag"):
+        _fill_ids(values, field_name, value)
+    elif field_name == "amount":
+        if op == "between":
             values.amount, values.amount_to = money_input(value[0]), money_input(value[1])
         else:
             values.amount = money_input(value)
-    elif condition.field == "origin":
+    elif field_name == "origin":
         values.origin = value
     elif value is not None:
         values.value = value
-    return values
+
+
+def _fill_ids(values: FormValues, field_name: str, value: Any) -> None:
+    if field_name == "account":
+        values.account_ids = list(value or ())
+    elif field_name == "category":
+        values.category_ids = list(value or ())
+    else:
+        values.tag_ids = list(value or ())
 
 
 def blank_values(field_name: str, index: str = "") -> FormValues:
@@ -103,19 +117,26 @@ def condition_from(values: FormValues) -> Condition:
         return _date_condition(values)
     if field_name == "account":
         return Condition("account", op, values.account_ids)
-    if field_name == "category":
-        if op == "is_empty":
-            return Condition("category", op)
-        return Condition("category", op, values.category_ids)
-    if field_name == "payee":
-        return Condition("payee", op, _required(values.value, "some text"))
-    if field_name == "memo":
-        if op == "is_empty":
-            return Condition("memo", op)
-        return Condition("memo", op, _required(values.value, "some text"))
+    if field_name in ("category", "tag"):
+        return _id_condition(field_name, op, values)
+    if field_name in ("payee", "memo"):
+        return _text_condition(field_name, op, values)
     if field_name == "amount":
         return _amount_condition(values)
     return Condition("origin", "is", values.origin)
+
+
+def _id_condition(field_name: str, op: str, values: FormValues) -> Condition:
+    if op == "is_empty":
+        return Condition(field_name, op)
+    ids = values.category_ids if field_name == "category" else values.tag_ids
+    return Condition(field_name, op, ids)
+
+
+def _text_condition(field_name: str, op: str, values: FormValues) -> Condition:
+    if op == "is_empty":
+        return Condition(field_name, op)
+    return Condition(field_name, op, _required(values.value, "some text"))
 
 
 def _date_condition(values: FormValues) -> Condition:

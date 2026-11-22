@@ -40,19 +40,14 @@ from omsync.web.settings_views import (
     mapping_row,
     type_choices,
 )
-from omsync.web.vault_logins import (
-    VaultActionError,
-    search_logins,
-    unlock_vault,
-    vault_status_view,
-)
+from omsync.web.vault_logins import VaultActionError, search_logins
 
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
 PAGE = "pages/settings_wizard.html"
 FRAGMENTS = "settings/fragments.html"
 PROVIDERS_PATH = "/settings/sync"
-WIZARD = "/settings/providers/new"
+WIZARD = "/settings/sync/new/bank"
 MAX_FORM_VALUE = 200
 ACCOUNT_ROWS = 4
 STALE_IMPORT = (
@@ -110,7 +105,7 @@ def choose_connector(
         )
     state = WizardState(
         setup.institution_key,
-        setup.institution_name,
+        setup.provider_name,
         setup.connector_key,
         setup.provider_key,
     )
@@ -187,48 +182,6 @@ def search_vault(
         )
     return _fragment(
         request, "frag_vault_results", state=state, locked=False, logins=logins, query=query
-    )
-
-
-@router.post(f"{WIZARD}/unlock", response_class=HTMLResponse)
-def unlock(
-    request: Request,
-    institution: Annotated[str, Form()] = "",
-    name: Annotated[str, Form()] = "",
-    connector: Annotated[str, Form()] = "",
-    provider: Annotated[str, Form()] = "",
-    password: Annotated[str, Form()] = "",
-) -> HTMLResponse:
-    """Unlock the vault with the master password. The password is not echoed, stored, or logged,
-    and a failure shows the vault's own message."""
-    vault = request.app.state.vault
-    state = _state(institution, name, connector, provider)
-    try:
-        unlock_vault(vault, request.app.state.login_limiter, password)
-    except VaultActionError as exc:
-        return _step(
-            request,
-            "frag_step_login",
-            422,
-            **_login_context(
-                state,
-                locked=is_locked(vault),
-                form_key=uuid4().hex,
-                unlock_message=exc.message,
-            ),
-        )
-    logins, query = _initial_vault_logins(request, vault, state, locked=False)
-    return _step(
-        request,
-        "frag_step_login",
-        **_login_context(
-            state,
-            locked=False,
-            form_key=uuid4().hex,
-            logins=logins,
-            query=query,
-        ),
-        vault_status=vault_status_view(vault),
     )
 
 
@@ -564,7 +517,6 @@ def _login_context(
     logins: list[LoginSummary] | None = None,
     query: str = "",
     message: str = "",
-    unlock_message: str = "",
 ) -> dict[str, object]:
     return {
         "state": state,
@@ -573,7 +525,6 @@ def _login_context(
         "query": query,
         "form_key": form_key,
         "message": message,
-        "unlock_message": unlock_message,
     }
 
 

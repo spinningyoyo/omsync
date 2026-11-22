@@ -78,6 +78,9 @@
 <form id="custom-range" class="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-lg bg-surface-inset px-3 py-2 text-sm text-secondary" method="get" action="{{ action }}"
   data-controller="date-range" data-action="change->date-range#apply keydown.enter->date-range#applyNow">
   <input type="hidden" name="period" value="custom">
+  {%- for tag_id in selection.tag_ids|default(()) %}
+  <input type="hidden" name="tag" value="{{ tag_id }}">
+  {%- endfor %}
   <label for="custom-range-start">From</label>
   <input id="custom-range-start" type="date" name="start" value="{{ selection.start }}" required class="form-field__input h-8 w-auto rounded-md bg-container px-2 shadow-border-xs" data-date-range-target="start">
   <span aria-hidden="true">—</span>

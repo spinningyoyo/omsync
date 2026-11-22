@@ -189,7 +189,7 @@
             <td class="px-3 py-3 align-top">
               <div class="flex justify-end gap-2">
                 {%- if row.action == "keyword" %}
-                {{ link_button("Add a keyword", href=row.keyword_href, variant="primary", size="sm") }}
+                {{ link_button("Add keyword", href=row.keyword_href, variant="primary", size="sm") }}
                 {%- else %}
                 {{ link_button("Open transaction" if row.action == "check" else "Open transactions", href=row.candidates_href, variant="outline", size="sm") }}
                 {%- if row.candidate_id %}

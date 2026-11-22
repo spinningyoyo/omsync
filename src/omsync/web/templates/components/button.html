@@ -1,5 +1,6 @@
 {# Adapted from Sure (we-promise/sure), AGPL-3.0: app/components/DS/buttonish.rb, button.rb,
-   link.rb and button.html.erb. Variants: primary, secondary, destructive, outline, ghost, icon.
+   link.rb and button.html.erb. Variants: primary, secondary, outline, ghost, icon. There is no red
+   variant: a delete is plain, and its dialog or its undo toast is the safeguard.
    Import with context, because the icon needs icon_svg from the render context. #}
 {% from "components/icon.html" import icon as svg with context %}
 {% from "components/_util.html" import html_attrs %}
@@ -7,7 +8,6 @@
 {% set VARIANTS = {
   "primary": {"container": "text-inverse bg-inverse hover:bg-inverse-hover disabled:bg-gray-500 theme-dark:disabled:bg-gray-400", "icon": "text-inverse"},
   "secondary": {"container": "text-primary bg-gray-200 theme-dark:bg-gray-700 hover:bg-gray-300 theme-dark:hover:bg-gray-600 disabled:bg-gray-200 theme-dark:disabled:bg-gray-600", "icon": "text-primary"},
-  "destructive": {"container": "text-inverse button-bg-destructive hover:button-bg-destructive-hover disabled:bg-red-200 theme-dark:disabled:bg-red-600", "icon": "text-inverse"},
   "outline": {"container": "text-primary border border-secondary bg-transparent hover:bg-surface-hover", "icon": "text-secondary"},
   "ghost": {"container": "text-primary bg-transparent hover:bg-container-inset-hover", "icon": "text-secondary"},
   "icon": {"container": "hover:bg-container-inset-hover", "icon": "text-secondary"},

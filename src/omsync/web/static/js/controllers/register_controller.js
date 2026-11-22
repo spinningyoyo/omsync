@@ -1,7 +1,7 @@
 // Keyboard navigation and inline editing for the transactions register.
 //
-// Memo is an input and category is a select, both always visible, as the Categories page's name and
-// type are. A change saves the cell: Tab moves on, a click leaves it, or Enter is pressed. Enter
+// Category is a select, always visible, as the Categories page's name and type are. A change saves
+// the cell: Tab moves on, a click leaves it, or Enter is pressed. Enter
 // also moves down to the same field of the next row. The server renders every row and fragment. One
 // delegated controller sits on the register's wrapper and builds each request from data-txn-id and
 // data-field, so cells carry no hx-* attributes. After each htmx swap it focuses the element the

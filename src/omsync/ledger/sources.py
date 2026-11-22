@@ -42,6 +42,11 @@ class AccountType(StrEnum):
     other = "other"
 
 
+class ProviderKind(StrEnum):
+    bank = "bank"
+    receipt = "receipt"
+
+
 class Institution(Base):
     """A bank, card issuer, or brokerage that holds accounts."""
 
@@ -55,7 +60,8 @@ class Institution(Base):
 
 
 class Account(Base):
-    """One financial account at an institution. last4 is a display label only."""
+    """One financial account at an institution. last4 is a display label only. rental_label is set
+    when the account is a rental property: the property's name in the rental report."""
 
     __tablename__ = "account"
     __table_args__ = {"sqlite_autoincrement": True}
@@ -67,6 +73,7 @@ class Account(Base):
     last4: Mapped[str | None] = mapped_column(String(4))
     joint: Mapped[bool] = mapped_column(default=False, server_default=false())
     closed: Mapped[bool] = mapped_column(default=False, server_default=false())
+    rental_label: Mapped[str | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -182,10 +189,12 @@ def account_digits(last4: str | None, alias_last4: str | None = None) -> str:
 
 
 class Provider(Base):
-    """How omsync fetches statements for one institution: a bank connector and its vault login.
+    """How omsync fetches statements or receipts: a bank connector or a receipt vendor, and its
+    vault login. name is the label its owner chose.
 
-    An institution may have several providers, each fetching only the accounts it owns (see
-    ProviderAccount). Keys are unique across providers, as institution keys are across institutions.
+    An institution may have several bank providers, each fetching only the accounts it owns (see
+    ProviderAccount). A bank provider has an institution. A receipt provider has none and no
+    accounts. Keys are unique across providers.
     """
 
     __tablename__ = "provider"
@@ -193,8 +202,10 @@ class Provider(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(unique=True)
-    institution_id: Mapped[int] = mapped_column(ForeignKey("institution.id"), index=True)
+    kind: Mapped[ProviderKind] = mapped_column(string_enum(ProviderKind))
+    name: Mapped[str]
     connector_key: Mapped[str]
+    institution_id: Mapped[int | None] = mapped_column(ForeignKey("institution.id"), index=True)
     vault_item_id: Mapped[str | None]
     settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default="{}")
     enabled: Mapped[bool] = mapped_column(default=True, server_default=true())

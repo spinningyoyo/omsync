@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from omsync.core.batches import BatchError
 from omsync.ledger.counterparty import set_counterparty, set_split_counterparty
+from omsync.ledger.tags import list_tags
 from omsync.web.automatic import run_automatic, with_automatic
 from omsync.web.contacts_view import parse_choice
 from omsync.web.counterparty_view import TransactionDetail, load_detail
@@ -31,7 +32,11 @@ FRAGMENTS = "transactions/detail_fragments.html"
 @router.get("/transactions/{txn_id}/detail", response_class=HTMLResponse)
 def detail_page(request: Request, db: DbSession, txn_id: int) -> HTMLResponse:
     context = shell_context(request, db, active="transactions", title="Transaction")
-    context.update(detail=_detail_or_404(db, txn_id), back_href=back_href(request))
+    context.update(
+        detail=_detail_or_404(db, txn_id),
+        back_href=back_href(request),
+        all_tags=list_tags(db),
+    )
     return request.app.state.templates.TemplateResponse(request, PAGE, context)
 
 
@@ -105,7 +110,14 @@ def transaction_undo_reply(
         detail = load_detail(db, txn_id) if txn_id is not None else None
     except LookupError:
         detail = None
-    return _fragment(request, "frag_undo_reply", message=message, txn_id=txn_id, detail=detail)
+    return _fragment(
+        request,
+        "frag_undo_reply",
+        message=message,
+        txn_id=txn_id,
+        detail=detail,
+        all_tags=list_tags(db),
+    )
 
 
 def _saved(request: Request, db: Session, txn_id: int, batch_id: int, label: str) -> HTMLResponse:
@@ -117,6 +129,7 @@ def _saved(request: Request, db: Session, txn_id: int, batch_id: int, label: str
         batch_id=batch_id,
         txn_id=txn_id,
         detail=load_detail(db, txn_id),
+        all_tags=list_tags(db),
     )
 
 
@@ -128,6 +141,7 @@ def _error(request: Request, db: Session, txn_id: int, message: str) -> HTMLResp
         error=message,
         txn_id=txn_id,
         detail=load_detail(db, txn_id),
+        all_tags=list_tags(db),
     )
 
 

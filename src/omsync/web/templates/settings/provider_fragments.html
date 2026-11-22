@@ -1,31 +1,37 @@
-{# Fragment blocks for the Bank sync replies (routes/settings_providers.py). Each saved change or undo
-   sends the whole institution list out of band and the toast with it. #}
+{# Fragment blocks for the Data sync replies (routes/settings_providers.py and settings_vault.py).
+   Each saved change or undo sends both lists out of band and the toast with it. #}
 
 {% block frag_provider_vault %}
 {% from "settings/parts.html" import vault_results %}
-{{ vault_results(locked, logins, unlock_message, message, unlock_action="/settings/providers/" ~ key ~ "/edit/unlock", unlock_target="#provider-edit-" ~ key, form_id="provider-edit-form-" ~ key, choice_required=false) }}
+{{ vault_results(locked, logins, message, form_id="provider-edit-form-" ~ key, choice_required=false) }}
 {% endblock %}
 
-{% block frag_provider_edit %}
-{% from "settings/provider_parts.html" import provider_edit %}
-{% from "components/vault_status.html" import vault_status_oob %}
-{{ provider_edit(card, locked, logins, query, unlock_message, message) }}
-{%- if vault_status is defined %}
-{{ vault_status_oob(vault_status) }}
+{# The reply to the unlock form that stands in for a locked vault's login results: the form again
+   with why the unlock failed, or a note that it worked. #}
+{% block frag_vault_unlock_inline %}
+{% from "settings/parts.html" import vault_unlock_form %}
+{%- if message %}
+{{ vault_unlock_form(form_id, message) }}
+{%- else %}
+<p class="text-sm text-secondary" role="status">Vault unlocked.</p>
 {%- endif %}
 {% endblock %}
 
-{# The vault panel with why a connect or disconnect was refused (routes/settings_vault.py). #}
+{# The vault panel, with why a change was refused (routes/settings_vault.py), and the status line
+   beside it. #}
 {% block frag_vault_panel %}
 {% from "settings/sync_parts.html" import vault_panel %}
-{{ vault_panel(email, message) }}
+{% from "components/vault_status.html" import vault_status as vault_status_line, VAULT_STATUS_PAGE %}
+{{ vault_panel(vault_status, email, message, pending, oob) }}
+{%- if vault_status %}
+{{ vault_status_line(vault_status, VAULT_STATUS_PAGE, poll=true, oob=true) }}
+{%- endif %}
 {% endblock %}
 
-{# The vault's status lines, as the Bank sync page's poll sends them. #}
+{# The vault's status line, as the page's poll sends it. #}
 {% block frag_vault_status %}
-{% from "components/vault_status.html" import vault_status as vault_status_line, vault_status_oob, VAULT_STATUS_PAGE %}
+{% from "components/vault_status.html" import vault_status as vault_status_line, VAULT_STATUS_PAGE %}
 {{ vault_status_line(vault_status, VAULT_STATUS_PAGE, poll=true) }}
-{{ vault_status_oob(vault_status, page=false) }}
 {% endblock %}
 
 {% block frag_provider_message %}
@@ -33,78 +39,37 @@
 {% endblock %}
 
 {% block frag_provider_saved %}
-{% from "settings/provider_parts.html" import provider_list %}
+{% from "settings/provider_parts.html" import provider_list, receipt_list %}
 {% from "layouts/shell_parts.html" import panel_groups %}
 {% from "transactions/parts.html" import toast_region %}
 {{ provider_list(groups, oob=true) }}
+{{ receipt_list(receipt_cards, oob=true) }}
 {{ panel_groups(panel, oob=true) }}
 {{ toast_region(message, batch_id, source="providers") }}
 {% endblock %}
 
 {# A sync's reply: the status region, the question form, and, when the job has ended or was refused
-   while idle, the sync buttons and the provider list, which show each provider's last sync. A
-   reply that is not a poll sends the user menus' vault status too, so an unlock shows at once. #}
+   while idle, the Sync all button and the lists, which show each provider's last sync. #}
 {% block frag_sync %}
-{% from "settings/sync_parts.html" import sync_region, sync_question, sync_all_control, sync_banks_control, sync_vendors_control %}
-{% from "settings/provider_parts.html" import provider_list %}
-{% from "settings/vendor_parts.html" import vendor_list %}
-{% from "components/vault_status.html" import vault_status_oob %}
-{{ sync_region(sync, vault_status, notice, unlock_scope, unlock_message, unlocked) }}
-{%- if vault_status and (not poll or not sync.running) %}
-{{ vault_status_oob(vault_status, page=true) }}
-{%- endif %}
+{% from "settings/sync_parts.html" import sync_region, sync_question, sync_all_control %}
+{% from "settings/provider_parts.html" import provider_list, receipt_list %}
+{{ sync_region(sync, notice) }}
 {%- if include_question %}
 {{ sync_question(sync.question, sync.notice, oob=true) }}
 {%- endif %}
 {%- if groups is not none %}
 {{ sync_all_control(sync.running, oob=true) }}
-{{ sync_banks_control(sync.running, oob=true) }}
 {{ provider_list(groups, oob=true) }}
+{{ receipt_list(receipt_cards, oob=true) }}
 {%- endif %}
-{%- if vendor_cards is not none %}
-{{ sync_vendors_control(sync.running, oob=true) }}
-{{ vendor_list(vendor_cards, oob=true) }}
-{%- endif %}
-{% endblock %}
-
-{% block frag_vendor_vault %}
-{% from "settings/parts.html" import vault_results %}
-{{ vault_results(locked, logins, unlock_message, message, unlock_action="/settings/sync/vendor/" ~ card.key ~ "/edit/unlock", unlock_target="#vendor-edit-" ~ card.key, form_id="vendor-edit-form-" ~ card.key, choice_required=false) }}
-{% endblock %}
-
-{% block frag_vendor_edit %}
-{% from "settings/vendor_parts.html" import vendor_edit %}
-{% from "components/vault_status.html" import vault_status_oob %}
-{{ vendor_edit(card, locked, logins, query, unlock_message, message) }}
-{%- if vault_status is defined %}
-{{ vault_status_oob(vault_status) }}
-{%- endif %}
-{% endblock %}
-
-{% block frag_vendor_saved %}
-{% from "settings/vendor_parts.html" import vendor_list %}
-{% from "transactions/parts.html" import toast %}
-{{ vendor_list(vendor_cards, oob=true) }}
-{{ toast(message) }}
-{% endblock %}
-
-{% block frag_vendor_added %}
-{% from "settings/vendor_parts.html" import vendor_list %}
-{% from "transactions/parts.html" import toast %}
-{{ vendor_list(vendor_cards, oob=true) }}
-{{ toast(message) }}
-<script>document.getElementById("add-vendor-dialog")?.close();</script>
-{% endblock %}
-
-{% block frag_vendor_message %}
-<p class="text-sm {{ 'text-destructive' if error else 'text-primary' }}" role="{{ 'alert' if error else 'status' }}">{{ message }}</p>
 {% endblock %}
 
 {% block frag_provider_undone %}
-{% from "settings/provider_parts.html" import provider_list %}
+{% from "settings/provider_parts.html" import provider_list, receipt_list %}
 {% from "layouts/shell_parts.html" import panel_groups %}
 {% from "transactions/parts.html" import toast %}
 {{ toast(message) }}
 {{ provider_list(groups, oob=true) }}
+{{ receipt_list(receipt_cards, oob=true) }}
 {{ panel_groups(panel, oob=true) }}
 {% endblock %}

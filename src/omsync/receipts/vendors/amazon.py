@@ -22,14 +22,17 @@ Charges:
   no answer or several answers go to review. Its window runs from 1 day before the order to
   21 days after the order or the latest ship date, whichever is later. An order that names no
   card gives inferred charges with no card, which are unknown payer and never applied.
-- A gift card plus a card is insufficient. Amazon does not say how much the card paid.
+- A gift card plus a card is insufficient when Amazon does not say how much the card paid, as in
+  an export. A downloaded charge that names no card was paid by gift card or points: with one card
+  charge, it is an offset of that charge, and with no card charge, no charge is expected.
 - A refund is observed: one positive charge, dated from 1 day before to 10 days after the refund.
   When no transaction has its amount, the refund is tried as split credits, one per item group,
   with the same exact-combination rule. Amazon credits each item separately, sometimes.
 
-Files: <root>/<vendor login>/Your Amazon Orders/Order History.csv and
-<root>/<vendor login>/Your Returns & Refunds/Refund Details.csv. The vendor login is the folder
-name. Refunds take their card and items from the same login's order history.
+Files: the downloader saves one JSON file per order, <provider folder>/<year>/<order ID>.json. An
+export is read from <export folder>/Your Amazon Orders/Order History.csv and
+<export folder>/Your Returns & Refunds/Refund Details.csv. Refunds take their card and items from
+the order history of the same export.
 
 Rows that cannot be read raise AmazonFileError (a ValueError) with the file name and row number.
 The message never includes the row's contents.
@@ -49,6 +52,7 @@ from omsync.ledger.receipt_vendors import is_amazon_payee
 from omsync.receipts.model import (
     Charge,
     ChargeResult,
+    Offset,
     Receipt,
     ReceiptItem,
     Tender,
@@ -58,6 +62,7 @@ from omsync.receipts.model import (
 from omsync.receipts.vendor import BaseVendor, CandidateTxn
 
 VENDOR_KEY = "amazon"
+FOLDER = "AMAZON"  # under the data directory's receipts folder
 ORDER_FILE = "Order History.csv"
 ORDERS_FOLDER = "Your Amazon Orders"
 REFUND_FILE = "Refund Details.csv"
@@ -78,6 +83,7 @@ SPLIT_MAX_ITEMS = 8
 SPLIT_MAX_CANDIDATES = 24
 
 GIFT_REASON = "Amazon does not say how much was paid by gift card"
+GIFT_OFFSET = "Gift card or points"
 GIFT_ONLY_REASON = "this order was paid only with a gift card, so no card charge is expected"
 NO_COMBINATION_REASON = "no exact combination of transactions adds up to the order total"
 REFUND_NO_COMBINATION_REASON = "no exact combination of credits adds up to the refund"
@@ -119,20 +125,22 @@ class AmazonReceipt(Receipt):
 
 class AmazonVendor(BaseVendor):
     key = VENDOR_KEY
+    folder = FOLDER
 
-    def discover(self, root: Path) -> list[Path]:
-        jsons = sorted(path for path in root.rglob("*.json") if path.is_file())
-        csvs = sorted(root.rglob(ORDER_FILE)) + sorted(root.rglob(REFUND_FILE))
+    def discover(self, provider_folder: Path) -> list[Path]:
+        jsons = sorted(path for path in provider_folder.rglob("*.json") if path.is_file())
+        csvs = sorted(provider_folder.rglob(ORDER_FILE)) + sorted(
+            provider_folder.rglob(REFUND_FILE)
+        )
         return jsons + csvs
 
-    def parse(self, path: Path) -> list[Receipt]:
+    def parse(self, path: Path, provider_key: str) -> list[Receipt]:
         if path.suffix == ".json":
-            return list(_parse_json_receipt(path))
-        account = path.parent.parent.name
+            return list(_parse_json_receipt(path, provider_key))
         if path.name == ORDER_FILE:
-            return list(_order_receipts(path, account))
+            return list(_order_receipts(path, provider_key))
         if path.name == REFUND_FILE:
-            return list(_refund_receipts(path, account))
+            return list(_refund_receipts(path, provider_key))
         raise AmazonFileError(f"{path.name} is not an Amazon order or refund file")
 
     def is_vendor_payee(self, payee: str) -> bool:
@@ -149,16 +157,21 @@ class AmazonVendor(BaseVendor):
     def charges(self, receipt: Receipt) -> ChargeResult:
         if receipt.is_refund:
             return _refund_charges(receipt)
-        if any(tender.kind == "gift" for tender in receipt.tenders):
+        gifts = [tender for tender in receipt.tenders if tender.kind == "gift"]
+        if gifts:
             if _card(receipt) is None:
                 return ChargeResult("insufficient", reason=GIFT_ONLY_REASON)
-            return ChargeResult("insufficient", reason=GIFT_REASON)
+            amounts = [tender.amount_cents for tender in receipt.tenders]
+            if None in amounts or sum(a or 0 for a in amounts) != receipt.total_cents:
+                return ChargeResult("insufficient", reason=GIFT_REASON)
         if _shipments(receipt) > 1:
             return ChargeResult("needs_transactions")
         start, end = _observed_window(receipt)
         card_tenders = [
             t for t in receipt.tenders if t.kind == "card" and t.amount_cents is not None
         ]
+        if gifts:
+            return _gift_and_card_charges(receipt, card_tenders, gifts, start, end)
         if len(card_tenders) > 1:
             charges = tuple(
                 Charge(
@@ -249,6 +262,31 @@ class AmazonVendor(BaseVendor):
         return ChargeResult("observed", charges)
 
 
+def _gift_and_card_charges(
+    receipt: Receipt, cards: list[Tender], gifts: list[Tender], start: date, end: date
+) -> ChargeResult:
+    """The card charges of an order that a gift card or points paid in part, every amount known.
+    One card charge carries the gift payments as offsets, so the items keep their full price. The
+    total includes the gift payments, so no transactions are inferred from it."""
+    paid = [t for t in cards if t.amount_cents]
+    offsets = tuple(Offset(GIFT_OFFSET, t.amount_cents or 0) for t in gifts if t.amount_cents)
+    charges = tuple(
+        Charge(
+            receipt_key=charge_key(VENDOR_KEY, receipt.receipt_id, idx),
+            amount_cents=-(t.amount_cents or 0),
+            window_start=start,
+            window_end=end,
+            card_last4=t.last4,
+            item_positions=None,
+            observed=True,
+            anchor=min(receipt.ship_dates, default=None),
+            offsets=offsets if len(paid) == 1 else (),
+        )
+        for idx, t in enumerate(paid)
+    )
+    return ChargeResult("observed", charges)
+
+
 # Reading files
 
 
@@ -334,9 +372,10 @@ def _json_items_and_quantities(
 def _json_tenders(charges_data: list[dict[str, Any]], total_cents: int) -> tuple[Tender, ...]:
     tenders: list[Tender] = []
     for c in charges_data:
-        last4 = c.get("card_last4")
+        last4 = c.get("card_last4") or None
         c_amt = int(c.get("amount_cents", total_cents))
-        tenders.append(Tender(kind="card", last4=last4, amount_cents=c_amt))
+        # Amazon lists gift card balance and points as charges with no card.
+        tenders.append(Tender(kind="card" if last4 else "gift", last4=last4, amount_cents=c_amt))
     if not tenders:
         tenders.append(Tender(kind="card", last4=None, amount_cents=total_cents))
     return tuple(tenders)
@@ -383,7 +422,7 @@ def _json_refund_receipts(
     return receipts
 
 
-def _parse_json_receipt(path: Path) -> list[AmazonReceipt]:
+def _parse_json_receipt(path: Path, account: str) -> list[AmazonReceipt]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
@@ -392,13 +431,6 @@ def _parse_json_receipt(path: Path) -> list[AmazonReceipt]:
     order_id = str(data.get("order_id") or path.stem).strip()
     if not order_id:
         raise AmazonFileError(f"{path.name} has no order_id")
-
-    parts = path.parts
-    try:
-        amazon_idx = parts.index("AMAZON")
-        account = parts[amazon_idx + 1] if len(parts) > amazon_idx + 2 else "default"
-    except ValueError:
-        account = path.parent.parent.name or "default"
 
     charges_data = data.get("charges", [])
     raw_date = data.get("order_date")
@@ -417,6 +449,11 @@ def _parse_json_receipt(path: Path) -> list[AmazonReceipt]:
         total_cents = sum(it.amount_cents for it in items)
 
     tenders = _json_tenders(charges_data, total_cents)
+    # Amazon charges the card as each shipment leaves, so a charge's date is its ship date.
+    charge_days = sorted(
+        {day for c in charges_data if (day := _parse_date(str(c.get("date") or ""))) is not None}
+    )
+    ship_dates = tuple(charge_days) or (order_date,)
 
     base = make_receipt(
         vendor_key=VENDOR_KEY,
@@ -428,8 +465,9 @@ def _parse_json_receipt(path: Path) -> list[AmazonReceipt]:
         total_cents=total_cents,
         tenders=tenders,
         is_refund=False,
-        ship_dates=(order_date,),
+        ship_dates=ship_dates,
     )
+    # One shipment: the charges are stated exactly, so matching uses them rather than inferring.
     order_receipt = _as_amazon(base, shipments=1, quantities=tuple(quantities))
     return [order_receipt, *_json_refund_receipts(data, order_receipt, order_id, account)]
 

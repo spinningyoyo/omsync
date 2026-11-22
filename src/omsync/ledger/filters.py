@@ -37,6 +37,7 @@ from omsync.core.batches import (
 from omsync.core.batches import apply as apply_batch
 from omsync.core.months import parse_day
 from omsync.ledger.categories import SavedFilter
+from omsync.ledger.tags import SplitTag, Tag, TransactionTag
 from omsync.ledger.transactions import CategoryOrigin, Split, Transaction
 
 
@@ -49,6 +50,7 @@ FIELD_OPS: dict[str, tuple[str, ...]] = {
     "account": ("is", "is_not"),
     "payee": ("contains", "is", "not_contains"),
     "category": ("is", "is_not", "is_empty"),
+    "tag": ("is", "is_not", "is_empty"),
     "amount": ("is", "gt", "lt", "between"),
     "memo": ("contains", "is_empty"),
     "origin": ("is",),
@@ -182,7 +184,9 @@ def _normal_value(field: str, op: str, value: Any) -> Any:
         raise FilterError(f"{field} {op} needs a value.")
     if field == "date":
         return _date_value(op, value)
-    if field in ("account", "transaction") or (field == "category" and op in ("is", "is_not")):
+    if field in ("account", "transaction") or (
+        field in ("category", "tag") and op in ("is", "is_not")
+    ):
         return _ids(value)
     if field == "payee" or (field == "memo" and op == "contains"):
         return _text(value)
@@ -289,6 +293,8 @@ def _clause(condition: Condition) -> ColumnElement[bool]:
         return _payee_clause(op, value)
     if field == "category":
         return _category_clause(op, value)
+    if field == "tag":
+        return _tag_clause(op, value)
     if field == "amount":
         return _amount_clause(op, value)
     if field == "memo":
@@ -351,6 +357,24 @@ def _category_clause(op: str, value: Any) -> ColumnElement[bool]:
     )
 
 
+def _tag_clause(op: str, value: Any) -> ColumnElement[bool]:
+    has_txn_tag = select(TransactionTag.tag_id).where(
+        TransactionTag.transaction_id == Transaction.id
+    )
+    has_split_tag = (
+        select(SplitTag.tag_id)
+        .join(Split, Split.id == SplitTag.split_id)
+        .where(Split.transaction_id == Transaction.id)
+    )
+    if op == "is_empty":
+        return and_(not_(has_txn_tag.exists()), not_(has_split_tag.exists()))
+    txn_match = has_txn_tag.where(TransactionTag.tag_id.in_(value)).exists()
+    split_match = has_split_tag.where(SplitTag.tag_id.in_(value)).exists()
+    if op == "is":
+        return or_(txn_match, split_match)
+    return and_(not_(txn_match), not_(split_match))
+
+
 def _amount_clause(op: str, value: Any) -> ColumnElement[bool]:
     column = Transaction.amount_cents
     if op == "is":
@@ -381,10 +405,26 @@ def _origin_clause(value: str) -> ColumnElement[bool]:
 
 
 def _search_clause(text: str) -> ColumnElement[bool]:
+    matching = Tag.name.icontains(text, autoescape=True)
+    on_transaction = (
+        select(TransactionTag.id)
+        .join(Tag, Tag.id == TransactionTag.tag_id)
+        .where(TransactionTag.transaction_id == Transaction.id, matching)
+        .exists()
+    )
+    on_split = (
+        select(SplitTag.id)
+        .join(Tag, Tag.id == SplitTag.tag_id)
+        .join(Split, Split.id == SplitTag.split_id)
+        .where(Split.transaction_id == Transaction.id, matching)
+        .exists()
+    )
     return or_(
         Transaction.payee.icontains(text, autoescape=True),
         Transaction.payee_raw.icontains(text, autoescape=True),
         Transaction.memo.icontains(text, autoescape=True),
+        on_transaction,
+        on_split,
     )
 
 

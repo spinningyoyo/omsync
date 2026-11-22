@@ -437,7 +437,7 @@
     <a href="{{ d.link }}" class="w-fit text-sm text-link underline-offset-2 hover:underline focus-ring rounded-sm">See all in Transactions</a>
   </section>
   <footer class="flex flex-wrap items-center justify-between gap-2 border-t border-divider pt-4">
-    <form hx-post="/recurring/series/{{ d.series.id }}/delete" hx-target="#toast-region" hx-confirm="Delete {{ d.series.name }}? Its matched transactions stay as they are." class="inline">
+    <form hx-post="/recurring/series/{{ d.series.id }}/delete" hx-target="#toast-region" class="inline">
       <input type="hidden" name="idempotency_key" value="{{ d.key }}">
       {{ button("Delete", variant="outline", size="sm", type="submit") }}
     </form>

@@ -1,5 +1,7 @@
 """FastAPI application factory."""
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -30,6 +32,7 @@ from omsync.ledger.categorize import list_name
 from omsync.ledger.payment_methods import METHOD_LABELS
 from omsync.ledger.register import field_version
 from omsync.ledger.sources import account_digits
+from omsync.ledger.tags import TAG_COLORS, random_color
 from omsync.web.amounts import money_html, sensitive
 from omsync.web.auth import install_guard
 from omsync.web.brand import mascot_svg
@@ -71,6 +74,7 @@ from omsync.web.routes.demo import router as demo_router
 from omsync.web.routes.settings import router as settings_router
 from omsync.web.routes.settings_providers import router as settings_providers_router
 from omsync.web.routes.settings_rental import router as settings_rental_router
+from omsync.web.routes.settings_tags import router as settings_tags_router
 from omsync.web.routes.settings_vault import router as settings_vault_router
 from omsync.web.routes.settings_vendor_wizard import router as settings_vendor_wizard_router
 from omsync.web.routes.settings_wizard import router as settings_wizard_router
@@ -79,6 +83,23 @@ from omsync.web.scenes import nursery_scenes
 from omsync.web.settings_tokens import MappingTokens
 from omsync.web.sync_runner import SyncRunner
 from omsync.web.vault_logins import LoginNames
+
+IDLE_CHECK_SECONDS = 60
+logger = logging.getLogger(__name__)
+
+
+async def _lock_idle_vault(app: FastAPI) -> None:
+    # The vault is read on each pass, because connect and disconnect replace it at runtime.
+    while True:
+        await asyncio.sleep(IDLE_CHECK_SECONDS)
+        vault = getattr(app.state, "vault", None)
+        if vault is None:
+            continue
+        try:
+            await asyncio.to_thread(vault.expire)
+        except Exception:  # a failed lock must not stop later checks
+            logger.exception("The idle vault lock failed")
+
 
 WEB_DIR = Path(__file__).parent
 TEMPLATES_DIR = WEB_DIR / "templates"
@@ -130,8 +151,10 @@ def create_app(
     engine = make_engine(database_url(settings))
 
     @asynccontextmanager
-    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        idle_lock = asyncio.create_task(_lock_idle_vault(app))
         yield
+        idle_lock.cancel()
         engine.dispose()
 
     # No interactive API docs: their pages load scripts from a public CDN, and nothing may leave
@@ -179,6 +202,8 @@ def create_app(
     templates.env.globals["field_version"] = field_version
     templates.env.globals["register_page_sizes"] = PAGE_SIZES
     templates.env.globals["new_key"] = lambda: uuid4().hex
+    templates.env.globals["tag_colors"] = TAG_COLORS
+    templates.env.globals["new_tag_color"] = random_color
     templates.env.globals["demo_mode"] = demo is not None
     templates.env.globals["has_vault"] = DynamicHasVault(app)
     app.state.templates = templates
@@ -238,6 +263,7 @@ def create_app(
     app.include_router(settings_wizard_router)
     app.include_router(settings_vendor_wizard_router)
     app.include_router(settings_rental_router)
+    app.include_router(settings_tags_router)
     app.include_router(guides.router)
     app.include_router(demo_router)
 

@@ -1,6 +1,6 @@
 """Costco warehouse receipts, read from the JSON files the downloader saves.
 
-A receipt is one JSON file, named <barcode>.json, under receipts/COSTCO/<year>/<quarter>/.
+A receipt is one JSON file, named <barcode>.json, under receipts/COSTCO/<provider key>/<year>/.
 Money is integer cents. A purchase is negative on the card, and a return is positive.
 
 Items keep the descriptions the earlier categorizer used. The engine refuses negative items, so a
@@ -59,7 +59,7 @@ from omsync.receipts.vendor import BaseVendor
 
 VENDOR_KEY = "costco"
 VENDOR_LOGIN = "costco"
-RECEIPTS_FOLDER = "COSTCO"  # under the data directory's receipts folder
+FOLDER = "COSTCO"  # under the data directory's receipts folder
 CHARGE_WINDOW_DAYS = 5  # the earlier matcher looked up to five days after the purchase
 
 TAXABLE_FLAGS = frozenset({"A", "B", "C", "D", "Y", "T"})
@@ -99,30 +99,24 @@ class _Line:
 
 class CostcoVendor(BaseVendor):
     key: str = VENDOR_KEY
+    folder: str = FOLDER
 
-    def discover(self, root: Path) -> list[Path]:
+    def discover(self, provider_folder: Path) -> list[Path]:
         return sorted(
             path
-            for path in root.rglob("*.json")
+            for path in provider_folder.rglob("*.json")
             if path.is_file()
             and not path.name.startswith(".")
             and not path.parent.name.startswith(".")
         )
 
-    def parse(self, path: Path) -> list[Receipt]:
+    def parse(self, path: Path, provider_key: str) -> list[Receipt]:
         data = load_receipt_file(path)
         if _cents(data.get("total"), "total") == 0:
             return []
-        parts = path.parts
-        try:
-            costco_idx = parts.index("COSTCO")
-            account = parts[costco_idx + 1] if len(parts) > costco_idx + 2 else "default"
-            root = Path(*parts[: costco_idx + 1])
-        except ValueError:
-            account = "default"
-            root = path.parent
-        earlier = _earlier_items(root, receipt_date(data, path.name))
-        return [parse_receipt(data, path.name, earlier, account=account)]
+        # <provider folder>/<year>/<barcode>.json: the price adjustments look at the same provider.
+        earlier = _earlier_items(path.parent.parent, receipt_date(data, path.name))
+        return [parse_receipt(data, path.name, earlier, account=provider_key)]
 
     def is_vendor_payee(self, payee: str) -> bool:
         return is_costco_payee(payee)
@@ -202,7 +196,8 @@ def parse_receipt(
     data: dict[str, Any],
     name: str = "receipt",
     earlier: Mapping[str, tuple[str, str | None]] | None = None,
-    account: str = "default",
+    *,
+    account: str,
 ) -> Receipt:
     """Build the engine's Receipt from one Costco receipt object. earlier maps an item number to
     its description and code on an earlier receipt, for price adjustments. Raises
@@ -242,11 +237,6 @@ def receipt_date(data: dict[str, Any], name: str = "receipt") -> date:
     if moment:
         return _timestamp(moment, "%Y-%m-%dT%H:%M:%S", f"{name} transactionDateTime").date()
     raise CostcoParseError(f"{name} has no transactionDate")
-
-
-def quarter_folder(day: date) -> str:
-    """Q1 to Q4, for the folder a receipt is saved in."""
-    return f"Q{(day.month - 1) // 3 + 1}"
 
 
 def item_description(item: dict[str, Any]) -> str:

@@ -19,14 +19,15 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 
 def shell_context(request: Request, db: Session, *, active: str, title: str) -> dict[str, Any]:
-    """The values every shell page needs: the rail, who is signed in and the vault's status for the
-    user menu, and the accounts panel."""
+    """The values every shell page needs: the rail, who is signed in, the vault's status and email
+    for the vault button, and the accounts panel."""
     return {
         "active": active,
         "title": title,
         "nav_groups": NAV_GROUPS,
         "user_name": request.state.session.name,
         "vault_status": vault_status_view(request.app.state.vault),
+        "vault_email": request.app.state.settings.email or "",
         "account_groups": account_groups(db),
         "accounts_grouping": panel_grouping(db),
         # Counts shown on rail items. A key missing here shows no badge.

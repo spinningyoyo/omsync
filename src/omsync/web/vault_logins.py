@@ -1,5 +1,6 @@
 """Vault logins for the Settings pages: unlocking behind the sign-in rate limit, searching for a
-login, naming a provider's login while the vault stays unlocked, and the vault's status line.
+login, how a card shows a provider's login, naming that login in its edit dialog while the vault
+stays unlocked, and the vault's status line.
 
 A failure is VaultActionError, whose message is safe to show.
 """
@@ -8,14 +9,15 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from omsync.core.sessions import LoginRateLimiter
-from omsync.core.vault import LoginSummary, Vault, VaultError
-from omsync.ingest.institutions import InstitutionGroup, ProviderLine
+from omsync.core.vault import LoginSummary, Vault, VaultError, VaultLocked
 
 SEARCH_MAX = 100
 SEARCH_LIMIT = 20
 TOO_MANY_ATTEMPTS = "Too many failed attempts. Wait a minute, then try again."
 NO_VAULT = "No vault is connected. Connect one with the vault button on the Bank sync page."
 MANUAL_SIGN_IN = "You sign in at the bank"
+LOGIN_PICKED = "Picked"
+LOGIN_NOT_PICKED = "Not picked"
 
 
 @dataclass(frozen=True)
@@ -28,12 +30,11 @@ class VaultStatusView:
 
 
 def vault_status_view(vault: Vault | None) -> VaultStatusView | None:
-    """Reading the state locks a vault whose idle timeout has passed, so this is never stale. No
-    vault has no status to show."""
+    """A vault past its idle timeout reads as locked. No vault has no status to show."""
     if vault is None:
         return None
     if not vault.is_unlocked():
-        return VaultStatusView(False, "Vault locked", "A sync asks for your master password.")
+        return VaultStatusView(False, "Vault locked", "Unlock it here, or when a sync needs it.")
     minutes = vault.idle_minutes
     if minutes <= 0:
         detail = "Stays unlocked until you sign out."
@@ -67,8 +68,8 @@ def unlock_vault(vault: Vault | None, limiter: LoginRateLimiter, password: str) 
 
 class LoginNames:
     """Vault login names by item ID, kept while the vault stays unlocked. Every lookup runs the
-    vault CLI, which takes seconds, and the Bank sync list is drawn after each change, so
-    without this each save would wait on searches for every provider. A name is only a label: it
+    vault CLI, which takes seconds, so an edit dialog opened again, or a login just found by a
+    search, needs no new lookup. A name is only a label: it
     can be out of date after a rename in the vault until the vault locks. A login not found is
     remembered too, until the vault locks or the person searches the vault again."""
 
@@ -97,55 +98,44 @@ class LoginNames:
         self._missing.clear()
 
 
-def resolve_vault_login_name(
+def login_label(vault: Vault | None, vault_item_id: str | None) -> str:
+    """How a card shows a provider's login. It never asks the vault, so it reads the same whether
+    the vault is locked or not."""
+    if vault is None:
+        return MANUAL_SIGN_IN
+    return LOGIN_PICKED if vault_item_id else LOGIN_NOT_PICKED
+
+
+def vault_login_name(
     vault: Vault | None,
     vault_item_id: str | None,
     names: LoginNames,
     query_hints: tuple[str, ...] = (),
 ) -> str:
-    """The name of a vault login item, or why there is none to show."""
-    if vault is None:
-        return MANUAL_SIGN_IN
-    if vault_item_id is None:
-        return "No vault login"
-    if not vault.is_unlocked():
-        names.clear()
-        return "vault locked"
+    """The name of a provider's vault login, for its edit dialog. A locked vault, or no login,
+    gives the card's label. The vault has no lookup by ID that does not also fetch the password, so
+    a name is found by searching with the hints, and every login a search returns is remembered in
+    names."""
+    if vault is None or vault_item_id is None or not vault.is_unlocked():
+        return login_label(vault, vault_item_id)
     known = names.get(vault_item_id)
     if known is not None:
         return known
     if names.is_missing(vault_item_id):
         return "Not found in the vault"
-    for query in query_hints:
-        if not query:
-            continue
-        try:
-            matches = vault.find_logins(query)
-        except VaultError:
-            return "Vault lookup failed"
-        names.remember(matches)
-        known = names.get(vault_item_id)
-        if known is not None:
-            return known
+    try:
+        for query in filter(None, query_hints):
+            names.remember(vault.find_logins(query))
+            known = names.get(vault_item_id)
+            if known is not None:
+                return known
+    except VaultLocked:
+        names.clear()
+        return login_label(vault, vault_item_id)
+    except VaultError:
+        return "Vault lookup failed"
     names.remember_missing(vault_item_id)
     return "Not found in the vault"
-
-
-def vault_login_name(
-    vault: Vault | None,
-    provider: ProviderLine,
-    institution: InstitutionGroup,
-    names: LoginNames,
-) -> str:
-    """The name of the provider's vault login, or why there is none to show. The vault has no
-    lookup by ID that does not also fetch the password, so a name is found by searching, and every
-    login a search returns is remembered in names."""
-    return resolve_vault_login_name(
-        vault,
-        provider.vault_item_id,
-        names,
-        query_hints=(provider.key, institution.name, institution.key),
-    )
 
 
 def search_logins(vault: Vault, query: str, names: LoginNames | None = None) -> list[LoginSummary]:

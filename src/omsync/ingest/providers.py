@@ -129,6 +129,7 @@ class ProviderSetup:
 
     institution_key: str
     institution_name: str
+    provider_name: str
     provider_key: str
     connector_key: str
 
@@ -136,8 +137,9 @@ class ProviderSetup:
 def provider_setup(
     session: Session, *, institution: str, name: str, provider: str, connector: str
 ) -> ProviderSetup:
-    """Check the wizard's first step. An existing institution keeps its own name, so a name typed
-    for it is ignored. The provider key defaults to the institution key and must not be taken."""
+    """Check the wizard's first step. The name typed is the provider's label, and also the name of
+    a new institution; an existing institution keeps its own name. The provider key defaults to the
+    institution key and must not be taken."""
     key = institution_key(institution)
     provider_value = _key_value(provider.strip() or key, "provider key")
     bank = connector_key(connector)
@@ -146,8 +148,9 @@ def provider_setup(
             f"There is already a provider with the key {provider_value}. Choose another."
         )
     existing = session.scalars(select(Institution).where(Institution.key == key)).first()
-    display = existing.name if existing is not None else display_name(name, "display name")
-    return ProviderSetup(key, display, provider_value, bank)
+    label = display_name(name, "display name")
+    display = existing.name if existing is not None else label
+    return ProviderSetup(key, display, label, provider_value, bank)
 
 
 def add_provider(
@@ -179,6 +182,7 @@ def add_provider(
             institution_key=setup.institution_key,
             institution_name=setup.institution_name,
             provider_key=setup.provider_key,
+            provider_name=setup.provider_name,
             connector_key=setup.connector_key,
             vault_item_id=login,
             idempotency_key=idempotency_key,
@@ -194,10 +198,11 @@ def edit_provider(
     login_id: str | None,
     account_ids: Sequence[str],
     idempotency_key: str,
+    name: str | None = None,
 ) -> Batch | None:
-    """Set a provider's vault login (the current one when login_id is None) and the accounts it
-    fetches, as one batch. `account_ids` are account numbers as text. None means nothing would
-    change."""
+    """Set a provider's name (when given), its vault login (the current one when login_id is
+    None) and the accounts it fetches, as one batch. `account_ids` are account numbers as text.
+    None means nothing would change."""
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
         return replay
@@ -214,6 +219,7 @@ def edit_provider(
             vault_item_id=login,
             account_ids=ids,
             idempotency_key=idempotency_key,
+            name=name,
         )
     )
 

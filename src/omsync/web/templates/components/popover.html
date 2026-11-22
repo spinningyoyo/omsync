@@ -12,15 +12,16 @@
 
 {# trigger_text makes the trigger a text button with a chevron, showing a current value such as a
    period; its accessible name is then label, then value or the text. trigger_html is the same
-   button with markup in place of the text, such as a status line that redraws itself. #}
-{% macro popover(id, label, icon_name=none, class_="", trigger_text=none, panel_class="min-w-48 p-3", value=none, trigger_html=none) -%}
-<div class="relative {{ class_ }}" data-controller="popover" data-action="keydown->popover#keydown click@window->popover#clickOutside">
+   button with markup in place of the text, such as a status line that redraws itself; its name is
+   the label and that markup, so it changes when the markup redraws. open_on names a window event that opens the panel. #}
+{% macro popover(id, label, icon_name=none, class_="", trigger_text=none, panel_class="min-w-48 p-3", value=none, trigger_html=none, open_on=none) -%}
+<div class="relative {{ class_ }}" data-controller="popover" data-action="keydown->popover#keydown click@window->popover#clickOutside{% if open_on %} {{ open_on }}@window->popover#open{% endif %}">
   {%- if trigger_text or trigger_html %}
   <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-primary shadow-border-xs bg-container hover:bg-container-hover focus-ring pointer-coarse:h-11"
-    aria-label="{{ label }}: {{ value or trigger_text }}" aria-expanded="false" aria-controls="{{ id }}"
+    {%- if trigger_html %} aria-labelledby="{{ id }}-label {{ id }}-content"{% else %} aria-label="{{ label }}: {{ value or trigger_text }}"{% endif %} aria-expanded="false" aria-controls="{{ id }}"
     data-popover-target="button" data-action="popover#toggle">
     {%- if icon_name %}{{ icon(icon_name, 16, "text-secondary") }}{% endif %}
-    {%- if trigger_html %}{{ trigger_html }}{% else %}<span class="whitespace-nowrap">{{ trigger_text }}</span>{% endif %}
+    {%- if trigger_html %}<span id="{{ id }}-label" class="sr-only">{{ label }}:</span><span id="{{ id }}-content" class="contents">{{ trigger_html }}</span>{% else %}<span class="whitespace-nowrap">{{ trigger_text }}</span>{% endif %}
     {{ icon("chevron-down", 16, "text-secondary") }}
   </button>
   {%- else %}

@@ -31,11 +31,24 @@ class CandidateTxn:
 
 class ReceiptVendor(Protocol):
     key: str  # "amazon", "costco"
+    folder: str  # the vendor's folder under the receipts directory, such as "COSTCO"
 
-    def discover(self, root: Path) -> list[Path]: ...
+    def provider_folder(self, receipts_dir: Path, provider_key: str) -> Path:
+        """Where one provider's receipt files are kept."""
+        ...
 
-    def parse(self, path: Path) -> list[Receipt]:
-        """Read one file into receipts. Each receipt has a stable ID and a revision."""
+    def receipt_file(
+        self, receipts_dir: Path, provider_key: str, day: date, receipt_id: str
+    ) -> Path:
+        """Where the file of one receipt is kept: <provider folder>/<year>/<file name>.json.
+        Raises ValueError when the receipt ID cannot be a file name."""
+        ...
+
+    def discover(self, provider_folder: Path) -> list[Path]: ...
+
+    def parse(self, path: Path, provider_key: str) -> list[Receipt]:
+        """Read one file of this provider into receipts. Each receipt has a stable ID and a
+        revision."""
         ...
 
     def is_vendor_payee(self, payee: str) -> bool: ...
@@ -65,6 +78,24 @@ class BaseVendor:
     """
 
     key: str
+    folder: str
+
+    def provider_folder(self, receipts_dir: Path, provider_key: str) -> Path:
+        return receipts_dir / self.folder / provider_key
+
+    def receipt_file(
+        self, receipts_dir: Path, provider_key: str, day: date, receipt_id: str
+    ) -> Path:
+        if (
+            not receipt_id
+            or receipt_id != Path(receipt_id).name
+            or receipt_id in (".", "..")
+            or "\\" in receipt_id
+            or "\0" in receipt_id
+        ):
+            raise ValueError("the receipt ID cannot be a file name")
+        folder = self.provider_folder(receipts_dir, provider_key)
+        return folder / str(day.year) / f"{receipt_id}.json"
 
     def infer_charges(self, receipt: Receipt, candidates: list[CandidateTxn]) -> ChargeResult:
         return ChargeResult("insufficient", reason=NOT_ENOUGH_DATA)

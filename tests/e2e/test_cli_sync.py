@@ -144,6 +144,7 @@ def add_provider(key: str, login: str, *statement_account_ids: str) -> None:
             institution_key="testbank",
             institution_name=None,
             provider_key=key,
+            provider_name="Test Bank",
             connector_key="fake",
             vault_item_id=login,
             idempotency_key=f"create-{key}",

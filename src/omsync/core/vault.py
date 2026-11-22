@@ -72,10 +72,22 @@ class Vault(ABC):
 
     @abstractmethod
     def is_unlocked(self) -> bool:
-        """Whether a session is open. Reading it locks a vault whose idle timeout has passed."""
+        """Whether a session is open, from memory only. It runs no command, so a page can call it
+        freely. A session past its idle timeout is not open."""
+
+    def verify(self) -> None:
+        """Raise VaultLocked unless the vault can be used now. A vault that has to ask the
+        outside world does so here, so a sync learns that it is locked before it starts."""
+        if not self.is_unlocked():
+            raise VaultLocked("Vault is locked; unlock it first")
 
     @abstractmethod
     def lock(self) -> None: ...
+
+    def expire(self) -> None:
+        """Lock now if the idle timeout has passed."""
+        if self.idle_minutes > 0 and not self.is_unlocked():
+            self.lock()
 
     def disconnect(self) -> None:
         """Lock, and forget the account, when omsync stops using this vault."""

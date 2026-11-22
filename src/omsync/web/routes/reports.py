@@ -13,13 +13,13 @@ import os
 import re
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -73,9 +73,10 @@ def reports_page(
     period: str = DEFAULT_PRESET,
     start: str = "",
     end: str = "",
+    tag: Annotated[list[int] | None, Query()] = None,
 ) -> HTMLResponse:
     today = date.today()
-    selection = select_period(period, start, end, today)
+    selection = _with_tags(select_period(period, start, end, today), tag)
     view = build_report(db, selection, today=today)
     context = shell_context(request, db, active="reports", title="Reports")
     context["view"] = view
@@ -143,15 +144,22 @@ def reports_print(
     period: str = DEFAULT_PRESET,
     start: str = "",
     end: str = "",
+    tag: Annotated[list[int] | None, Query()] = None,
 ) -> HTMLResponse:
     """The report laid out for paper: no shell, and the print styles from print-report.css."""
     today = date.today()
-    view = build_report(db, select_period(period, start, end, today), today=today)
+    selection = _with_tags(select_period(period, start, end, today), tag)
+    view = build_report(db, selection, today=today)
     return request.app.state.templates.TemplateResponse(
         request,
         PRINT,
         {"view": view, "printed": long_day(today)},
     )
+
+
+def _with_tags(selection: Selection, tag_ids: list[int] | None) -> Selection:
+    """The selection limited to the tags in the query, each once."""
+    return replace(selection, tag_ids=tuple(dict.fromkeys(tag_ids or ())))
 
 
 def _export_menu(db: Session, selection: Selection, *, today: date) -> ExportMenu:

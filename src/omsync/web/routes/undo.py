@@ -27,6 +27,7 @@ from omsync.web.routes.plan import plan_undo_reply
 from omsync.web.routes.reconcile import undo_reply as reconcile_undo_reply
 from omsync.web.routes.recurring import undo_reply as recurring_undo_reply
 from omsync.web.routes.settings_providers import provider_undo_reply
+from omsync.web.routes.settings_rental import rental_undo_reply
 from omsync.web.routes.transactions import (
     register_refresh_undo_reply,
     review_undo_reply,
@@ -105,6 +106,10 @@ def _register_undo_reply(
     kind = batch.kind
     if _is_categories_batch(kind):
         return _categories_undone(request, message)
+    if kind.startswith("tag."):
+        return _tags_undone(request, message)
+    if kind.startswith("rental."):
+        return rental_undo_reply(request, db, message)
     if kind.startswith(("bulk.", "saved_filter.")):
         return register_refresh_undo_reply(request, db, account, f, saved, page)
     if kind == "review_resolve":
@@ -129,16 +134,20 @@ def _other_page_undo_reply(
     start: str | None,
     end: str | None,
 ) -> HTMLResponse | None:
-    """The reply for a batch made on the Contacts, providers, account, recurring, or plan pages;
-    None for any other batch."""
+    """The reply for a batch made on the transaction detail, Contacts, providers, account,
+    recurring, or plan pages; None for any other batch."""
     kind = batch.kind
+    if source == "transaction" and not kind.startswith("contact.") and txn is not None:
+        return transaction_undo_reply(request, db, txn, message)
     if kind.startswith("contact."):
         if source == "reconcile":
             return reconcile_undo_reply(request, db, start, end, automatic=True, message=message)
         if source == "transaction":
             return transaction_undo_reply(request, db, txn, message)
         return contacts_undo_reply(request, db, contact, message)
-    if kind.startswith("provider_") or (kind.startswith("account.") and source == "providers"):
+    if kind.startswith(("provider_", "receipt_provider_")) or (
+        kind.startswith("account.") and source == "providers"
+    ):
         return provider_undo_reply(request, db)
     account_id = (batch.summary or {}).get("account_id")
     account_id = account_id if isinstance(account_id, int) else None
@@ -167,6 +176,17 @@ def _categories_undone(request: Request, message: str) -> HTMLResponse:
         REGISTER_FRAGMENTS,
         "frag_toast",
         trigger={"categories-changed": True},
+        message=message,
+    )
+
+
+def _tags_undone(request: Request, message: str) -> HTMLResponse:
+    """The Tags page reloads its list."""
+    return render_block(
+        request,
+        REGISTER_FRAGMENTS,
+        "frag_toast",
+        trigger={"tags-changed": True},
         message=message,
     )
 

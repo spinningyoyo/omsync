@@ -57,7 +57,8 @@ DEFAULT_CATEGORY_ICON = "shapes"
 
 
 class Category(Base):
-    """What a transaction or split was for."""
+    """What a transaction or split was for. rental is True when it counts as a rental expense in
+    the rental report."""
 
     __tablename__ = "category"
     __table_args__ = {"sqlite_autoincrement": True}
@@ -71,6 +72,7 @@ class Category(Base):
     )
     hidden: Mapped[bool] = mapped_column(default=False, server_default=false())
     icon: Mapped[str | None] = mapped_column(default=None)
+    rental: Mapped[bool] = mapped_column(default=False, server_default=false())
 
 
 class Keyword(Base):

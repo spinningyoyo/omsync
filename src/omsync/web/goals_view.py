@@ -300,11 +300,11 @@ def goal_form(
 
 
 def new_goal_form(db: Session) -> GoalForm:
-    """The empty form in the New goal dialog."""
+    """The empty form in the Add goal dialog."""
     return goal_form(
         db,
         body_id="goal-create-body",
-        title="New goal",
+        title="Add goal",
         action="/plan/goals",
         submit_label="Add goal",
     )

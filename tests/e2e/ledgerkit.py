@@ -12,14 +12,34 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 from web_support import FakeOwnerCheck
 
 from omsync import cli
+from omsync.core.db import database_url, make_engine
 from omsync.core.settings import Settings
+from omsync.ledger.models import Provider, ProviderKind
 from omsync.web.app import create_app
 
 CARD = "credit_card"
+
+
+def add_receipt_provider(data_dir: Path, connector: str, key: str = "default") -> None:
+    """Add a receipt provider to a migrated data directory, without a batch, so the batch numbers a
+    test counts stay its own. Its receipt files belong in receipts/<CONNECTOR>/<key>/<year>/."""
+    engine = make_engine(database_url(Settings(data_dir=data_dir)))
+    with Session(engine) as session:
+        session.add(
+            Provider(
+                key=key,
+                kind=ProviderKind.receipt,
+                name=f"{connector.title()} {key}",
+                connector_key=connector,
+            )
+        )
+        session.commit()
+    engine.dispose()
 
 
 @dataclass(frozen=True)
@@ -128,6 +148,9 @@ class Ledger:
         path = folder / (file or f"{name.lower().replace(' ', '_')}_{self._counter}.ofx")
         path.write_text(ofx(statement_id, kind, rows), encoding="utf-8")
         return path
+
+    def add_receipt_provider(self, connector: str, key: str = "default") -> None:
+        add_receipt_provider(self.data_dir, connector, key)
 
     def import_all(self):
         return self.cli("import", "--apply")

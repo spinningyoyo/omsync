@@ -127,7 +127,7 @@
 {% macro goals_card_body(card) -%}
   {%- if not card.count %}
   <p class="text-sm text-secondary">No goals yet.</p>
-  <div>{{ link_button("Add a goal", href="/plan/goals", variant="outline", size="sm", icon="plus") }}</div>
+  <div>{{ link_button("Add goal", href="/plan/goals", variant="outline", size="sm", icon="plus") }}</div>
   {%- else %}
   <div class="flex flex-col gap-1">
     <p class="text-2xl font-medium tabular-nums text-primary">{{ card.saved_total|sensitive }}</p>
@@ -755,7 +755,7 @@
     </div>
     <div class="flex flex-wrap items-center gap-2">
       {#- The most used action is last, on the right. Delete asks first in its dialog, so it needs no red. #}
-      {{ button("Delete", variant="outline", size="sm", icon="trash-2", attrs={"data-action": "page-dialogs#openDialog", "data-dialog-id": "goal-delete-dialog"}) }}
+      {{ button("Delete", variant="outline", size="sm", attrs={"data-action": "page-dialogs#openDialog", "data-dialog-id": "goal-delete-dialog"}) }}
       {%- if goal.archived %}
       <form method="post" action="/plan/goals/{{ goal.id }}/archive" hx-post="/plan/goals/{{ goal.id }}/archive" hx-swap="none">
         <input type="hidden" name="idempotency_key" value="{{ goal.archive_key }}">
@@ -819,7 +819,7 @@
       <form method="post" action="/plan/goals/{{ goal.id }}/delete" hx-post="/plan/goals/{{ goal.id }}/delete" hx-swap="none" class="flex items-center justify-end gap-2">
         <input type="hidden" name="idempotency_key" value="{{ goal.delete_key }}">
         {{ button("Cancel", variant="outline", attrs={"data-action": "page-dialogs#closeDialog"}) }}
-        {{ button("Delete goal", variant="destructive", type="submit") }}
+        {{ button("Delete", variant="primary", type="submit") }}
       </form>
     </div>
   </dialog>

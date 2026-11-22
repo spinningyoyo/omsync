@@ -3,19 +3,19 @@
 
 {% block frag_saved %}
 {% from "transactions/detail_parts.html" import detail_region, toast_region %}
-{{ detail_region(detail) }}
+{{ detail_region(detail, all_tags=all_tags|default([])) }}
 {{ toast_region(message, batch_id, txn_id) }}
 {% endblock %}
 
 {% block frag_error %}
 {% from "transactions/detail_parts.html" import detail_region %}
-{{ detail_region(detail, error=error) }}
+{{ detail_region(detail, error=error, all_tags=all_tags|default([])) }}
 {% endblock %}
 
 {% block frag_undo_reply %}
 {% from "transactions/detail_parts.html" import detail_region, toast %}
 {{ toast(message) }}
 {%- if detail %}
-{{ detail_region(detail, oob=true) }}
+{{ detail_region(detail, oob=true, all_tags=all_tags|default([])) }}
 {%- endif %}
 {% endblock %}

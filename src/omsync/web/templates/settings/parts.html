@@ -1,7 +1,7 @@
-{# The Settings parts: the sub-nav, the doctor list, and the five steps of the add-provider wizard.
+{# The Settings parts: the sub-nav, the doctor list, and the five steps of the add-bank wizard.
    Each step is a block of #wizard-step that htmx replaces whole. Its hidden fields carry the values
    the next step needs; each step checks them again on the server. See routes/settings_wizard.py.
-   The Bank sync cards are in settings/provider_parts.html. Macros import what they use, because a
+   The Data sync cards are in settings/provider_parts.html. Macros import what they use, because a
    fragment block renders without this file's top level. #}
 {% from "components/icon.html" import icon with context %}
 {% from "components/button.html" import button, link_button %}
@@ -80,7 +80,7 @@
 {% macro setup_step(state, connectors, form_key, message="") -%}
 <div id="wizard-step" class="flex flex-col gap-6">
   {{ step_heading(1, "Bank, institution and provider") }}
-  <form class="flex flex-col gap-4" hx-post="/settings/providers/new/connector" hx-target="#wizard-step" hx-swap="outerHTML" data-controller="key-suggest">
+  <form class="flex flex-col gap-4" hx-post="/settings/sync/new/bank/connector" hx-target="#wizard-step" hx-swap="outerHTML" data-controller="key-suggest">
     <input type="hidden" name="idempotency_key" value="{{ form_key }}">
     <label class="form-field">
       <span class="form-field__label">Bank</span>
@@ -98,9 +98,9 @@
     <p id="institution-help" class="text-xs text-secondary">Short ID, like boa.</p>
     <label class="form-field">
       <span class="form-field__label">Display name</span>
-      <input name="name" value="{{ state.name }}" maxlength="60" autocomplete="off" class="form-field__input" aria-describedby="name-help">
+      <input name="name" value="{{ state.name }}" required maxlength="60" autocomplete="off" class="form-field__input" aria-describedby="name-help">
     </label>
-    <p id="name-help" class="text-xs text-secondary">Only for a new bank.</p>
+    <p id="name-help" class="text-xs text-secondary">The name of this provider. A new bank takes it as its name too.</p>
     <label class="form-field">
       <span class="form-field__label">Provider key</span>
       <input name="provider" value="{{ state.provider }}" maxlength="32" pattern="[a-z0-9][a-z0-9_\-]*" autocomplete="off" class="form-field__input" aria-describedby="provider-help" data-key-suggest-target="provider">
@@ -115,21 +115,15 @@
 </div>
 {%- endmacro %}
 
-{# The results region of the vault search: the unlock form when the vault is locked, otherwise the
-   matching logins as radio buttons. Each radio belongs to the form named by form_id, so the search can
-   sit beside that form rather than inside it. unlock_hidden is the markup of the hidden fields the
-   unlock form posts, and unlock_target is the element its reply replaces. #}
-{% macro vault_results(locked, logins, unlock_message="", message="", unlock_action="", unlock_target="", unlock_hidden="", form_id="login-form", choice_required=true) -%}
+{# The results region of the vault search: a button that opens the vault panel when the vault is
+   locked, otherwise the matching logins as radio buttons. Each radio belongs to the form named by
+   form_id, so the search can sit beside that form rather than inside it. The search that holds this
+   region runs again once the vault is unlocked. #}
+{% macro vault_results(locked, logins, message="", form_id="login-form", choice_required=true) -%}
 {%- if locked and demo_mode %}
-<p class="rounded-lg border border-divider p-4 text-sm text-secondary">Demo: bank sync is off.</p>
+<p class="rounded-lg border border-divider p-4 text-sm text-secondary">Demo: sync is off.</p>
 {%- elif locked %}
-<form class="flex flex-col gap-3 rounded-lg border border-divider p-4" hx-post="{{ unlock_action }}" hx-target="{{ unlock_target }}" hx-swap="outerHTML" hx-disabled-elt="find button[type='submit']">
-  <p class="text-sm text-primary">Vault locked. Enter your master password (not stored).</p>
-  {{ unlock_hidden }}
-  {{ password_field(data_autofocus=true) }}
-  {{ step_error(unlock_message) }}
-  <div class="flex justify-end">{{ button("Unlock vault", variant="secondary", type="submit", busy_text="Unlocking…") }}</div>
-</form>
+{{ vault_unlock_form(form_id) }}
 {%- elif message %}
 {{ step_error(message) }}
 {%- elif logins is none %}
@@ -149,29 +143,44 @@
 {%- endif %}
 {%- endmacro %}
 
+{# The unlock form in place of a locked vault's login results, so a dialog never sends you to the
+   page's vault panel, which the dialog covers. It replaces itself: with its reason when the unlock
+   fails, or with a note when it works, and the vault-unlocked event then runs the search again.
+   form_id names the form the results belong to, so each copy's password field has its own id. #}
+{% macro vault_unlock_form(form_id, message="") -%}
+<form class="flex flex-col gap-3 rounded-lg border border-divider p-3" hx-post="/settings/sync/vault/unlock" hx-target="this" hx-swap="outerHTML" hx-disabled-elt="find button[type='submit']">
+  <input type="hidden" name="place" value="inline">
+  <input type="hidden" name="form_id" value="{{ form_id }}">
+  <p class="text-sm text-primary">Vault locked. Enter your master password (not stored).</p>
+  {{ step_error(message) }}
+  {{ password_field(field_id=form_id ~ "-password") }}
+  <div class="flex justify-end">{{ button("Unlock", variant="primary", size="sm", type="submit", busy_text="Unlocking…") }}</div>
+</form>
+{%- endmacro %}
+
 {# Step 2: the vault login. Its search is debounced; saving adds the provider with this login as one
    batch. Without a vault, the step only says that you sign in at the bank. #}
-{% macro login_step(state, form_key, locked, logins, query, message="", unlock_message="") -%}
+{% macro login_step(state, form_key, locked, logins, query, message="") -%}
 <div id="wizard-step" class="flex flex-col gap-6">
   {%- if has_vault %}
   {{ step_heading(2, "Vault login") }}
   <p class="text-sm text-secondary">Pick the vault login for {{ state.name }}. The password is never stored.</p>
   <label class="form-field">
     <span class="form-field__label">Search logins</span>
-    <input type="search" name="q" value="{{ query }}" autocomplete="off" class="form-field__input" aria-controls="vault-results" hx-get="/settings/providers/new/logins" hx-trigger="input changed delay:300ms, search" hx-target="#vault-results" hx-include="#login-form">
+    <input type="search" name="q" value="{{ query }}" autocomplete="off" class="form-field__input" aria-controls="vault-results" hx-get="/settings/sync/new/bank/logins" hx-trigger="input changed delay:300ms, search, vault-unlocked from:body" hx-target="#vault-results" hx-include="#login-form">
   </label>
   <div id="vault-results" aria-live="polite" class="flex flex-col gap-2">
-    {{ vault_results(locked, logins, unlock_message, "", unlock_action="/settings/providers/new/unlock", unlock_target="#wizard-step", unlock_hidden=state_fields(state)) }}
+    {{ vault_results(locked, logins, "") }}
   </div>
   {%- else %}
   {{ step_heading(2, "Sign-in") }}
   <p class="text-sm text-secondary">At each sync, you sign in to {{ state.name }} in the browser window that opens.</p>
   {%- endif %}
-  <form id="login-form" class="flex flex-col gap-4" hx-post="/settings/providers/new/login" hx-target="#wizard-step" hx-swap="outerHTML">
+  <form id="login-form" class="flex flex-col gap-4" hx-post="/settings/sync/new/bank/login" hx-target="#wizard-step" hx-swap="outerHTML">
     {{ state_fields(state, form_key) }}
     {{ step_error(message) }}
     <div class="flex items-center justify-between">
-      {{ button("Back", variant="outline", type="button", attrs={"hx-post": "/settings/providers/new/back", "hx-target": "#wizard-step", "hx-swap": "outerHTML", "hx-include": "#login-form"}) }}
+      {{ button("Back", variant="outline", type="button", attrs={"hx-post": "/settings/sync/new/bank/back", "hx-target": "#wizard-step", "hx-swap": "outerHTML", "hx-include": "#login-form"}) }}
       {{ button("Save and continue", variant="primary", type="submit") }}
     </div>
   </form>
@@ -201,7 +210,7 @@
     {%- endfor %}
   </ul>
   {%- endif %}
-  <form id="accounts-form" class="flex flex-col gap-4" hx-post="/settings/providers/new/accounts" hx-target="#wizard-step" hx-swap="outerHTML" hx-include=".wizard-state">
+  <form id="accounts-form" class="flex flex-col gap-4" hx-post="/settings/sync/new/bank/accounts" hx-target="#wizard-step" hx-swap="outerHTML" hx-include=".wizard-state">
     {%- for row in rows %}
     <fieldset class="grid gap-3 rounded-lg border border-divider p-4 sm:grid-cols-2">
       <legend class="px-1 text-sm font-medium text-primary">Account {{ loop.index }}</legend>
@@ -232,12 +241,12 @@
     <div class="flex justify-end">{{ button("Save accounts", variant="secondary", type="submit") }}</div>
   </form>
   <div class="flex flex-col gap-2 text-sm text-primary">
-    <p>Then sync from the Bank sync page, and come back here to check for files.</p>
+    <p>Then sync from the Data sync page, and come back here to check for files.</p>
     <p class="text-xs text-secondary">A sync needs at least one saved account.</p>
   </div>
   <div class="flex items-center justify-between">
     {{ link_button("Back to data sync", href="/settings/sync?tab=banks", variant="ghost") }}
-    {{ button("Check for files", variant="primary", attrs={"hx-post": "/settings/providers/new/check", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
+    {{ button("Check for files", variant="primary", attrs={"hx-post": "/settings/sync/new/bank/check", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
   </div>
 </div>
 {%- endmacro %}
@@ -258,7 +267,7 @@
   <p class="text-sm text-secondary">No statements waiting. Add files to its folder, then check again.</p>
   {%- endif %}
   {%- if rows %}
-  <form id="map-form" class="flex flex-col gap-4" hx-post="/settings/providers/new/map" hx-target="#wizard-step" hx-swap="outerHTML" hx-include=".wizard-state">
+  <form id="map-form" class="flex flex-col gap-4" hx-post="/settings/sync/new/bank/map" hx-target="#wizard-step" hx-swap="outerHTML" hx-include=".wizard-state">
     <input type="hidden" name="idempotency_key" value="{{ form_key }}">
     <p class="text-sm text-secondary">Match each statement to an account. A reissued card is the same account.</p>
     {%- for row in rows %}
@@ -333,8 +342,8 @@
   <div class="flex items-center justify-between">
     {{ link_button("Back to data sync", href="/settings/sync?tab=banks", variant="ghost") }}
     <div class="flex flex-wrap items-center gap-2">
-      {{ button("Check for files", variant="outline", attrs={"hx-post": "/settings/providers/new/check", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
-      {{ button("Preview import", variant="primary", attrs={"hx-post": "/settings/providers/new/preview", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
+      {{ button("Check for files", variant="outline", attrs={"hx-post": "/settings/sync/new/bank/check", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
+      {{ button("Preview import", variant="primary", attrs={"hx-post": "/settings/sync/new/bank/preview", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
     </div>
   </div>
 </div>
@@ -356,10 +365,10 @@
   <p class="text-sm text-secondary">No statements waiting. Add files to its folder, then check again.</p>
   {%- endif %}
   <div class="flex items-center justify-between">
-    {{ button("Back to map accounts", variant="outline", attrs={"hx-post": "/settings/providers/new/check", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
+    {{ button("Back to map accounts", variant="outline", attrs={"hx-post": "/settings/sync/new/bank/check", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
     {%- if can_import %}
     <input type="hidden" class="wizard-state" name="identity" value="{{ identity }}">
-    {{ button("Import", variant="primary", attrs={"hx-post": "/settings/providers/new/import", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
+    {{ button("Import", variant="primary", attrs={"hx-post": "/settings/sync/new/bank/import", "hx-include": ".wizard-state", "hx-target": "#wizard-step", "hx-swap": "outerHTML"}) }}
     {%- endif %}
   </div>
 </div>

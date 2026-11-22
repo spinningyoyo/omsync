@@ -13,7 +13,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from omsync.core.batch_models import Batch
@@ -29,7 +29,14 @@ from omsync.core.locks import SYNC_LOCK_NAME, LockBusy, exclusive_lock
 from omsync.core.settings import Settings
 from omsync.ingest.connectors.base import ConnectorError
 from omsync.ingest.connectors.registry import get_connector
-from omsync.ledger.models import Account, Institution, Provider, ProviderAccount
+from omsync.ledger.models import (
+    Account,
+    Institution,
+    Provider,
+    ProviderAccount,
+    ProviderKind,
+    SyncRun,
+)
 
 DROP_FOLDER = "drop_folder"
 KEY_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
@@ -47,6 +54,7 @@ class ProviderInfo:
     institution_key: str
     institution_name: str
     connector_key: str
+    name: str
     vault_item_id: str | None
     enabled: bool
     account_ids: tuple[int, ...]
@@ -72,6 +80,7 @@ def list_providers(session: Session) -> list[ProviderInfo]:
             institution_key=institution_key,
             institution_name=institution_name,
             connector_key=provider.connector_key,
+            name=provider.name,
             vault_item_id=provider.vault_item_id,
             enabled=bool(provider.enabled),
             account_ids=tuple(accounts.get(provider.id, [])),
@@ -98,21 +107,26 @@ def create_provider(
     institution_key: str,
     institution_name: str | None,
     provider_key: str,
+    provider_name: str,
     connector_key: str,
     vault_item_id: str | None,
     idempotency_key: str,
 ) -> Batch:
     """Add a provider for an institution, as one batch. The institution is created in the same batch
     when it does not exist, and then institution_name is required. It is ignored otherwise.
+    provider_name is the label its owner gave the provider.
 
     Raises ProviderError, and writes nothing, when a key is malformed, the provider key is taken,
-    the connector is unknown or is the drop folder, or a new institution has no name.
+    the connector is unknown or is the drop folder, the provider has no name, or a new institution
+    has no name.
     """
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
         return replay
     provider_key = _checked_key(provider_key, "provider key")
     _bank_connector(connector_key)
+    if not provider_name.strip():
+        raise ProviderError("the provider needs a name")
     if session.scalars(select(Provider.id).where(Provider.key == provider_key)).first() is not None:
         raise ProviderError(f"there is already a provider {provider_key!r}")
 
@@ -145,6 +159,8 @@ def create_provider(
             {
                 "id": provider_id,
                 "key": provider_key,
+                "kind": ProviderKind.bank.value,
+                "name": provider_name.strip(),
                 "institution_id": institution_id,
                 "connector_key": connector_key,
                 "vault_item_id": vault_item_id,
@@ -170,22 +186,24 @@ def update_provider(
     vault_item_id: str | None,
     account_ids: Iterable[int],
     idempotency_key: str,
+    name: str | None = None,
 ) -> Batch | None:
-    """Set a provider's vault login and replace the accounts it fetches, as one batch. Returns None
-    when nothing would change.
+    """Set a provider's vault login, and its name when given, and replace the accounts it fetches,
+    as one batch. Returns None when nothing would change.
 
     Every account must be at the provider's institution and fetched by no other provider. Raises
-    ProviderError, and writes nothing, when the provider is unknown, an account is not eligible, or
-    a
-    sync of it is running.
+    ProviderError, and writes nothing, when the provider is unknown, the name is empty, an account
+    is not eligible, or a sync of it is running.
     """
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
         return replay
     wanted = tuple(dict.fromkeys(account_ids))
-    with _not_syncing(settings, provider_key):
+    with not_syncing(settings, provider_key):
         provider = _provider(session, provider_key)
-        changes = _login_change(session, provider, vault_item_id)
+        if name is not None and not name.strip():
+            raise ProviderError("the provider needs a name")
+        changes = _provider_change(session, provider, vault_item_id, name)
         changes += _account_changes(session, provider, wanted)
         if not changes:
             return None
@@ -201,8 +219,9 @@ def update_provider(
 def delete_provider(
     session: Session, settings: Settings, *, provider_key: str, idempotency_key: str
 ) -> Batch:
-    """Delete a provider and the links to its accounts, as one batch. Its accounts, transactions,
-    statement files, and sync history stay.
+    """Delete a provider, the links to its accounts, and its sync runs, as one batch. Its accounts,
+    transactions, and statement files stay. Sync runs are an operational log, not ledger data: they
+    are deleted in the batch's transaction, so they are not restored by undo.
 
     Raises ProviderError, and writes nothing, when the provider is unknown or a sync of it is
     running.
@@ -210,7 +229,7 @@ def delete_provider(
     replay = applied_batch_for_key(session, idempotency_key)
     if replay is not None:
         return replay
-    with _not_syncing(settings, provider_key):
+    with not_syncing(settings, provider_key):
         provider = _provider(session, provider_key)
         links = session.scalars(
             select(ProviderAccount.id).where(ProviderAccount.provider_id == provider.id)
@@ -233,15 +252,20 @@ def delete_provider(
             changes,
             summary={"provider": provider_key, "accounts": len(links)},
         )
+        session.execute(delete(SyncRun).where(SyncRun.provider_id == provider.id))
         return apply(session, preview, idempotency_key=idempotency_key)
 
 
-def _login_change(session: Session, provider: Provider, vault_item_id: str | None) -> list[Change]:
+def _provider_change(
+    session: Session, provider: Provider, vault_item_id: str | None, name: str | None
+) -> list[Change]:
     before = snapshot(session, "provider", provider.id)
-    if before is None or before["vault_item_id"] == vault_item_id:
+    if before is None:
         return []
     after = {**before, "vault_item_id": vault_item_id}
-    return [Change("provider", str(provider.id), before, after)]
+    if name is not None:
+        after["name"] = name.strip()
+    return [] if after == before else [Change("provider", str(provider.id), before, after)]
 
 
 def _account_changes(session: Session, provider: Provider, wanted: tuple[int, ...]) -> list[Change]:
@@ -301,7 +325,9 @@ def _account_changes(session: Session, provider: Provider, wanted: tuple[int, ..
 
 
 def _provider(session: Session, provider_key: str) -> Provider:
-    provider = session.scalars(select(Provider).where(Provider.key == provider_key)).first()
+    provider = session.scalars(
+        select(Provider).where(Provider.key == provider_key, Provider.kind == ProviderKind.bank)
+    ).first()
     if provider is None:
         raise ProviderError(f"there is no provider {provider_key!r}")
     return provider
@@ -327,9 +353,9 @@ def _bank_connector(connector_key: str) -> None:
 
 
 @contextmanager
-def _not_syncing(settings: Settings, provider_key: str) -> Iterator[None]:
-    """Hold the sync lock for a change, so no sync starts while it is made. Nothing waits: a held
-    lock refuses the change at once."""
+def not_syncing(settings: Settings, provider_key: str) -> Iterator[None]:
+    """Hold the sync lock for a change to a provider, so no sync starts while it is made. Nothing
+    waits: a held lock refuses the change at once."""
     try:
         with exclusive_lock(settings.data_dir / SYNC_LOCK_NAME):
             yield

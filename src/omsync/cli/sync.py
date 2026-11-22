@@ -5,6 +5,8 @@ each provider's connector. The password is passed to the vault and never printed
 a vault, you sign in at each bank yourself.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from typing import Annotated
 
 import typer
@@ -14,12 +16,15 @@ from omsync.cli.common import fail, load_settings_or_exit, parse_period, ready_s
 from omsync.cli.groups import app
 from omsync.cli.imports import echo_import_report
 from omsync.core.bitwarden import MISSING_EMAIL
+from omsync.core.locks import SERVE_LOCK_NAME, LockBusy, exclusive_lock
 from omsync.core.settings import Settings
-from omsync.core.sync_models import SyncKind, SyncRun, SyncStatus
 from omsync.core.vault import Vault, VaultError
 from omsync.core.vaults import open_vault
 from omsync.ingest.connectors.base import ConnectorError, DateRange
-from omsync.ingest.sync import SyncBusy, SyncResult, sync_all, sync_provider
+from omsync.ingest.runs import SyncBusy
+from omsync.ingest.sync import SyncResult, sync_all
+from omsync.ledger.models import Provider, ProviderKind, SyncRun, SyncStatus
+from omsync.receipts.sync import sync_one
 
 
 class TyperPrompt:
@@ -44,6 +49,18 @@ class TyperPrompt:
 def make_vault(settings: Settings, email: str | None) -> Vault | None:
     """The vault the CLI unlocks, or None without one. It shares state with the app's vault."""
     return open_vault(settings, email=email)
+
+
+@contextmanager
+def _server_guard(settings: Settings) -> Iterator[None]:
+    """Keep the running server and this sync apart. They share one `bw` state, and a lock from
+    either would end the other's session. The server's lock is held to the end of the sync, so a
+    server cannot start in the middle of it."""
+    try:
+        with exclusive_lock(settings.data_dir / SERVE_LOCK_NAME):
+            yield
+    except LockBusy:
+        fail("omsync is running; sync from the web page.")
 
 
 @app.command("sync")
@@ -82,7 +99,8 @@ def sync_command(
     if vault is not None and not address:
         fail(MISSING_EMAIL)
     # The database is checked before the password is asked for, so a missing one costs no prompt.
-    with ready_session() as (_settings, session):
+    guard = _server_guard(settings) if vault is not None else nullcontext()
+    with guard, ready_session() as (_settings, session):
         try:
             if vault is not None:
                 _unlock(vault)
@@ -91,7 +109,7 @@ def sync_command(
                     session, settings, vault=vault, prompt=TyperPrompt(), period=period
                 )
             else:
-                result = sync_provider(
+                result = sync_one(
                     session,
                     settings,
                     provider_key=provider.strip().lower(),
@@ -121,18 +139,20 @@ def sync_log(
 ) -> None:
     """List recent syncs: when each started, its provider, connector, status, and files."""
     with ready_session() as (_settings, session):
-        runs = session.scalars(select(SyncRun).order_by(SyncRun.id.desc()).limit(limit)).all()
-        if not runs:
+        rows = session.execute(
+            select(SyncRun, Provider)
+            .join(Provider, Provider.id == SyncRun.provider_id)
+            .order_by(SyncRun.id.desc())
+            .limit(limit)
+        ).all()
+        if not rows:
             typer.echo("No syncs yet.")
             return
-        for run in runs:
+        for run, provider in rows:
             when = run.started_at.strftime("%Y-%m-%d %H:%M UTC")
-            target = run.target_key or run.provider_key or run.institution_key or ""
-            items = _files(
-                run.items_fetched or run.files_fetched, getattr(run, "kind", SyncKind.bank)
-            )
+            items = _files(run.items_fetched, provider.kind)
             line = (
-                f"{run.id:>5}  {when:<20}  {target:<16}  {run.connector_key:<12}  "
+                f"{run.id:>5}  {when:<20}  {provider.key:<16}  {provider.connector_key:<12}  "
                 f"{run.status.value:<18}  {items:<12}  {run.message or ''}"
             )
             typer.echo(line.rstrip())
@@ -184,7 +204,7 @@ def _echo_result(result: SyncResult, provider_key: str) -> None:
         return
     window = result.period
     typer.echo(
-        f"Fetched {_files(result.files_fetched)} for {provider_key}, "
+        f"Fetched {_files(result.items_fetched, result.kind)} for {provider_key}, "
         f"{window.start.isoformat()} to {window.end.isoformat()}."
     )
     if result.report is not None:
@@ -198,8 +218,8 @@ def _failure(result: SyncResult) -> str:
     return f"sync {result.status.value}{detail}"
 
 
-def _files(count: int, kind: SyncKind = SyncKind.bank) -> str:
-    unit = "receipt" if kind == SyncKind.receipt else "file"
+def _files(count: int, kind: ProviderKind = ProviderKind.bank) -> str:
+    unit = "receipt" if kind is ProviderKind.receipt else "file"
     return f"{count} {unit}" if count == 1 else f"{count} {unit}s"
 
 

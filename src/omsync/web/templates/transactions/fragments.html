@@ -26,12 +26,20 @@
 
 {% block frag_editor %}
 {% from "transactions/parts.html" import txn_group %}
-{{ txn_group(row, show_account, categories, none, false, editor, key, clear_key, version) }}
+{{ txn_group(row, show_account, categories, none, false, editor, key, clear_key, version, all_tags) }}
 {% endblock %}
 
 {% block frag_split_line %}
 {% from "transactions/parts.html" import split_line %}
-{{ split_line(line, categories, autofocus) }}
+{{ split_line(line, categories, all_tags, autofocus) }}
+{% endblock %}
+
+{# One line's tag picker, after a tag was created from it, with the toast out of band. #}
+{% block frag_split_tags %}
+{% from "components/tag_picker.html" import split_tag_picker %}
+{% from "transactions/parts.html" import toast_region %}
+{{ split_tag_picker(tags, selected, uid) }}
+{%- if label %}{{ toast_region(label, batch_id) }}{% endif %}
 {% endblock %}
 
 {% block frag_amount_left %}
@@ -93,7 +101,7 @@
 
 {% block frag_bulk_value %}
 {% from "transactions/bulk.html" import bulk_value_form %}
-{{ bulk_value_form(action, categories) }}
+{{ bulk_value_form(action, categories, tags|default([])) }}
 {% endblock %}
 
 {% block frag_bulk_preview %}

@@ -20,6 +20,7 @@ from omsync.ledger.register import (
     categories,
     check_split_drafts,
     clear_splits,
+    create_tag_on_transaction,
     edit_memo,
     field_version,
     get_transaction_row,
@@ -29,7 +30,11 @@ from omsync.ledger.register import (
     set_category,
     set_splits,
     split_balance,
+    toggle_split_tag,
+    toggle_transaction_tag,
 )
+from omsync.ledger.tags import create_tag, list_tags
+from omsync.web.counterparty_view import load_detail
 from omsync.web.deps import get_db
 from omsync.web.fragments import render_block
 from omsync.web.register_replies import FRAGMENTS, reply, review_items
@@ -45,7 +50,7 @@ from omsync.web.routes.shell import shell_context
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
 PAGE = "pages/transactions.html"
-EDITABLE_FIELDS = ("category", "memo")
+EDITABLE_FIELDS = ("category",)
 STALE_MESSAGE = "This changed elsewhere, reload."
 ADD_CATEGORIES_HINT = "Add categories on the Categories page."
 
@@ -58,6 +63,7 @@ class LineView:
     category_id: int | None = None
     memo: str = ""
     error: str = ""
+    tag_ids: tuple[int, ...] = ()
 
 
 @dataclass
@@ -214,7 +220,14 @@ def close_split(
 @router.get("/transactions/{txn_id}/split/line", response_class=HTMLResponse)
 def add_split_line(request: Request, db: DbSession, txn_id: int) -> HTMLResponse:
     _row_or_404(db, txn_id)
-    return _row_fragment(request, db, "frag_split_line", line=LineView(), autofocus=True)
+    return _row_fragment(
+        request,
+        db,
+        "frag_split_line",
+        line=LineView(),
+        autofocus=True,
+        all_tags=list_tags(db),
+    )
 
 
 @router.post("/transactions/{txn_id}/split/preview", response_class=HTMLResponse)
@@ -245,13 +258,16 @@ def save_split(
     amount: Annotated[list[str] | None, Form()] = None,
     category: Annotated[list[str] | None, Form()] = None,
     memo: Annotated[list[str] | None, Form()] = None,
+    tag: Annotated[list[str] | None, Form()] = None,
     idempotency_key: Annotated[str, Form()] = "",
     version: Annotated[str, Form()] = "",
     account: int | None = None,
 ) -> HTMLResponse:
     row = _row_or_404(db, txn_id)
     key = idempotency_key or uuid4().hex
-    views, check = _check_lines(db, row.amount_cents, amount or [], category or [], memo or [])
+    views, check = _check_lines(
+        db, row.amount_cents, amount or [], category or [], memo or [], tag or []
+    )
     if _is_stale(db, row, row_version(row), key, version):
         editor = _editor(row.amount_cents, views, STALE_MESSAGE)
         return _editor_fragment(
@@ -263,7 +279,7 @@ def save_split(
             request, db, row, editor, account, status_code=422, key=key, version=version
         )
     try:
-        batch = set_splits(db, row.id, check.lines, idempotency_key=key)
+        batch = set_splits(db, row.id, check.lines, tags=check.line_tags, idempotency_key=key)
     except ValueError as exc:
         editor = _editor(row.amount_cents, views, str(exc))
         return _editor_fragment(
@@ -436,6 +452,7 @@ def _editor_fragment(
         key=key,
         clear_key=uuid4().hex,
         version=version,
+        all_tags=list_tags(db),
     )
 
 
@@ -494,14 +511,10 @@ def _is_stale(db: Session, row: RegisterRow, token: str, key: str, version: str)
 def _unchanged(row: RegisterRow, field_name: str, value: str) -> bool:
     if row.is_split and field_name == "category":
         return False  # a split's category is refused with a message, so let the domain say so
-    if field_name == "memo":
-        return (value.strip() or None) == row.memo
     return category_id_from(value) == row.category_id
 
 
 def _save_field(db: Session, row: RegisterRow, field_name: str, value: str, key: str) -> Batch:
-    if field_name == "memo":
-        return edit_memo(db, row.id, value, idempotency_key=key)
     return set_category(db, row.id, category_id_from(value), idempotency_key=key)
 
 
@@ -526,6 +539,7 @@ def _initial_lines(row: RegisterRow) -> list[LineView]:
                 amount=format_cents(split.amount_cents, symbol=""),
                 category_id=split.category_id,
                 memo=split.memo or "",
+                tag_ids=tuple(tag.id for tag in split.tags),
             )
             for split in row.splits
         ]
@@ -557,18 +571,35 @@ def _check_lines(
     amounts: list[str],
     picks: list[str],
     memos: list[str],
+    tag_values: list[str],
 ) -> tuple[list[LineView], SplitCheck]:
     """The submitted form fields as editor lines, with the domain's verdict on them."""
+    groups = _tag_groups(db, tag_values)
     drafts = [
-        SplitDraft(amount_text, _picked(pick), memo_text)
-        for amount_text, pick, memo_text in zip_longest(amounts, picks, memos, fillvalue="")
+        SplitDraft(amount_text, _picked(pick), memo_text, tag_ids)
+        for amount_text, pick, memo_text, tag_ids in zip_longest(
+            amounts, picks, memos, groups, fillvalue=""
+        )
     ]
     check = check_split_drafts(db, total_cents, drafts)
     views = [
-        LineView(draft.amount, draft.category_id, draft.memo, error)
+        LineView(draft.amount, draft.category_id, draft.memo, error, draft.tag_ids)
         for draft, error in zip(drafts, check.line_errors, strict=True)
     ]
     return views, check
+
+
+def _tag_groups(db: Session, values: list[str]) -> list[tuple[int, ...]]:
+    """The tags of each split line. The editor submits a "-" before each line's tag ids, so the
+    ids that follow it belong to that line. A value that is not the id of a tag is dropped."""
+    known = {tag.id for tag in list_tags(db)}
+    groups: list[list[int]] = []
+    for value in values:
+        if value == "-":
+            groups.append([])
+        elif groups and value.isdigit() and int(value) in known:
+            groups[-1].append(int(value))
+    return [tuple(dict.fromkeys(group)) for group in groups]
 
 
 def _picked(text: str) -> int | None:
@@ -578,3 +609,166 @@ def _picked(text: str) -> int | None:
         return category_id_from(text)
     except ValueError:
         return None
+
+
+TAG_POPOVER_TEMPLATE = "transactions/tag_popover.html"
+MEMO_POPOVER_TEMPLATE = "transactions/memo_popover.html"
+DETAIL_FRAGMENTS = "transactions/detail_fragments.html"
+TAG_GONE = "That tag no longer exists."
+
+
+@router.get("/transactions/{txn_id}/tags/popover", response_class=HTMLResponse)
+def get_tag_popover(request: Request, db: DbSession, txn_id: int) -> HTMLResponse:
+    row = _row_or_404(db, txn_id)
+    return request.app.state.templates.TemplateResponse(
+        request, TAG_POPOVER_TEMPLATE, {"row": row, "all_tags": list_tags(db)}
+    )
+
+
+@router.get("/transactions/{txn_id}/memo/popover", response_class=HTMLResponse)
+def get_memo_popover(request: Request, db: DbSession, txn_id: int) -> HTMLResponse:
+    row = _row_or_404(db, txn_id)
+    return request.app.state.templates.TemplateResponse(
+        request,
+        MEMO_POPOVER_TEMPLATE,
+        {"row": row},
+    )
+
+
+@router.post("/transactions/{txn_id}/memo", response_class=HTMLResponse)
+def post_transaction_memo(
+    request: Request,
+    db: DbSession,
+    txn_id: int,
+    memo: Annotated[str, Form()] = "",
+    account: int | None = None,
+) -> HTMLResponse:
+    """Save the memo from its popover. A memo that is as it was changes nothing and shows no
+    toast."""
+    row = _row_or_404(db, txn_id)
+    if (memo.strip() or None) == row.memo:
+        return _row_fragment(request, db, "frag_group", row=row, show_account=account is None)
+    batch = edit_memo(db, row.id, memo, idempotency_key=uuid4().hex)
+    return _row_fragment(
+        request,
+        db,
+        "frag_group_saved",
+        row=get_transaction_row(db, txn_id),
+        show_account=account is None,
+        label=_label(batch),
+        batch_id=batch.id,
+        account=account,
+    )
+
+
+@router.post("/transactions/{txn_id}/tags/toggle/{tag_id}", response_class=HTMLResponse)
+def toggle_tag_route(
+    request: Request,
+    db: DbSession,
+    txn_id: int,
+    tag_id: int,
+    from_detail: bool = False,
+    account: int | None = None,
+) -> HTMLResponse:
+    row = _row_or_404(db, txn_id)
+    batch = toggle_transaction_tag(db, row.id, tag_id, idempotency_key=uuid4().hex)
+    return _tags_reply(request, db, txn_id, batch, TAG_GONE, from_detail, account)
+
+
+@router.post("/transactions/{txn_id}/splits/{split_id}/tags/toggle/{tag_id}")
+def toggle_split_tag_route(
+    request: Request, db: DbSession, txn_id: int, split_id: int, tag_id: int
+) -> HTMLResponse:
+    """Put a tag on a split line of the transaction detail, or take it off."""
+    row = _row_or_404(db, txn_id)
+    if split_id not in {split.id for split in row.splits}:
+        raise HTTPException(status_code=404, detail="No such split")
+    batch = toggle_split_tag(db, split_id, tag_id, idempotency_key=uuid4().hex)
+    return _tags_reply(request, db, txn_id, batch, TAG_GONE, True, None)
+
+
+@router.post("/transactions/{txn_id}/tags/create", response_class=HTMLResponse)
+def create_and_assign_tag_route(
+    request: Request,
+    db: DbSession,
+    txn_id: int,
+    name: Annotated[str, Form()] = "",
+    color: Annotated[str, Form()] = "",
+    from_detail: bool = False,
+    account: int | None = None,
+) -> HTMLResponse:
+    """Create a tag and put it on the transaction, in one batch."""
+    row = _row_or_404(db, txn_id)
+    try:
+        batch = create_tag_on_transaction(db, row.id, name, color, idempotency_key=uuid4().hex)
+    except ValueError as exc:
+        return _tags_reply(request, db, txn_id, None, str(exc), from_detail, account, status=422)
+    return _tags_reply(request, db, txn_id, batch, "", from_detail, account)
+
+
+@router.post("/tags/split-picker", response_class=HTMLResponse)
+async def create_tag_for_split_line(request: Request, db: DbSession) -> HTMLResponse:
+    """Create a tag from the picker of a split line, and tick it there. The line is not saved
+    yet, so nothing is put on it. The reply is that line's picker, as it was with the new tag."""
+    form = await request.form()
+    uid = str(form.get("picker", ""))
+    ticked = [int(v) for v in form.getlist("tag") if isinstance(v, str) and v.isdigit()]
+    color = next((str(v) for k, v in form.multi_items() if k.startswith("new_color_")), "")
+    label, batch_id, status = "", None, 200
+    try:
+        batch = create_tag(db, str(form.get("new_name", "")), color, idempotency_key=uuid4().hex)
+    except ValueError as exc:
+        label, status = str(exc), 422
+    else:
+        label, batch_id = _label(batch), batch.id
+        ticked.append(int((batch.summary or {})["tag_id"]))
+    return _fragment(
+        request,
+        "frag_split_tags",
+        status_code=status,
+        tags=list_tags(db),
+        selected=ticked,
+        uid=uid,
+        label=label,
+        batch_id=batch_id,
+    )
+
+
+def _tags_reply(
+    request: Request,
+    db: Session,
+    txn_id: int,
+    batch: Batch | None,
+    message: str,
+    from_detail: bool,
+    account: int | None,
+    *,
+    status: int = 200,
+) -> HTMLResponse:
+    """The transaction as it now is, with a toast. A tag change that wrote nothing has `message`
+    and no Undo."""
+    label = _label(batch) if batch else message
+    batch_id = batch.id if batch else None
+    if from_detail:
+        return render_block(
+            request,
+            DETAIL_FRAGMENTS,
+            "frag_saved",
+            status=status,
+            detail=load_detail(db, txn_id),
+            message=label,
+            batch_id=batch_id,
+            txn_id=txn_id,
+            all_tags=list_tags(db),
+        )
+    return _row_fragment(
+        request,
+        db,
+        "frag_group_saved",
+        status_code=status,
+        row=get_transaction_row(db, txn_id),
+        show_account=account is None,
+        label=label,
+        batch_id=batch_id,
+        account=account,
+    )

@@ -103,7 +103,10 @@ def serve(
             _run_automatic_step(settings)
             uvicorn.run(create_app(settings), host=settings.host, port=settings.port)
     except LockBusy:
-        fail("omsync serve is already running, or a restore is in progress. Stop it first.")
+        fail(
+            "omsync serve is already running, a restore is in progress, or a vault sync is "
+            "running. Stop it first."
+        )
 
 
 def _serve_demo(settings: Settings) -> None:

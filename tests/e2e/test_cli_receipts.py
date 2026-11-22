@@ -1,8 +1,8 @@
 """`omsync receipts run`, through the CLI in a tmp data dir.
 
 The database is migrated and seeded with synthetic transactions. The Amazon fixtures are copied
-into <data_dir>/receipts/AMAZON. The data directory comes from the environment, so these tests
-never touch ~/omsync-data."""
+into <data_dir>/receipts/AMAZON/default, the folder of one Amazon provider. The data directory
+comes from the environment, so these tests never touch ~/omsync-data."""
 
 import shutil
 import sqlite3
@@ -11,6 +11,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from ledgerkit import add_receipt_provider
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typer.testing import CliRunner
@@ -91,7 +92,7 @@ def refund_line(order_id: str, cents: int, refunded: str, reason: str = "Custome
 
 def write_export(data_dir: Path, login: str, orders: list[str], refunds: list[str] = ()) -> None:
     """Write one login's order history, and its refunds when there are any."""
-    folder = data_dir / "receipts" / "AMAZON" / login
+    folder = data_dir / "receipts" / "AMAZON" / "default" / login
     (folder / "Your Amazon Orders").mkdir(parents=True, exist_ok=True)
     (folder / "Your Amazon Orders" / "Order History.csv").write_text(
         "\n".join([ORDER_HEADER, *orders]) + "\n", encoding="utf-8"
@@ -165,6 +166,7 @@ def seed(data_dir: Path, transactions: list[tuple[date, int, str]] = SEEDED_TRAN
             )
         session.commit()
     engine.dispose()
+    add_receipt_provider(data_dir, "amazon")
 
 
 @pytest.fixture
@@ -172,7 +174,7 @@ def ready(data_dir: Path) -> Iterator[Path]:
     """A migrated database with seeded transactions, and the Amazon exports in place."""
     assert run("db", "upgrade").exit_code == 0
     seed(data_dir)
-    shutil.copytree(FIXTURES, data_dir / "receipts" / "AMAZON")
+    shutil.copytree(FIXTURES, data_dir / "receipts" / "AMAZON" / "default")
     yield data_dir
 
 

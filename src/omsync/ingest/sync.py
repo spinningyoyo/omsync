@@ -4,7 +4,7 @@ A sync runs one at a time on this machine. It holds an exclusive lock on <data_d
 its whole length, the import included, and a second sync raises SyncBusy instead of waiting.
 sync_all holds the lock across all its providers.
 
-Each sync writes one SyncRun (ingest/models.py): running when it starts, then succeeded,
+Each sync writes one SyncRun (ingest/runs.py): running when it starts, then succeeded,
 failed, needs_user_action, or cancelled. A connector's exceptions become that status and never
 escape. A sync always imports the files it fetched, each as its own batch, then categorizes the
 provider's accounts with the keywords. A sync cancelled while it fetches imports nothing.
@@ -12,10 +12,9 @@ provider's accounts with the keywords. A sync cancelled while it fetches imports
 
 import logging
 import re
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -23,25 +22,23 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from omsync.core.batches import BatchError
-from omsync.core.locks import SYNC_LOCK_NAME, LockBusy, exclusive_lock
+from omsync.core.locks import SYNC_LOCK_NAME
 from omsync.core.settings import Settings
-from omsync.core.sync_models import SyncKind, SyncRun, SyncStatus
-from omsync.core.vault import Vault, VaultError, VaultLocked
+from omsync.core.vault import Vault, VaultError
 from omsync.ingest.connectors.base import (
     Connector,
     ConnectorAccount,
     ConnectorError,
     DateRange,
-    NeedsUserAction,
     PartialFetch,
     Prompt,
-    SyncCancelled,
 )
 from omsync.ingest.connectors.config import enabled_provider_keys
 from omsync.ingest.connectors.registry import get_connector
 from omsync.ingest.discovery import scan_statement_files, suggested_account
 from omsync.ingest.dropfolder import PendingFile, location_of
 from omsync.ingest.pipeline import ImportReport, import_files
+from omsync.ingest.runs import failure_of, finish_run, start_run, sync_lock
 from omsync.ingest.timing import timed
 from omsync.ledger.accounts import AccountError, add_alias
 from omsync.ledger.categorize import InvalidKeyword, apply_categorize, plan_categorize
@@ -53,19 +50,16 @@ from omsync.ledger.models import (
     Institution,
     Provider,
     ProviderAccount,
+    ProviderKind,
     Transaction,
 )
 from omsync.ledger.sources import current_alias_id
+from omsync.ledger.sync_runs import SyncRun, SyncStatus
 
 logger = logging.getLogger(__name__)
 
 LOOKBACK = timedelta(days=45)
-MESSAGE_LIMIT = 200
 _INSTITUTION_KEY = re.compile(r"[a-z0-9][a-z0-9_-]*")
-
-
-class SyncBusy(Exception):
-    """Another sync is running on this machine. Nothing was fetched or written."""
 
 
 @dataclass(frozen=True)
@@ -73,16 +67,18 @@ class SyncResult:
     """The outcome of one sync. report is None when the connector fetched nothing to import,
     which is the case for every failed fetch. message is safe to show and is also in the log.
     linked has the last four digits of each statement account this sync linked to an account.
-    categorized is how many transactions the keywords categorized or sent back to triage."""
+    categorized is how many transactions the keywords categorized or sent back to triage.
+    items_fetched is statement files, or receipts for a receipt provider."""
 
     run_id: int
     status: SyncStatus
     period: DateRange
-    files_fetched: int
+    items_fetched: int
     message: str | None
     report: ImportReport | None
     linked: tuple[str, ...] = ()
     categorized: int = 0
+    kind: ProviderKind = ProviderKind.bank
 
     @property
     def unlinked(self) -> tuple[str, ...]:
@@ -112,6 +108,7 @@ when it ends, with the outcome sync_all records for it."""
 class _Plan:
     """What a sync needs from the database, read before its SyncRun is written."""
 
+    provider_id: int
     provider_key: str
     institution_key: str
     connector: Connector
@@ -135,7 +132,7 @@ def sync_provider(
     and ConnectorError if the provider is unknown, turned off, or has no open accounts. Connector
     failures do not raise: they set the result's status.
     """
-    with _sync_lock(settings.data_dir / SYNC_LOCK_NAME):
+    with sync_lock(settings.data_dir / SYNC_LOCK_NAME):
         return _sync(
             session,
             settings,
@@ -163,7 +160,7 @@ def sync_all(
     list. Raises SyncBusy, before anything is fetched, if another sync holds the lock.
     """
     outcomes: list[ProviderSync] = []
-    with _sync_lock(settings.data_dir / SYNC_LOCK_NAME):
+    with sync_lock(settings.data_dir / SYNC_LOCK_NAME):
         for key in enabled_provider_keys(session):
             if prompt.cancelled():
                 break
@@ -223,20 +220,7 @@ def _sync(
     window = period or _default_period(
         session, [account.account_id for account in plan.accounts], date.today()
     )
-    run = SyncRun(
-        kind=SyncKind.bank,
-        target_key=plan.provider_key,
-        connector_key=plan.connector.key,
-        source_key=plan.institution_key,
-        institution_key=plan.institution_key,
-        provider_key=plan.provider_key,
-        started_at=_utc_now(),
-        status=SyncStatus.running,
-        items_fetched=0,
-        files_fetched=0,
-    )
-    session.add(run)
-    session.commit()
+    run = start_run(session, plan.provider_id)
     return _run(
         session,
         settings,
@@ -272,7 +256,7 @@ def _run(
         # Some accounts failed and some did not: what was fetched is imported, then reported.
         fetched, partial = exc.files, exc
     except Exception as exc:  # a connector must never crash the caller; its error is the status
-        status, message = _fetch_failure(exc)
+        status, message = failure_of(exc)
         if not isinstance(exc, ConnectorError | VaultError):
             logger.exception("Fetch for provider %s failed unexpectedly", plan.provider_key)
         return _finish(session, run, status, 0, message, window)
@@ -387,7 +371,7 @@ def _prepare(session: Session, provider_key: str) -> _Plan:
     row = session.execute(
         select(Provider, Institution.key)
         .join(Institution, Institution.id == Provider.institution_id)
-        .where(Provider.key == provider_key)
+        .where(Provider.key == provider_key, Provider.kind == ProviderKind.bank)
     ).first()
     if row is None:
         raise ConnectorError(f"there is no provider {provider_key!r}")
@@ -398,6 +382,7 @@ def _prepare(session: Session, provider_key: str) -> _Plan:
     if not accounts:
         raise ConnectorError(f"{provider_key} has no open accounts to sync; add accounts first")
     return _Plan(
+        provider_id=provider.id,
         provider_key=provider_key,
         institution_key=institution_key,
         connector=get_connector(provider.connector_key),
@@ -459,7 +444,7 @@ def _finish(
     session: Session,
     run: SyncRun,
     status: SyncStatus,
-    files_fetched: int,
+    items_fetched: int,
     message: str | None,
     window: DateRange,
     *,
@@ -467,35 +452,17 @@ def _finish(
     linked: tuple[str, ...] = (),
     categorized: int = 0,
 ) -> SyncResult:
-    run.status = status
-    run.finished_at = _utc_now()
-    run.items_fetched = files_fetched
-    run.files_fetched = files_fetched
-    run.message = _clip(message)
-    session.commit()
+    finish_run(session, run, status, items_fetched, message)
     return SyncResult(
         run_id=run.id,
         status=status,
         period=window,
-        files_fetched=files_fetched,
+        items_fetched=items_fetched,
         message=run.message,
         report=report,
         linked=linked,
         categorized=categorized,
     )
-
-
-def _fetch_failure(exc: Exception) -> tuple[SyncStatus, str]:
-    if isinstance(exc, SyncCancelled):
-        return SyncStatus.cancelled, str(exc)
-    if isinstance(exc, NeedsUserAction):
-        return SyncStatus.needs_user_action, _clip(str(exc)) or "the connector needs you"
-    if isinstance(exc, VaultLocked):
-        return SyncStatus.needs_user_action, "the vault is locked; unlock it and sync again"
-    if isinstance(exc, ConnectorError | VaultError):
-        return SyncStatus.failed, _clip(str(exc)) or "the connector failed"
-    # The exception text of an unexpected error can hold anything, so only its type is kept.
-    return SyncStatus.failed, f"unexpected error ({type(exc).__name__})"
 
 
 def _institution_dir(settings: Settings, institution_key: str) -> Path:
@@ -509,25 +476,3 @@ def _institution_dir(settings: Settings, institution_key: str) -> Path:
             if child.is_dir() and child.name.lower() == institution_key:
                 return child
     return root / institution_key.upper()
-
-
-@contextmanager
-def _sync_lock(path: Path) -> Iterator[None]:
-    """The sync lock, as SyncBusy when another sync or a Costco download holds it."""
-    try:
-        with exclusive_lock(path):
-            yield
-    except LockBusy:
-        raise SyncBusy("another sync is already running, or a Costco receipt download") from None
-
-
-def _clip(text: str | None) -> str | None:
-    if text is None:
-        return None
-    clipped = text.strip()[:MESSAGE_LIMIT]
-    return clipped or None
-
-
-def _utc_now() -> datetime:
-    # Naive UTC, to match the other timestamps in the database.
-    return datetime.now(UTC).replace(tzinfo=None)

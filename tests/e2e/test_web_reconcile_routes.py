@@ -179,17 +179,18 @@ class FakeVendor(BaseVendor):
     """A vendor whose one receipt is paid on card 3333 for $30.00 at a payee named FAKE MARKET."""
 
     key = "fake"
+    folder = "FAKE"
 
-    def discover(self, root: Path) -> list[Path]:
-        return sorted(root.glob("*.fake"))
+    def discover(self, provider_folder: Path) -> list[Path]:
+        return sorted(provider_folder.glob("*.fake"))
 
-    def parse(self, path: Path) -> list[Receipt]:
+    def parse(self, path: Path, provider_key: str) -> list[Receipt]:
         return [
             make_receipt(
                 vendor_key=self.key,
                 receipt_id="F1",
                 purchased_on=date(2026, 8, 10),
-                vendor_login="login-a",
+                account=provider_key,
                 items=(
                     ReceiptItem(position=1, description="Widget", amount_cents=3000, taxable=False),
                 ),

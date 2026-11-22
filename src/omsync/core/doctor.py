@@ -13,7 +13,13 @@ from pathlib import Path
 import keyring
 from keyring.errors import KeyringError
 
-from omsync.core.bitwarden import CLIENT_ID_ENTRY, CLIENT_SECRET_ENTRY
+from omsync.core.bitwarden import (
+    CLIENT_ID_ENTRY,
+    CLIENT_SECRET_ENTRY,
+    MIN_BW_VERSION,
+    UPDATE_BW,
+    BitwardenCLI,
+)
 from omsync.core.settings import Settings, resolve_config_path
 from omsync.core.vault import KEYCHAIN_SERVICE
 
@@ -38,7 +44,7 @@ def run_checks(settings: Settings) -> list[Check]:
     only when a vault is set."""
     checks = [_config_check(settings), _data_dir_check(settings), _vault_check(settings)]
     if settings.vault == "bitwarden":
-        checks.append(_bw_check())
+        checks.append(_bw_check(settings))
         checks += [_keychain_check(item) for item in KEYCHAIN_ITEMS]
     return checks
 
@@ -65,10 +71,14 @@ def _data_dir_check(settings: Settings) -> Check:
     return Check("data dir", True, f"{path} exists and is writable")
 
 
-def _bw_check() -> Check:
+def _bw_check(settings: Settings) -> Check:
     found = shutil.which("bw")
     if found is None:
         return Check("bw on PATH", False, "install the Bitwarden CLI and put bw on PATH")
+    version = BitwardenCLI(appdata_dir=settings.data_dir / "bitwarden").version()
+    if version is not None and version < MIN_BW_VERSION:
+        shown = ".".join(str(part) for part in version)
+        return Check("bw on PATH", True, f"{found}, version {shown} is old; {UPDATE_BW}")
     return Check("bw on PATH", True, found)
 
 

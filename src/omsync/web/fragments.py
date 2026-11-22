@@ -29,7 +29,7 @@ def render_block(
 def undo_url(batch_id: int | None, **params: Any) -> str | None:
     """Where a toast's Undo posts for `batch_id`, with the page's parameters that are set, or None
     when there is no batch to undo."""
-    if batch_id is None:
+    if not batch_id:
         return None
     query = urlencode({key: value for key, value in params.items() if value not in (None, "")})
     return f"/batches/{batch_id}/undo" + (f"?{query}" if query else "")

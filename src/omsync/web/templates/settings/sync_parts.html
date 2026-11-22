@@ -1,19 +1,22 @@
-{# The Bank sync status: the Sync all button, the status region with a line per provider, the Cancel
-   button, the unlock form and the line saying it worked, and the question slot. The region polls
+{# The Data sync status: the Sync all button, the status region with a line per provider, the Cancel
+   button, and the question slot. The region polls
    itself while a job runs. The slot sits outside it and is replaced only when its question or
    notice changes, so a poll never wipes an answer being typed. See routes/settings_providers.py and
    web/sync_runner.py. #}
-{% from "components/button.html" import button, link_button %}
+{% from "components/button.html" import button %}
 {% from "components/icon.html" import icon %}
 {% from "components/institution_logo.html" import institution_logo with context %}
 {% from "components/password_field.html" import password_field %}
 {% from "settings/parts.html" import step_error %}
 {% from "components/popover.html" import popover %}
+{% from "components/dialog.html" import dialog with context %}
 {% from "components/vault_status.html" import vault_status as vault_status_line, VAULT_STATUS_PAGE %}
 
-{# The vault button in the page header: the vault's status, or No vault, with a panel that connects
-   or disconnects Bitwarden. The status line inside it polls and redraws itself; the panel is
-   outside that line, so a poll never wipes what is being typed. The demo shows the status alone. #}
+{# The vault button in the page header: the vault's status, or No vault, with a panel that connects,
+   unlocks, locks or disconnects Bitwarden. The status line inside the button polls and redraws
+   itself; the panel is outside that line, so a poll never wipes what is being typed. A request that
+   needs the vault while it is locked sends the vault-unlock event, which opens the panel (see
+   routes/settings_vault.py). The demo shows the status alone. #}
 {% macro vault_control(status, email) -%}
 {%- if demo_mode %}
 {{ vault_status_line(status, VAULT_STATUS_PAGE) }}
@@ -24,29 +27,26 @@
   {%- if status %}{{ vault_status_line(status, VAULT_STATUS_PAGE, poll=true) }}{% else %}<span class="whitespace-nowrap">No vault</span>{% endif -%}
 </span>
 {%- endset %}
-{% call popover(id="vault-popover", label="Vault", trigger_html=trigger, value=status.label if status else "No vault", panel_class="w-80 max-w-[calc(100vw-2rem)] p-4") %}
-{{ vault_panel(email) }}
+{% call popover(id="vault-popover", label="Vault", trigger_html=trigger, value=status.label if status else "No vault", panel_class="w-80 max-w-[calc(100vw-2rem)] p-4", open_on="vault-unlock") %}
+{{ vault_panel(status, email) }}
 {% endcall %}
 {%- endif %}
 {%- endmacro %}
 
-{# The panel's content. With a vault, its account and Disconnect; without one, the Connect form.
-   A refused change redraws the panel with its reason; a done one reloads the page. #}
-{% macro vault_panel(email, message="") -%}
-<div id="vault-panel" class="flex flex-col gap-3" hx-target="#vault-panel" hx-swap="outerHTML">
+{# The panel's content, by the vault's state: no vault shows the Connect form, a locked one the
+   Unlock form, an unlocked one its status with Lock. pending is what an unlock then does (a sync to
+   start, or a search to run again). A refused change redraws the panel with its reason. oob=true
+   swaps it in place out of band. #}
+{% macro vault_panel(status, email, message="", pending="", oob=false) -%}
+<div id="vault-panel" class="flex flex-col gap-3" hx-target="#vault-panel" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
   <div class="flex items-center gap-2">
     {{ institution_logo("bitwarden", "Bitwarden", 20) }}
     <p class="text-sm font-medium text-primary">Bitwarden</p>
   </div>
   {{ step_error(message) }}
-  {%- if has_vault %}
-  <div class="flex items-center justify-between gap-3">
-    <span class="min-w-0 truncate text-sm text-secondary">{{ email }}</span>
-    {{ button("Disconnect", variant="outline", size="sm", attrs={"hx-post": "/settings/providers/vault/disconnect", "hx-confirm": "Disconnect the vault? You then sign in at each bank yourself."}) }}
-  </div>
-  {%- else %}
-  <p class="text-xs text-secondary">Fills in bank logins at each sync. The master password is not stored.</p>
-  <form class="flex flex-col gap-3" hx-post="/settings/providers/vault/connect" hx-disabled-elt="find button[type='submit']">
+  {%- if not has_vault %}
+  <p class="text-xs text-secondary">Fills in logins at each sync. The master password is not stored.</p>
+  <form class="flex flex-col gap-3" hx-post="/settings/sync/vault/connect" hx-disabled-elt="find button[type='submit']">
     <label class="form-field">
       <span class="form-field__label">Email</span>
       <input type="email" name="email" value="{{ email }}" required autocomplete="email" class="form-field__input">
@@ -54,65 +54,70 @@
     {{ password_field() }}
     <div class="flex justify-end">{{ button("Connect", variant="primary", size="sm", type="submit", busy_text="Connecting…") }}</div>
   </form>
+  {%- elif not status.unlocked %}
+  <form class="flex flex-col gap-3" hx-post="/settings/sync/vault/unlock" hx-disabled-elt="find button[type='submit']">
+    <p class="text-xs text-secondary">Vault locked. Enter your master password (not stored).</p>
+    <input type="hidden" name="pending" value="{{ pending }}">
+    {{ password_field(data_autofocus=true) }}
+    <div class="flex items-center justify-between gap-3">
+      <span class="min-w-0 truncate text-xs text-secondary">{{ email }}</span>
+      <div class="flex items-center gap-2">
+        {{ disconnect_dialog() }}
+        {{ button("Unlock", variant="primary", size="sm", type="submit", busy_text="Unlocking…") }}
+      </div>
+    </div>
+  </form>
+  {%- else %}
+  <p class="text-xs text-secondary">{{ status.detail }}</p>
+  <div class="flex items-center justify-between gap-3">
+    <span class="min-w-0 truncate text-sm text-secondary">{{ email }}</span>
+    <div class="flex items-center gap-2">
+      {{ disconnect_dialog() }}
+      {{ button("Lock", variant="primary", size="sm", attrs={"hx-post": "/settings/sync/vault/lock"}) }}
+    </div>
+  </div>
   {%- endif %}
 </div>
+{%- endmacro %}
+
+{# Disconnect asks first in a dialog: afterwards you sign in at each site yourself. #}
+{% macro disconnect_dialog() -%}
+{% call dialog(id="disconnect-vault", title="Disconnect the vault", trigger="Disconnect", trigger_size="sm", subtitle="You then sign in at each site yourself.", width="sm") %}
+  <div class="flex justify-end gap-2">
+    {{ button("Cancel", variant="outline", attrs={"data-action": "dialog#close"}) }}
+    {{ button("Disconnect", variant="primary", attrs={"hx-post": "/settings/sync/vault/disconnect"}) }}
+  </div>
+{% endcall %}
 {%- endmacro %}
 
 {# The Sync all button at the top right of the page header. oob=true swaps it in place when a job starts or ends. #}
 {% macro sync_all_control(busy, oob=false) -%}
 <div id="sync-all-control"{% if oob %} hx-swap-oob="true"{% endif %}>
-  {{ button("Sync all", variant="primary", icon="rotate-ccw", disabled=busy, attrs={"hx-post": "/settings/providers/sync_all", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
-</div>
-{%- endmacro %}
-
-{# The controls in the Banks tab header: Sync banks and Add provider. oob=true swaps it in place when a job starts or ends. #}
-{% macro sync_banks_control(busy, oob=false) -%}
-<div id="sync-banks-control" class="flex items-center gap-2"{% if oob %} hx-swap-oob="true"{% endif %}>
-  {{ button("Sync banks", variant="outline", icon="banknote-arrow-down", disabled=busy, attrs={"hx-post": "/settings/providers/sync_banks", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
-  {{ link_button("Add provider", href="/settings/providers/new", variant="outline", icon="plus") }}
-</div>
-{%- endmacro %}
-
-{# The controls in the Vendors tab header: Fetch receipts and Add vendor. oob=true swaps it in place when a job starts or ends. #}
-{% macro sync_vendors_control(busy, oob=false) -%}
-<div id="sync-vendors-control" class="flex items-center gap-2"{% if oob %} hx-swap-oob="true"{% endif %}>
-  {{ button("Fetch receipts", variant="outline", icon="receipt-text", disabled=busy, attrs={"hx-post": "/settings/providers/sync_receipts", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
-  {{ link_button("Add vendor", href="/settings/vendors/new", variant="outline", icon="plus") }}
+  {{ button("Sync all", variant="primary", icon="rotate-ccw", disabled=busy, attrs={"hx-post": "/settings/sync/sync_all", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
 </div>
 {%- endmacro %}
 
 {# A provider card's Sync button: an icon, named on hover. #}
-{% macro sync_button(key, busy) -%}
-{{ button(variant="icon", size="sm", icon="rotate-ccw", aria_label="Sync", disabled=busy, class_="icon-tip", attrs={"data-tip": "Sync", "hx-post": "/settings/providers/" ~ key ~ "/sync", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
-{%- endmacro %}
-
-{# A vendor card's Fetch button: an icon, named on hover. #}
-{% macro sync_vendor_button(key, busy) -%}
-{{ button(variant="icon", size="sm", icon="rotate-ccw", aria_label="Fetch receipts", disabled=busy, class_="icon-tip", attrs={"data-tip": "Fetch receipts", "hx-post": "/settings/providers/vendor/" ~ key ~ "/sync", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
+{% macro sync_button(key, busy, name="") -%}
+{{ button(variant="icon", size="sm", icon="rotate-ccw", aria_label=("Sync " ~ name) | trim, disabled=busy, class_="icon-tip", attrs={"data-tip": "Sync", "hx-post": "/settings/sync/" ~ key ~ "/sync", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
 {%- endmacro %}
 
 {# The status region. It is empty until a sync has something to say: while a job runs, after it
    ends, or when the vault must be unlocked first. It polls its own state every two seconds while a
    job runs, and stops once the job has finished. shown names the question or notice the page
    already shows, so the poll can tell whether the slot must be sent again. #}
-{% macro sync_region(status, vault, notice="", unlock_scope=none, unlock_message="", unlocked=0) -%}
-{%- if status.idle and not notice and unlock_scope is none and not unlocked %}
+{% macro sync_region(status, notice="") -%}
+{%- if status.idle and not notice %}
 <section id="sync-status" aria-live="polite" class="hidden"></section>
 {%- else %}
-<section id="sync-status" aria-live="polite" aria-labelledby="sync-status-title" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs"{% if status.running %} hx-get="/settings/providers/sync/status?shown={{ status.shown_number }}{% if unlocked %}&amp;unlocked={{ unlocked }}{% endif %}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+<section id="sync-status" aria-live="polite" aria-labelledby="sync-status-title" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs"{% if status.running %} hx-get="/settings/sync/status?shown={{ status.shown_number }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   <div class="flex flex-wrap items-center justify-between gap-2">
     <h2 id="sync-status-title" class="text-base font-medium text-primary">Sync</h2>
     {%- if status.running %}
-    {{ button("Cancelling…" if status.cancelling else "Cancel sync", variant="outline", size="sm", icon="x", disabled=status.cancelling, attrs={"hx-post": "/settings/providers/sync/cancel", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
+    {{ button("Cancelling…" if status.cancelling else "Cancel sync", variant="outline", size="sm", icon="x", disabled=status.cancelling, attrs={"hx-post": "/settings/sync/cancel", "hx-target": "#sync-status", "hx-swap": "outerHTML"}) }}
     {%- endif %}
   </div>
-  {%- if unlocked %}
-  <p class="flex items-center gap-2 text-sm font-medium text-success">{{ icon("check", 16) }}Vault unlocked. Starting sync…</p>
-  {%- endif %}
-  <p class="text-sm text-primary">{{ status.headline }} <span class="text-secondary">Keep the bank's Chrome window open until sync finishes.</span></p>
-  {%- if unlock_scope is not none %}
-  {{ sync_unlock(unlock_scope, unlock_message) }}
-  {%- endif %}
+  <p class="text-sm text-primary">{{ status.headline }} <span class="text-secondary">Keep the Chrome window open until sync finishes.</span></p>
   {%- if notice %}
   {{ step_error(notice) }}
   {%- endif %}
@@ -120,10 +125,10 @@
   <ul class="flex flex-col gap-2 text-sm">
     {%- for line in status.lines %}
     <li class="flex flex-wrap items-baseline gap-x-2">
-      <span class="font-medium text-primary">{{ line.key }}</span>
+      <span class="font-medium text-primary">{{ line.name }}</span>
       <span class="{{ line.tone }}">{{ line.label }}</span>
       {%- if line.detail %}<span class="text-secondary">{{ line.detail }}</span>{% endif %}
-      {%- if line.link %}{{ button("Link accounts", variant="outline", size="sm", attrs={"hx-get": "/settings/providers/" ~ line.key ~ "/link", "hx-target": "#link-accounts", "hx-swap": "innerHTML"}) }}{% endif %}
+      {%- if line.link %}{{ button("Link accounts", variant="outline", size="sm", attrs={"hx-get": "/settings/sync/" ~ line.key ~ "/link", "hx-target": "#link-accounts", "hx-swap": "innerHTML"}) }}{% endif %}
     </li>
     {%- endfor %}
   </ul>
@@ -132,28 +137,12 @@
 {%- endif %}
 {%- endmacro %}
 
-{# The unlock form shown in place of a sync that needs the vault. The scope is "all" or a provider
-   key, so the sync starts once the vault is unlocked. #}
-{% macro sync_unlock(scope, message="") -%}
-{%- if demo_mode %}
-<p class="rounded-lg border border-divider p-4 text-sm text-secondary">Demo: bank sync is off.</p>
-{%- else %}
-<form class="flex flex-col gap-3 rounded-lg border border-divider p-4" hx-post="/settings/providers/sync/unlock" hx-target="#sync-status" hx-swap="outerHTML" hx-disabled-elt="find button[type='submit']">
-  <p class="text-sm text-primary">Vault locked. Enter your master password (not stored).</p>
-  <input type="hidden" name="scope" value="{{ scope }}">
-  {{ password_field(data_autofocus=true) }}
-  {{ step_error(message) }}
-  <div class="flex justify-end">{{ button("Unlock and sync", variant="secondary", type="submit", busy_text="Unlocking…") }}</div>
-</form>
-{%- endif %}
-{%- endmacro %}
-
 {# The question a connector asked, such as for an MFA code, or the notice it shows in its place, such
    as a QR to scan. A secret answer is a password field. The container is swapped out of band, so the
    region can be replaced without touching it. #}
 {% macro sync_question(question, notice=none, oob=false) -%}
 <div id="sync-question" class="empty:hidden"{% if oob %} hx-swap-oob="true"{% endif %}>{%- if question is none and notice is not none %}
-  <section class="flex flex-col items-center gap-3 rounded-xl bg-container p-5 text-center shadow-border-xs" aria-label="{{ notice.provider_key }} needs you">
+  <section class="flex flex-col items-center gap-3 rounded-xl bg-container p-5 text-center shadow-border-xs" aria-label="The sync needs you">
     <p class="text-sm font-medium text-primary">{{ notice.text }}</p>
     {%- if notice.image %}
     <img src="{{ notice.image }}" alt="QR code to scan with your phone" width="200" height="200" class="rounded-lg bg-white p-2" style="image-rendering: pixelated">
@@ -162,13 +151,13 @@
   </section>
   {%- endif %}
   {%- if question is not none and question.button %}
-  <form id="sync-answer-form" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" hx-post="/settings/providers/sync/answer" hx-target="#sync-status" hx-swap="outerHTML">
+  <form id="sync-answer-form" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" hx-post="/settings/sync/answer" hx-target="#sync-status" hx-swap="outerHTML">
     <input type="hidden" name="answer" value="confirmed">
     <p class="text-sm font-medium text-primary">{{ question.text }}</p>
     <div class="flex justify-end">{{ button(question.button, variant="primary", type="submit") }}</div>
   </form>
   {%- elif question is not none %}
-  <form id="sync-answer-form" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" hx-post="/settings/providers/sync/answer" hx-target="#sync-status" hx-swap="outerHTML"{% if question.digits %} data-controller="auto-submit" data-auto-submit-length-value="{{ question.digits }}" data-action="htmx:afterRequest->auto-submit#done"{% endif %}>
+  <form id="sync-answer-form" class="flex flex-col gap-3 rounded-xl bg-container p-5 shadow-border-xs" hx-post="/settings/sync/answer" hx-target="#sync-status" hx-swap="outerHTML"{% if question.digits %} data-controller="auto-submit" data-auto-submit-length-value="{{ question.digits }}" data-action="htmx:afterRequest->auto-submit#done"{% endif %}>
     <label class="form-field">
       <span class="form-field__label">{{ question.text }}</span>
       {%- if question.secret %}
@@ -177,7 +166,7 @@
       <input class="form-field__input" type="text" name="answer" inputmode="numeric" autocomplete="one-time-code" required autofocus{% if question.digits %} data-auto-submit-target="input" data-action="input->auto-submit#check"{% endif %}>
       {%- endif %}
     </label>
-    <p class="text-xs text-secondary">Sent to the bank, not stored.{% if question.digits %} Sends once all {{ question.digits }} digits are in.{% endif %}</p>
+    <p class="text-xs text-secondary">Sent to the site, not stored.{% if question.digits %} Sends once all {{ question.digits }} digits are in.{% endif %}</p>
     <div class="flex justify-end">{{ button("Send answer", variant="primary", type="submit") }}</div>
   </form>
   {%- endif -%}

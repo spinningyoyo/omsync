@@ -16,8 +16,8 @@ from urllib.parse import urlencode
 from sqlalchemy.orm import Session
 
 from omsync.core.money import format_cents
-from omsync.ingest.models import SyncStatus
 from omsync.ledger.filters import Condition, FilterSpec
+from omsync.ledger.models import SyncStatus
 from omsync.ledger.preferences import joint_share_on
 from omsync.ledger.spending import PRESETS, Period, has_transactions, ratio_bp
 from omsync.reports.attention import Attention, attention
@@ -68,7 +68,7 @@ SECTION_SCOPES: dict[str, str] = {
 EXPANDABLE_SECTIONS = frozenset({"cash_flow"})
 GROUPED_SECTIONS: frozenset[str] = frozenset()
 REVIEW_HREF = "/transactions/review"
-SYNC_HREF = "/settings/providers"
+SYNC_HREF = "/settings/sync"
 _SYNC_WORDS = {SyncStatus.failed: "failed", SyncStatus.needs_user_action: "needs your action"}
 # Colours for the categories the Outflows donut draws, in the order of its segments, and the same
 # colours in the Cash flow diagram. Other is grey, whatever its position.

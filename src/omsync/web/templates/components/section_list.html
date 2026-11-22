@@ -1,0 +1,31 @@
+{# A settings section and the list inside it, in the shape of the Tags list: the section's title
+   with a one-line subtitle and its action on the right, then a panel with the list's name and
+   count over its rows. ROW is the classes a row uses. Usage:
+     {% from "components/section_list.html" import section_header, list_panel, ROW %}
+     {% call section_header("names-title", "Names", "As banks print it.") %}{{ add_button }}{% endcall %}
+     {% call list_panel("Names", names|length) %}<li class="{{ ROW }}">…</li>{% endcall %} #}
+
+{% set ROW = "flex items-center justify-between gap-3 p-4 first:rounded-t-lg last:rounded-b-lg" %}
+
+{% macro section_header(title_id, title, subtitle) -%}
+<div class="flex flex-wrap items-center justify-between gap-3">
+  <div>
+    <h2 id="{{ title_id }}" class="text-base font-medium text-primary">{{ title }}</h2>
+    <p class="text-xs text-secondary">{{ subtitle }}</p>
+  </div>
+  {{ caller() }}
+</div>
+{%- endmacro %}
+
+{% macro list_panel(name, count) -%}
+<div class="space-y-1 rounded-xl bg-container-inset p-1">
+  <div class="flex items-center gap-1.5 px-4 py-2 text-xs font-medium uppercase text-secondary">
+    <p>{{ name }}</p>
+    <span class="text-subdued" aria-hidden="true">&middot;</span>
+    <p>{{ count }}</p>
+  </div>
+  <ul class="divide-y divide-subdued rounded-lg bg-container shadow-border-xs">
+    {{ caller() }}
+  </ul>
+</div>
+{%- endmacro %}

@@ -60,9 +60,12 @@ class WaitingItem:
 
 
 def has_receipt_files(settings: Settings, vendor_key: str) -> bool:
-    """True when the vendor's receipts folder holds at least one file the vendor can discover."""
+    """True when a provider folder of the vendor holds at least one file the vendor can discover."""
     vendor = get_vendor(vendor_key)
-    return bool(vendor.discover(settings.receipts_dir / vendor_key.upper()))
+    root = settings.receipts_dir / vendor.folder
+    if not root.is_dir():
+        return False
+    return any(vendor.discover(folder) for folder in root.iterdir() if folder.is_dir())
 
 
 def waiting_items(

@@ -20,6 +20,7 @@ DESCRIPTIONS: dict[str, str] = {
     "card_bill_payment": "Credit card bill payment",
     "card_credit_refund": "Credit card credit balance refunded",
     "transfer_same_amount": "Transfer with the same amount and date, no confirmation",
+    "transfer_opposite_amount": "Proposed transfer with opposite amounts across accounts",
     "return_same_account": "Return on the same account",
     "paypal_return_same_account": "PayPal return on the same account (within $0.01)",
     "p2p_round_trip": "Money sent and sent back",

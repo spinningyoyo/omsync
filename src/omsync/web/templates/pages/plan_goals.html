@@ -8,7 +8,7 @@
 <div class="flex flex-col gap-6" data-controller="page-dialogs" data-action="htmx:afterSettle->page-dialogs#settled close-dialogs@window->page-dialogs#closeDialogs">
   <div class="flex flex-wrap items-start justify-between gap-4">
     {{ page_header("Goals", "Savings and payoff targets.") }}
-    {{ button("New goal", variant="primary", icon="plus", attrs={"data-action": "page-dialogs#openDialog", "data-dialog-id": "goal-create-dialog"}) }}
+    {{ button("Add goal", variant="primary", icon="plus", attrs={"data-action": "page-dialogs#openDialog", "data-dialog-id": "goal-create-dialog"}) }}
   </div>
   {{ goal_list(page, create) }}
   <div id="toast-region" aria-live="polite"></div>

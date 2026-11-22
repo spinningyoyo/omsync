@@ -117,7 +117,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
     {%- if row.in_use %}
     {{ button(variant="icon", size="sm", icon="trash-2", aria_label="Delete " ~ row.name ~ " and move its uses", attrs={"id": "category-" ~ row.id ~ "-delete", "data-action": "categories#openDialog", "data-dialog-id": "move-category-dialog", "hx-get": "/categories/" ~ row.id ~ "/delete-and-move", "hx-target": "#move-category-body", "hx-swap": "innerHTML"}) }}
     {%- else %}
-    {{ button(variant="icon", size="sm", icon="trash-2", aria_label="Delete " ~ row.name, attrs={"hx-post": "/categories/" ~ row.id ~ "/delete?" ~ view.query, "hx-confirm": "Delete " ~ row.name ~ "? This cannot be undone from here.", "hx-target": "#category-list", "hx-swap": "outerHTML"}) }}
+    {{ button(variant="icon", size="sm", icon="trash-2", aria_label="Delete " ~ row.name, attrs={"hx-post": "/categories/" ~ row.id ~ "/delete?" ~ view.query, "hx-target": "#category-list", "hx-swap": "outerHTML"}) }}
     {%- endif %}
   </td>
 </tr>
@@ -166,7 +166,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   <div class="flex flex-col gap-1">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h2 id="category-list-title" class="font-medium text-primary">Categories</h2>
-      {{ button("New category", variant="primary", size="sm", icon="plus", attrs={"id": "new-category-open", "data-action": "categories#openDialog", "data-dialog-id": "new-category-dialog"}) }}
+      {{ button("Add category", variant="primary", size="sm", icon="plus", attrs={"id": "new-category-open", "data-action": "categories#openDialog", "data-dialog-id": "new-category-dialog"}) }}
     </div>
     <p class="text-xs text-secondary">Type decides how it counts: spending, income, or left out of reports.</p>
   </div>
@@ -275,7 +275,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   {%- if form.error %}
   <p class="text-sm text-destructive" role="alert">{{ form.error }}</p>
   {%- endif %}
-  {{ button("Create", variant="primary", size="sm", type="submit", full_width=true) }}
+  {{ button("Add category", variant="primary", size="sm", type="submit", full_width=true) }}
 </form>
 {%- endmacro %}
 
@@ -305,7 +305,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   {%- if error %}
   <p class="text-sm text-destructive" role="alert">{{ error }}</p>
   {%- endif %}
-  {{ button("Delete and move", variant="primary", size="sm", type="submit", disabled=not preview, full_width=true) }}
+  {{ button("Delete", variant="primary", size="sm", type="submit", disabled=not preview, full_width=true) }}
 </form>
 {%- endmacro %}
 
@@ -328,7 +328,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
   <td>
     <div class="flex items-center justify-end gap-1">
       {{ button(variant="icon", size="sm", icon="pencil", aria_label="Edit " ~ row.pattern, attrs={"hx-get": "/categories/keywords/" ~ row.id ~ "/edit", "hx-target": "closest tr", "hx-swap": "outerHTML"}) }}
-      {{ button(variant="icon", size="sm", icon="trash-2", aria_label="Delete " ~ row.pattern, attrs={"hx-post": "/categories/keywords/" ~ row.id ~ "/delete", "hx-confirm": "Delete this keyword?", "hx-target": "#toast-region", "hx-swap": "none"}) }}
+      {{ button(variant="icon", size="sm", icon="trash-2", aria_label="Delete " ~ row.pattern, attrs={"hx-post": "/categories/keywords/" ~ row.id ~ "/delete", "hx-target": "#toast-region", "hx-swap": "none"}) }}
     </div>
   </td>
 </tr>
@@ -521,7 +521,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
       {{ button(variant="icon", size="sm", icon="arrow-up", aria_label="Move up: " ~ row.sentence, disabled=first, attrs={"hx-post": "/categories/rules/" ~ row.id ~ "/move?direction=up", "hx-target": "#toast-region", "hx-swap": "none"}) }}
       {{ button(variant="icon", size="sm", icon="arrow-down", aria_label="Move down: " ~ row.sentence, disabled=last, attrs={"hx-post": "/categories/rules/" ~ row.id ~ "/move?direction=down", "hx-target": "#toast-region", "hx-swap": "none"}) }}
       {{ button(variant="icon", size="sm", icon="pencil", aria_label="Edit rule: " ~ row.sentence, attrs={"hx-get": "/categories/rules/" ~ row.id ~ "/edit", "hx-target": "closest tr", "hx-swap": "outerHTML"}) }}
-      {{ button(variant="icon", size="sm", icon="trash-2", aria_label="Delete rule: " ~ row.sentence, attrs={"hx-post": "/categories/rules/" ~ row.id ~ "/delete", "hx-confirm": "Delete this rule?", "hx-target": "#toast-region", "hx-swap": "none"}) }}
+      {{ button(variant="icon", size="sm", icon="trash-2", aria_label="Delete rule: " ~ row.sentence, attrs={"hx-post": "/categories/rules/" ~ row.id ~ "/delete", "hx-target": "#toast-region", "hx-swap": "none"}) }}
     </div>
   </td>
 </tr>
@@ -586,7 +586,7 @@ hx-post="/categories/{{ row.id }}?{{ view.query }}" hx-include="closest tr" hx-t
 {# The add form above the table. It is replaced by its reply, so a saved form comes back empty. Preview
    fills its own slot, and Add saves the rule. #}
 {% macro rule_add_form(form, choices, contacts, accounts) -%}
-<form id="rule-add" hx-post="/categories/rules" hx-target="#rule-add" hx-swap="outerHTML" class="flex flex-col gap-3 rounded-xl bg-container-inset p-4" aria-label="Add a rule">
+<form id="rule-add" hx-post="/categories/rules" hx-target="#rule-add" hx-swap="outerHTML" class="flex flex-col gap-3 rounded-xl bg-container-inset p-4" aria-label="Add rule">
   <input type="hidden" name="idempotency_key" value="{{ form.key }}">
   {{ rule_fields(form, choices, contacts, accounts) }}
   <div id="rule-add-preview" class="flex flex-col gap-2" aria-live="polite"></div>

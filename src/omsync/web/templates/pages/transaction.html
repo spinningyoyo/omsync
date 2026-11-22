@@ -8,6 +8,6 @@
   <div>{{ link_button("Back", href=back_href, variant="ghost", size="sm", icon="chevron-left") }}</div>
   {{ page_header("Transaction", "What this was and who it was with.") }}
   <div id="toast-region" aria-live="polite"></div>
-  {{ detail_region(detail) }}
+  {{ detail_region(detail, all_tags=all_tags|default([])) }}
 </div>
 {% endblock %}

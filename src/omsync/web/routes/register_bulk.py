@@ -11,6 +11,7 @@ from omsync.core.batches import BatchError, StalePreview, applied_batch_for_key
 from omsync.ledger.bulk import BulkPlan, apply_bulk, ids_matching, plan_bulk
 from omsync.ledger.filters import FilterError, FilterSpec
 from omsync.ledger.register import categories
+from omsync.ledger.tags import list_tags
 from omsync.web.deps import get_db
 from omsync.web.register_replies import RegisterError, fragment, reply
 from omsync.web.register_state import (
@@ -24,7 +25,7 @@ from omsync.web.register_state import (
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
 STALE = "This changed elsewhere, reload."
-VALUE_ACTIONS = ("set_category", "set_memo")
+VALUE_ACTIONS = ("set_category", "set_memo", "add_tag", "remove_tag")
 ACTIONS = (*VALUE_ACTIONS, "clear_category")
 
 
@@ -34,10 +35,16 @@ def bulk_form(
     db: DbSession,
     action: Annotated[str, Form(alias="bulk_action")],
 ) -> HTMLResponse:
-    """The first step of "Set category…" or "Set memo…": the value to set."""
+    """The first step of "Set category…", "Set memo…", or "Tag…": the value to set."""
     if action not in VALUE_ACTIONS:
         raise RegisterError("Choose what to change.", 400)
-    return fragment(request, "frag_bulk_value", action=action, categories=categories(db))
+    return fragment(
+        request,
+        "frag_bulk_value",
+        action=action,
+        categories=categories(db),
+        tags=list_tags(db),
+    )
 
 
 @router.post("/transactions/bulk/preview", response_class=HTMLResponse)
@@ -143,6 +150,18 @@ def _plan(
         plan = plan_bulk(db, txn_ids, set_category_id=category_id)
     elif action == "clear_category":
         plan = plan_bulk(db, txn_ids, clear_category=True)
+    elif action == "add_tag":
+        try:
+            tag_id = int(value)
+        except (ValueError, TypeError):
+            raise ValueError("Pick a tag from the list.") from None
+        plan = plan_bulk(db, txn_ids, add_tag_id=tag_id)
+    elif action == "remove_tag":
+        try:
+            tag_id = int(value)
+        except (ValueError, TypeError):
+            raise ValueError("Pick a tag from the list.") from None
+        plan = plan_bulk(db, txn_ids, remove_tag_id=tag_id)
     else:
         plan = plan_bulk(db, txn_ids, set_memo=value)
     return state, txn_ids, plan

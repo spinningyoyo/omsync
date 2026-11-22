@@ -10,6 +10,7 @@ from datetime import date, timedelta
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from register_support import revision_in
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 from web_support import sign_in
@@ -25,6 +26,7 @@ from omsync.ledger.models import (
     Split,
     Transaction,
 )
+from omsync.ledger.tags import get_tag_by_name
 
 
 def seed(app: FastAPI, *, rows: int = 0) -> dict[str, int]:
@@ -157,27 +159,30 @@ def test_a_save_that_races_another_change_is_a_409_and_writes_nothing(
     monkeypatch.setattr(register, "make_preview", race_after_preview)
 
     response = client_signed_in.post(
-        f"/transactions/{ids['maple']}/cell/memo",
-        data={"value": "Changed", "version": version_of(app, ids["maple"], "memo")},
+        f"/transactions/{ids['maple']}/cell/category",
+        data={
+            "value": str(ids["groceries"]),
+            "version": version_of(app, ids["maple"], "category"),
+        },
     )
 
     assert response.status_code == 409
     assert "This changed elsewhere, reload." in response.text
-    assert "<input" in response.text
-    assert stored(app, ids["maple"]).memo is None
+    assert "<select" in response.text
+    assert stored(app, ids["maple"]).category_id is None
     assert count_batches(app) == 0
 
 
 def test_the_same_key_twice_applies_once(client_signed_in: TestClient, app: FastAPI) -> None:
     ids = seed(app)
     data = {
-        "value": "Once",
+        "value": str(ids["groceries"]),
         "idempotency_key": "double-submit",
-        "version": version_of(app, ids["maple"], "memo"),
+        "version": version_of(app, ids["maple"], "category"),
     }
 
-    first = client_signed_in.post(f"/transactions/{ids['maple']}/cell/memo", data=data)
-    second = client_signed_in.post(f"/transactions/{ids['maple']}/cell/memo", data=data)
+    first = client_signed_in.post(f"/transactions/{ids['maple']}/cell/category", data=data)
+    second = client_signed_in.post(f"/transactions/{ids['maple']}/cell/category", data=data)
 
     assert first.status_code == second.status_code == 200
     assert batch_id_in(first.text) == batch_id_in(second.text)
@@ -210,3 +215,144 @@ def test_split_lines_must_add_up_to_the_transaction(
     assert "split-editor" in response.text
     assert split_count(app, ids["maple"]) == 0
     assert count_batches(app) == 0
+
+
+def test_tag_settings_and_register_tags(client_signed_in: TestClient, app: FastAPI) -> None:
+    ids = seed(app)
+    maple, city = ids["maple"], ids["city"]
+
+    def tags_of(txn_id: int) -> list[str]:
+        with Session(app.state.engine) as db:
+            return [t.name for t in register.get_transaction_row(db, txn_id).tags]
+
+    def named(name: str) -> int:
+        with Session(app.state.engine) as db:
+            tag = get_tag_by_name(db, name)
+            assert tag is not None
+            return tag.id
+
+    # Settings: create, a clash, rename, and the empty page first.
+    page = client_signed_in.get("/settings/tags")
+    assert page.status_code == 200
+    assert "No tags yet." in page.text
+    assert "description" not in client_signed_in.get("/settings/tags/new").text.lower()
+    created = client_signed_in.post("/settings/tags", data={"name": "Tax 2026", "color": "#e99537"})
+    assert created.status_code == 200
+    assert "Created tag Tax 2026" in created.text
+    assert client_signed_in.post("/settings/tags", data={"name": "tax 2026"}).status_code == 422
+    tax = named("Tax 2026")
+    client_signed_in.post(f"/settings/tags/{tax}", data={"name": "Tax", "color": "#4da568"})
+    tax = named("Tax")
+    assert "Tax" in client_signed_in.get("/settings/tags").text
+
+    # Register: the popover lists the tag, toggling puts it on and takes it off, and creating a tag
+    # from the popover is one batch that one undo reverses.
+    popover = client_signed_in.get(f"/transactions/{maple}/tags/popover")
+    assert "Tax" in popover.text and "New tag" in popover.text
+    on = client_signed_in.post(f"/transactions/{maple}/tags/toggle/{tax}")
+    assert on.status_code == 200 and tags_of(maple) == ["Tax"]
+    assert "Tags" in client_signed_in.get("/transactions").text
+    gone = client_signed_in.post(f"/transactions/{maple}/tags/toggle/9999")
+    assert "/batches/0/undo" not in gone.text and "no longer exists" in gone.text
+    made = client_signed_in.post(
+        f"/transactions/{maple}/tags/create", data={"name": "Freelance", "color": "#6471eb"}
+    )
+    assert tags_of(maple) == ["Freelance", "Tax"]
+    undo = client_signed_in.post(f"/batches/{batch_id_in(made.text)}/undo")
+    assert undo.status_code == 200
+    assert tags_of(maple) == ["Tax"]
+    assert get_tag_by_name_of(app, "Freelance") is None
+
+    # Memo has one save path, and a memo that is as it was shows no toast.
+    assert "Add a memo…" in client_signed_in.get(f"/transactions/{maple}/memo/popover").text
+    saved = client_signed_in.post(f"/transactions/{maple}/memo", data={"memo": "Audited"})
+    assert "/undo" in saved.text
+    same = client_signed_in.post(f"/transactions/{maple}/memo", data={"memo": "Audited"})
+    assert "/undo" not in same.text
+
+    # Detail page, with the shared picker.
+    detail = client_signed_in.get(f"/transactions/{maple}/detail")
+    assert detail.status_code == 200 and "Manage tags" in detail.text
+    off = client_signed_in.post(f"/transactions/{maple}/tags/toggle/{tax}?from_detail=1")
+    assert off.status_code == 200 and tags_of(maple) == []
+
+    # Split lines keep their tags when the split is saved again, and undo restores them.
+    split = {
+        "amount": ["-20.00", "-22.50"],
+        "category": [str(ids["groceries"]), str(ids["dining"])],
+        "memo": ["", ""],
+        "tag": ["-", str(tax), "-"],
+        "version": row_version_of(app, maple),
+    }
+    first = client_signed_in.post(f"/transactions/{maple}/split", data=split)
+    assert first.status_code == 200 and "Tax" in first.text
+    resplit = {
+        **split,
+        "amount": ["-10.00", "-32.50"],
+        "version": row_version_of(app, maple),
+    }
+    again = client_signed_in.post(f"/transactions/{maple}/split", data=resplit)
+    assert again.status_code == 200
+    assert split_tag_names(app, maple) == [["Tax"], []]
+    client_signed_in.post(f"/batches/{batch_id_in(again.text)}/undo")
+    assert split_tag_names(app, maple) == [["Tax"], []]
+    split_id = split_ids(app, maple)[1]
+    line = client_signed_in.post(f"/transactions/{maple}/splits/{split_id}/tags/toggle/{tax}")
+    assert line.status_code == 200
+    assert split_tag_names(app, maple) == [["Tax"], ["Tax"]]
+    new_line_tag = client_signed_in.post(
+        "/tags/split-picker", data={"picker": "x", "new_name": "Trip", "new_color_x": "#db5a54"}
+    )
+    assert new_line_tag.status_code == 200 and "Trip" in new_line_tag.text
+
+    # Bulk add, then reports limited to the tag.
+    bulk = {"bulk_action": "add_tag", "value": str(tax), "ids": [city]}
+    preview = client_signed_in.post("/transactions/bulk/preview", data=bulk)
+    assert preview.status_code == 200
+    applied = client_signed_in.post(
+        "/transactions/bulk/apply", data={**bulk, "revision": revision_in(preview.text)}
+    )
+    assert applied.status_code == 200 and tags_of(city) == ["Tax"]
+    everything = client_signed_in.get("/reports?period=custom&start=2026-09-01&end=2026-10-31")
+    limited = client_signed_in.get(
+        f"/reports?period=custom&start=2026-09-01&end=2026-10-31&tag={tax}"
+    )
+    assert limited.status_code == 200
+    assert "Bluebird Coffee" not in limited.text
+    assert limited.text != everything.text
+    assert 'name="tag"' in limited.text
+
+    # Delete: a used tag moves its transactions to another tag, skipping ones that have it.
+    other = named("Trip")
+    client_signed_in.post(f"/transactions/{city}/tags/toggle/{other}")
+    assert "Move its transactions to" in client_signed_in.get(f"/settings/tags/{tax}/delete").text
+    moved = client_signed_in.post(
+        f"/settings/tags/{tax}/delete", data={"replacement_tag_id": str(other)}
+    )
+    assert moved.status_code == 200
+    assert tags_of(city) == ["Trip"]
+    assert split_tag_names(app, maple) == [["Trip"], ["Trip"]]
+    assert client_signed_in.post(f"/batches/{batch_id_in(moved.text)}/undo").status_code == 200
+    assert named("Tax") == tax and tags_of(city) == ["Tax", "Trip"]
+
+    # Delete all, then undo.
+    wiped = client_signed_in.post("/settings/tags/delete-all")
+    assert wiped.status_code == 200
+    assert tags_of(city) == [] and split_tag_names(app, maple) == [[], []]
+    client_signed_in.post(f"/batches/{batch_id_in(wiped.text)}/undo")
+    assert tags_of(city) == ["Tax", "Trip"]
+
+
+def get_tag_by_name_of(app: FastAPI, name: str) -> object:
+    with Session(app.state.engine) as db:
+        return get_tag_by_name(db, name)
+
+
+def split_ids(app: FastAPI, txn_id: int) -> list[int]:
+    with Session(app.state.engine) as db:
+        return [s.id for s in register.get_transaction_row(db, txn_id).splits]
+
+
+def split_tag_names(app: FastAPI, txn_id: int) -> list[list[str]]:
+    with Session(app.state.engine) as db:
+        return [[t.name for t in s.tags] for s in register.get_transaction_row(db, txn_id).splits]

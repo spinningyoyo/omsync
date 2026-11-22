@@ -28,6 +28,8 @@ import sceneSlide from "./controllers/scene_slide_controller.js";
 import selection from "./controllers/selection_controller.js";
 import spendingChart from "./controllers/spending_chart_controller.js";
 import tabs from "./controllers/tabs_controller.js";
+import tagPicker from "./controllers/tag_picker_controller.js";
+import tags from "./controllers/tags_controller.js";
 import theme from "./controllers/theme_controller.js";
 import toast from "./controllers/toast_controller.js";
 
@@ -72,6 +74,8 @@ application.register("scene", scene);
 application.register("scene-slide", sceneSlide);
 application.register("selection", selection);
 application.register("tabs", tabs);
+application.register("tag-picker", tagPicker);
+application.register("tags", tags);
 application.register("theme", theme);
 application.register("toast", toast);
 

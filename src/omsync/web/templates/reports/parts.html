@@ -9,6 +9,7 @@
 {% from "components/button.html" import button with context %}
 {% from "components/dialog.html" import dialog_panel with context %}
 {% from "components/menu.html" import menu_item with context %}
+{% from "components/popover.html" import popover with context %}
 {% from "components/table.html" import table %}
 {% from "components/view_controls.html" import page_actions, custom_range_form with context %}
 {% from "layouts/shell_parts.html" import empty_state %}
@@ -43,6 +44,33 @@
   </form>
   {%- endcall %}
 </div>
+{%- endmacro %}
+
+{# Limits the report to lines that carry any of the ticked tags. The form is a plain GET, so the
+   choice is in the address. It is not shown until a tag exists. #}
+{% macro tag_filter(view) -%}
+{%- if view.tag_options %}
+{%- set ticked = view.tag_options|selectattr("selected")|map(attribute="name")|list %}
+{%- call popover("tag-filter", "Tags", icon_name="tag", trigger_text=(ticked|join(", ") if ticked else "All tags"), panel_class="w-64 p-3") %}
+<form method="get" action="/reports" class="flex flex-col gap-3">
+  <input type="hidden" name="period" value="{{ view.selection.key }}">
+  {%- if view.selection.key == "custom" %}
+  <input type="hidden" name="start" value="{{ view.selection.start }}">
+  <input type="hidden" name="end" value="{{ view.selection.end }}">
+  {%- endif %}
+  <div class="flex max-h-48 flex-col gap-0.5 overflow-y-auto" role="group" aria-label="Tags">
+    {%- for option in view.tag_options %}
+    <label class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-primary hover:bg-container-hover">
+      <input type="checkbox" name="tag" value="{{ option.id }}"{% if option.selected %} checked{% endif %}>
+      <span class="size-2.5 shrink-0 rounded-full" style="background-color: {{ option.color }};"></span>
+      <span class="truncate">{{ option.name }}</span>
+    </label>
+    {%- endfor %}
+  </div>
+  {{ button("Show", variant="primary", size="sm", type="submit") }}
+</form>
+{%- endcall %}
+{%- endif %}
 {%- endmacro %}
 
 {# Under the header: the custom range form when Custom is chosen, and a period error. #}

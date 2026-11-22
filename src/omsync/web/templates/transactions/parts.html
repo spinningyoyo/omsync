@@ -7,16 +7,16 @@
    Each block in fragments.html imports the macros it uses, because a block renders without this
    file's top-level code. #}
 {% from "components/button.html" import button %}
+{% from "components/pill.html" import tag_pill with context %}
+{% from "components/tag_picker.html" import split_tag_picker with context %}
 {% from "components/segmented_control.html" import segmented_control %}
 {% from "components/brand.html" import mascot %}
 {% from "components/menu.html" import menu, menu_item with context %}
 {% from "components/toast.html" import toast as base_toast, toast_region as base_toast_region with context %}
 
-{# The text a memo cell shows, or a split's category cell, which shows "Split" because its lines
-   hold the categories. #}
+{# The text a split's category cell shows: "Split", because its lines hold the categories. #}
 {% macro cell_value(row, field_name) -%}
-{%- if field_name == "memo" -%}{{ row.memo or "" }}
-{%- elif row.is_split -%}Split
+{%- if row.is_split -%}Split
 {%- else -%}{{ row.category or "" }}
 {%- endif -%}
 {%- endmacro %}
@@ -37,8 +37,7 @@
 {%- endfor %}
 {%- endmacro %}
 
-{# A category or memo cell. Memo is an input and category is a select, so each takes its edit
-   without a mode switch. A change saves it, and the controller sends the field's value (a
+{# A category cell. It is a select, so it takes its edit without a mode switch. A change saves it, and the controller sends the field's value (a
    category's id) with the cell's key and version. The key makes a double submit apply once. The
    version is the field's token from when the cell was rendered. The server refuses a save made from
    an older one, and says so with a link that reloads the page, since only a reload brings the cell
@@ -100,7 +99,7 @@
     <th scope="col">Account</th>
     {%- endif %}
     <th scope="col" class="payee">Payee</th>
-    <th scope="col">Memo</th>
+    <th scope="col" class="tags">Tags</th>
     <th scope="col">Category</th>
     <th scope="col" class="num">Amount</th>
     <th scope="col"><span class="sr-only">Actions</span></th>
@@ -108,10 +107,10 @@
 </thead>
 {%- endmacro %}
 
-{# One transaction: its row, with its actions menu (which links to Counterparty and Mark as recurring) and split button, its
+{# One transaction: its row, with its actions menu (which links to Counterparty, Edit memo, and Mark as recurring) and split button, its
    split lines, and the split editor when it is open. The tbody id is what out-of-band swaps and the
    controller look up. #}
-{% macro txn_group(row, show_account, categories, focus_field=none, oob=false, editor=none, key="", clear_key="", version="") -%}
+{% macro txn_group(row, show_account, categories, focus_field=none, oob=false, editor=none, key="", clear_key="", version="", all_tags=()) -%}
 <tbody id="txn-{{ row.id }}" class="txn-group" data-txn-group data-txn-id="{{ row.id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
 <tr class="txn-row">
   {{ select_box(row) }}
@@ -119,17 +118,43 @@
   {%- if show_account %}
   <td class="account">{{ row.account_name }}{% if row.account_digits %} <span class="muted">{{ row.account_digits }}</span>{% endif %}</td>
   {%- endif %}
-  <td class="payee" data-field="payee" data-txn-id="{{ row.id }}"><span class="payee-text" title="{{ row.payee }}">{{ row.payee }}</span></td>
-  {{ cell_input(row, "memo", categories, autofocus=focus_field == "memo") }}
+  <td class="payee" data-field="payee" data-txn-id="{{ row.id }}">
+    <span class="payee-text" title="{{ row.payee }}">{{ row.payee }}</span>
+  </td>
+  <td class="tags" data-field="tags" data-txn-id="{{ row.id }}">
+    <div class="relative inline-flex items-center w-full">
+      <button type="button"
+              class="group/tag inline-flex items-center gap-1.5 min-h-[1.5rem] max-w-full rounded-md px-1 py-0.5 text-left hover:bg-container-inset focus-ring cursor-pointer"
+              hx-get="/transactions/{{ row.id }}/tags/popover"
+              hx-target="#tag-popover-{{ row.id }}"
+              hx-swap="innerHTML"
+              aria-label="Tags for {{ row.payee }}"
+              title="Edit tags">
+        {%- if row.tags %}
+        <span class="flex items-center gap-1.5 overflow-hidden whitespace-nowrap">
+          {%- for tag in row.tags %}
+          {{ tag_pill(tag.name, tag.color, size="xs") }}
+          {%- endfor %}
+        </span>
+        {%- else %}
+        <span class="text-xs text-secondary opacity-0 group-hover/tag:opacity-100 transition-opacity">+ Tag</span>
+        {%- endif %}
+      </button>
+      <div id="tag-popover-{{ row.id }}" class="absolute left-0 top-full mt-1 z-30"></div>
+    </div>
+  </td>
   {{ cell_input(row, "category", categories, autofocus=focus_field == "category") }}
   <td class="amount {{ 'outflow' if row.amount_cents < 0 else 'inflow' }}">{{ row.amount_cents|money }}</td>
   <td class="actions">
     {%- call menu("txn-menu-" ~ row.id, "Actions for " ~ row.payee) %}
+    {{ menu_item("Edit memo…", icon_name="pencil", attrs={"hx-get": "/transactions/" ~ row.id ~ "/memo/popover", "hx-target": "#memo-popover-" ~ row.id, "hx-swap": "innerHTML"}) }}
     {{ menu_item("Counterparty", icon_name="users", href="/transactions/" ~ row.id ~ "/detail") }}
     {{ menu_item("Mark as recurring", icon_name="repeat", href="/recurring?view=all&add_from=" ~ row.id) }}
     {%- endcall %}
     {{ link_menu(row) }}
-    <button type="button" class="split-btn" data-action="click->register#openSplitFromButton" data-txn-id="{{ row.id }}" aria-label="Split {{ row.payee }}" title="Split"><span class="split-glyph" aria-hidden="true"></span></button></td>
+    <button type="button" class="split-btn" data-action="click->register#openSplitFromButton" data-txn-id="{{ row.id }}" aria-label="Split {{ row.payee }}" title="Split"><span class="split-glyph" aria-hidden="true"></span></button>
+    <div id="memo-popover-{{ row.id }}" class="relative text-left"></div>
+  </td>
 </tr>
 {%- for line in row.splits %}
 <tr class="split-row">
@@ -139,20 +164,28 @@
   <td></td>
   {%- endif %}
   <td class="split-label">Split line {{ loop.index }}</td>
-  <td class="split-memo">{{ line.memo or "" }}</td>
+  <td class="split-tags">
+    {%- if line.tags %}
+    <span class="flex items-center gap-1.5 overflow-hidden whitespace-nowrap">
+      {%- for tag in line.tags %}
+      {{ tag_pill(tag.name, tag.color, size="xs") }}
+      {%- endfor %}
+    </span>
+    {%- endif %}
+  </td>
   <td class="split-category">{{ line.category or "Uncategorized" }}</td>
   <td class="amount {{ 'outflow' if line.amount_cents < 0 else 'inflow' }}">{{ line.amount_cents|money }}</td>
   <td></td>
 </tr>
 {%- endfor %}
 {%- if editor %}
-{{ split_editor(row, editor, categories, key, clear_key, show_account, version) }}
+{{ split_editor(row, editor, categories, key, clear_key, show_account, version, all_tags) }}
 {%- endif %}
 </tbody>
 {%- endmacro %}
 
 {# The split editor under a transaction. Save is enabled only when the amount left is $0.00. #}
-{% macro split_editor(row, editor, categories, key, clear_key, show_account, version="") -%}
+{% macro split_editor(row, editor, categories, key, clear_key, show_account, version="", all_tags=()) -%}
 <tr class="split-editor" data-split-editor data-txn-id="{{ row.id }}">
   <td colspan="{{ column_count(show_account) }}">
     <form data-register-form="split" class="split-form">
@@ -161,7 +194,7 @@
       <p class="split-hint">Splits must add up to {{ row.amount_cents|money }}.</p>
       <div class="split-lines" data-split-lines>
         {%- for line in editor.lines %}
-        {{ split_line(line, categories, loop.index0 == editor.focus_index) }}
+        {{ split_line(line, categories, all_tags, loop.index0 == editor.focus_index) }}
         {%- endfor %}
       </div>
       {%- if editor.summary %}
@@ -178,21 +211,22 @@
     <form data-register-form="clear" class="split-remove">
       <input type="hidden" name="idempotency_key" value="{{ clear_key }}">
       <input type="hidden" name="version" value="{{ version }}">
-      {{ button("Remove split", variant="outline", size="sm", type="submit") }}
+      {{ button("Remove", variant="outline", size="sm", type="submit") }}
     </form>
     {%- endif %}
   </td>
 </tr>
 {%- endmacro %}
 
-{# One line of the split editor: an amount, a category, and a memo. #}
-{% macro split_line(line, categories, autofocus=false) -%}
+{# One line of the split editor: an amount, a category, a memo, and tags. #}
+{% macro split_line(line, categories, all_tags=(), autofocus=false) -%}
 <div class="split-line">
   <input name="amount" value="{{ line.amount }}" placeholder="0.00" inputmode="decimal" autocomplete="off" aria-label="Line amount"{% if autofocus %} data-autofocus{% endif %}{% if line.error %} aria-invalid="true"{% endif %}>
   <select name="category" autocomplete="off" aria-label="Line category">
     {{ category_options(categories, line.category_id, "Category") }}
   </select>
   <input name="memo" value="{{ line.memo }}" placeholder="Memo" autocomplete="off" aria-label="Line memo">
+  {{ split_tag_picker(all_tags, line.tag_ids, new_key()) }}
   {%- if line.error %}
   <span class="error" role="alert">{{ line.error }}</span>
   {%- endif %}

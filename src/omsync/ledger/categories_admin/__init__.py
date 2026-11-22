@@ -46,7 +46,6 @@ from omsync.ledger.categories_admin.reads import (
 from omsync.ledger.categories_admin.rows import (
     IN_USE,
     NOTHING_CHANGED,
-    RENTAL_NAME_USE,
     SAVED_FILTER_USE,
     STALE,
     CategoryRow,
@@ -71,7 +70,6 @@ __all__ = [
     "CATEGORY_SORTS",
     "IN_USE",
     "NOTHING_CHANGED",
-    "RENTAL_NAME_USE",
     "SAVED_FILTER_USE",
     "STALE",
     "CategoryRow",

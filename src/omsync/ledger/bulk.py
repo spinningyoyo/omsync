@@ -29,6 +29,7 @@ from omsync.core.batches import (
 from omsync.ledger.categories import Category
 from omsync.ledger.filters import FilterSpec
 from omsync.ledger.filters import apply as apply_filter
+from omsync.ledger.tags import Tag, TransactionTag, link_changes
 from omsync.ledger.transactions import CategoryOrigin, Split, Transaction
 
 
@@ -56,23 +57,33 @@ def plan_bulk(
     set_category_id: int | None = None,
     clear_category: bool = False,
     set_memo: str | None = None,
+    add_tag_id: int | None = None,
+    remove_tag_id: int | None = None,
 ) -> BulkPlan:
     """Plan one change to many transactions. Writes nothing.
 
-    Choose exactly one change: set_category_id, clear_category, or set_memo. A blank set_memo
-    clears the memo. Raises ValueError for a choice that is missing or doubled, or for a category
-    that does not exist or is hidden. Raises LookupError for a transaction that does not exist.
+    Choose exactly one change: set_category_id, clear_category, set_memo, add_tag_id, or
+    remove_tag_id. A blank set_memo clears the memo. Raises ValueError for a choice that is
+    missing or doubled, or for an entity that does not exist or is hidden. Raises LookupError
+    for a transaction that does not exist.
     """
     ids = sorted(set(txn_ids))
     if not ids:
         raise ValueError("Select at least one transaction.")
-    if clear_category and set_category_id is not None:
-        raise ValueError("Set a category or clear it, not both.")
-    category_asked = clear_category or set_category_id is not None
-    if category_asked and set_memo is not None:
-        raise ValueError("Change the category or the memo, not both.")
-    if not category_asked and set_memo is None:
-        raise ValueError("Choose a category change or a memo change.")
+
+    actions_count = sum(
+        1
+        for a in (
+            set_category_id is not None,
+            clear_category,
+            set_memo is not None,
+            add_tag_id is not None,
+            remove_tag_id is not None,
+        )
+        if a
+    )
+    if actions_count != 1:
+        raise ValueError("Choose exactly one bulk action.")
 
     rows = {
         row.id: row
@@ -89,9 +100,13 @@ def plan_bulk(
     if missing:
         raise LookupError(f"There is no transaction {missing[0]}.")
 
-    if category_asked:
+    if clear_category or set_category_id is not None:
         return _plan_category(session, ids, rows, set_category_id)
-    return _plan_memo(session, ids, rows, set_memo)
+    if set_memo is not None:
+        return _plan_memo(session, ids, rows, set_memo)
+    if add_tag_id is not None:
+        return _plan_tag(session, ids, add_tag_id, add=True)
+    return _plan_tag(session, ids, remove_tag_id, add=False)  # type: ignore[arg-type]
 
 
 def _plan_category(
@@ -162,6 +177,29 @@ def _plan_memo(session: Session, ids: list[int], rows: dict[int, Any], memo: str
         field="memo",
         skipped=0,
         unchanged=unchanged,
+    )
+
+
+def _plan_tag(session: Session, ids: list[int], tag_id: int, *, add: bool) -> BulkPlan:
+    tag = session.get(Tag, tag_id)
+    if tag is None:
+        raise ValueError(f"No tag found with ID {tag_id}")
+
+    pairs = [(txn_id, tag_id) for txn_id in dict.fromkeys(ids)]
+    if add:
+        changes = link_changes(session, TransactionTag, add=pairs)
+        label = f"Add tag '{tag.name}' to {_count(len(changes))}"
+    else:
+        changes = link_changes(session, TransactionTag, remove=pairs)
+        label = f"Remove tag '{tag.name}' from {_count(len(changes))}"
+    return _plan(
+        session,
+        kind="bulk.tag",
+        label=label,
+        changes=changes,
+        field="tags",
+        skipped=0,
+        unchanged=len(pairs) - len(changes),
     )
 
 

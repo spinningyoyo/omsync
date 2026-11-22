@@ -22,6 +22,7 @@ from omsync.core.batches import (
 from omsync.ledger.categorize import load_keywords, match_receipt_item
 from omsync.ledger.models import CategoryOrigin, Split, Transaction
 from omsync.ledger.receipt_vendors import code_categories
+from omsync.ledger.tags import split_tag_deletes
 from omsync.receipts.allocate import (
     AllocationError,
     AllocationLine,
@@ -161,7 +162,8 @@ def _plan_one(
         )
 
     lines = result.lines
-    changes: list[Change] = [
+    changes: list[Change] = split_tag_deletes(session, [split.id for split in splits])
+    changes += [
         Change("split", str(split.id), snapshot(session, "split", split.id), None)
         for split in splits
     ]

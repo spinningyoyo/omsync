@@ -1,0 +1,30 @@
+{# Popover for quick inline memo editing on a transaction row. #}
+{% from "components/button.html" import button %}
+{% from "components/icon.html" import icon with context %}
+
+<div class="absolute right-0 top-full mt-1 z-30 flex w-72 flex-col gap-2.5 rounded-xl bg-container p-3 shadow-border-md border border-subdued" data-memo-popover>
+  <div class="flex items-center justify-between border-b border-subdued pb-2">
+    <span class="text-xs font-semibold uppercase tracking-wider text-secondary">Memo</span>
+    <button type="button" class="inline-flex items-center justify-center p-1 rounded-md text-secondary hover:text-primary hover:bg-container-inset focus-ring cursor-pointer" onclick="this.closest('[data-memo-popover]').remove()" aria-label="Close">
+      {{ icon("x", 14) }}
+    </button>
+  </div>
+  <form class="flex flex-col gap-2.5"
+        hx-post="/transactions/{{ row.id }}/memo"
+        hx-target="#txn-{{ row.id }}"
+        hx-swap="outerHTML">
+    <label class="sr-only" for="memo-input-{{ row.id }}">Memo</label>
+    <input id="memo-input-{{ row.id }}"
+           type="text"
+           name="memo"
+           value="{{ row.memo or '' }}"
+           placeholder="Add a memo…"
+           autocomplete="off"
+           class="form-field__input h-8 w-full rounded-md bg-container px-2.5 text-xs text-primary placeholder:text-secondary shadow-border-xs focus-ring"
+           autofocus>
+    <div class="flex items-center justify-end gap-2">
+      <button type="button" class="text-xs text-secondary hover:text-primary px-2 py-1" onclick="this.closest('[data-memo-popover]').remove()">Cancel</button>
+      {{ button("Save", variant="primary", size="sm", type="submit") }}
+    </div>
+  </form>
+</div>

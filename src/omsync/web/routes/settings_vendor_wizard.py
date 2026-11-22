@@ -1,9 +1,9 @@
-"""The Add vendor wizard for receipt synchronization.
+"""The wizard that adds a receipt provider.
 
-Guides setting up a merchant/vendor connector profile and its vault login.
+Guides setting up a receipt provider: its store, its name, and, for a store that uses one, its
+vault login. The provider's key is made from its name.
 """
 
-import re
 from dataclasses import dataclass
 from typing import Annotated
 from uuid import uuid4
@@ -13,125 +13,80 @@ from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
 from omsync.core.vault import LoginSummary, Vault, is_locked
+from omsync.ingest.connectors.config import ProviderError
 from omsync.receipts.connectors.registry import registered_connectors
-from omsync.receipts.profiles import VendorProfile, get_vendor_profile, save_vendor_profile
+from omsync.receipts.profiles import VendorProfile, create_vendor_profile, new_profile_key
 from omsync.web.deps import get_db
 from omsync.web.fragments import render_block
 from omsync.web.routes.shell import shell_context
 from omsync.web.settings_views import SETTINGS_NAV
-from omsync.web.vault_logins import (
-    VaultActionError,
-    search_logins,
-    unlock_vault,
-    vault_status_view,
-)
+from omsync.web.vault_logins import VaultActionError, search_logins
 
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
 PAGE = "pages/settings_vendor_wizard.html"
 FRAGMENTS = "settings/vendor_wizard_fragments.html"
 PROVIDERS_PATH = "/settings/sync"
-WIZARD = "/settings/vendors/new"
+WIZARD = "/settings/sync/new/receipt"
 MAX_FORM_VALUE = 200
 
 
 @dataclass(frozen=True)
 class VendorWizardState:
-    vendor: str = ""
+    connector: str = ""
     name: str = ""
-    vendor_key: str = ""
 
 
 @router.get(WIZARD, response_class=HTMLResponse)
 def vendor_wizard_page(request: Request, db: DbSession) -> HTMLResponse:
-    context = shell_context(request, db, active="", title="Add vendor")
-    vendors = registered_connectors()
-    default_vendor = vendors[0].key if vendors else ""
-    default_name = vendors[0].label if vendors else ""
+    context = shell_context(request, db, active="", title="Add receipts")
+    connectors = registered_connectors()
     state = VendorWizardState(
-        vendor=default_vendor,
-        name=default_name,
-        vendor_key=default_vendor,
+        connector=connectors[0].key if connectors else "",
+        name=connectors[0].label if connectors else "",
     )
     context.update(
         nav=SETTINGS_NAV,
         active_href=PROVIDERS_PATH,
-        page_title="Add vendor",
+        page_title="Add receipts",
         state=state,
-        vendors=vendors,
+        connectors=connectors,
         form_key=uuid4().hex,
         message="",
     )
     return request.app.state.templates.TemplateResponse(request, PAGE, context)
 
 
-@router.post(f"{WIZARD}/setup", response_class=HTMLResponse)
-def choose_vendor(
+@router.post(f"{WIZARD}/connector", response_class=HTMLResponse)
+def choose_connector(
     request: Request,
     db: DbSession,
-    vendor: Annotated[str, Form()] = "",
+    connector: Annotated[str, Form()] = "",
     name: Annotated[str, Form()] = "",
-    vendor_key: Annotated[str, Form()] = "",
     idempotency_key: Annotated[str, Form()] = "",
-) -> HTMLResponse:
-    """Validate vendor selection and profile details, then advance to vault login."""
+) -> Response:
+    """Validate the store and name. A store that signs in with a vault login goes on to pick the
+    login. Any other is added now."""
     key_value = idempotency_key or uuid4().hex
-    clean_vendor = vendor.strip().lower()[:MAX_FORM_VALUE]
-    clean_name = name.strip()[:MAX_FORM_VALUE]
-    clean_key = vendor_key.strip().lower()[:MAX_FORM_VALUE]
-    state = VendorWizardState(
-        vendor=clean_vendor,
-        name=clean_name,
-        vendor_key=clean_key,
-    )
-    vendors = registered_connectors()
-    known_keys = {c.key for c in vendors}
-    if clean_vendor not in known_keys:
+    state = _state(connector, name)
+    connectors = registered_connectors()
+    chosen = next((c for c in connectors if c.key == state.connector), None)
+    if chosen is None:
         return _step(
             request,
             "frag_step_setup",
             422,
-            **_setup_context(state, vendors, key_value, "Choose a vendor from the list."),
+            **_setup_context(state, connectors, key_value, "Choose a store from the list."),
         )
-    if not clean_name:
+    if not state.name:
         return _step(
             request,
             "frag_step_setup",
             422,
-            **_setup_context(state, vendors, key_value, "Enter a display name."),
+            **_setup_context(state, connectors, key_value, "Enter a display name."),
         )
-    if not clean_key:
-        return _step(
-            request,
-            "frag_step_setup",
-            422,
-            **_setup_context(state, vendors, key_value, "Enter a vendor key."),
-        )
-    if not re.fullmatch(r"[a-z0-9][a-z0-9_\-]*", clean_key):
-        return _step(
-            request,
-            "frag_step_setup",
-            422,
-            **_setup_context(
-                state,
-                vendors,
-                key_value,
-                "Vendor key must use lowercase letters, numbers, hyphens or underscores.",
-            ),
-        )
-    if get_vendor_profile(db, clean_key) is not None:
-        return _step(
-            request,
-            "frag_step_setup",
-            422,
-            **_setup_context(
-                state,
-                vendors,
-                key_value,
-                f"A vendor profile with key {clean_key!r} already exists.",
-            ),
-        )
-
+    if not chosen.uses_vault:
+        return _create(request, db, state, vault_item_id=None, idempotency_key=key_value)
     vault = request.app.state.vault
     locked = is_locked(vault)
     logins, query = _initial_vault_logins(request, vault, state, locked=locked)
@@ -151,50 +106,35 @@ def choose_vendor(
 @router.post(f"{WIZARD}/back", response_class=HTMLResponse)
 def back_to_setup(
     request: Request,
-    vendor: Annotated[str, Form()] = "",
+    connector: Annotated[str, Form()] = "",
     name: Annotated[str, Form()] = "",
-    vendor_key: Annotated[str, Form()] = "",
     idempotency_key: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """Return to step 1 to edit vendor setup details."""
-    vendors = registered_connectors()
-    state = VendorWizardState(
-        vendor=vendor.strip().lower()[:MAX_FORM_VALUE],
-        name=name.strip()[:MAX_FORM_VALUE],
-        vendor_key=vendor_key.strip().lower()[:MAX_FORM_VALUE],
-    )
+    """Return to step 1 to edit the store and name."""
     return _step(
         request,
         "frag_step_setup",
-        **_setup_context(state, vendors, idempotency_key or uuid4().hex),
+        **_setup_context(
+            _state(connector, name), registered_connectors(), idempotency_key or uuid4().hex
+        ),
     )
 
 
 @router.get(f"{WIZARD}/logins", response_class=HTMLResponse)
 def search_vault(
     request: Request,
-    vendor: str = "",
+    connector: str = "",
     name: str = "",
-    vendor_key: str = "",
     q: str = "",
 ) -> HTMLResponse:
-    """The debounced login results for vault search."""
+    """The debounced login results for vault search. A locked vault shows the unlock form in their
+    place."""
     vault = request.app.state.vault
-    state = VendorWizardState(
-        vendor=vendor[:MAX_FORM_VALUE],
-        name=name[:MAX_FORM_VALUE],
-        vendor_key=vendor_key[:MAX_FORM_VALUE],
-    )
+    state = _state(connector, name)
     query = q.strip()
     if is_locked(vault):
         return _step(
-            request,
-            "frag_vault_results",
-            state=state,
-            locked=True,
-            logins=None,
-            unlock_message="",
-            message="",
+            request, "frag_vault_results", state=state, locked=True, logins=None, message=""
         )
     if not query:
         logins, _ = _initial_vault_logins(request, vault, state, locked=False)
@@ -204,7 +144,6 @@ def search_vault(
             state=state,
             locked=False,
             logins=logins,
-            unlock_message="",
             message="",
         )
     try:
@@ -216,7 +155,6 @@ def search_vault(
             state=state,
             locked=False,
             logins=None,
-            unlock_message="",
             message=exc.message,
         )
     return _step(
@@ -225,53 +163,7 @@ def search_vault(
         state=state,
         locked=False,
         logins=results,
-        unlock_message="",
         message="" if results else "No logins found.",
-    )
-
-
-@router.post(f"{WIZARD}/unlock", response_class=HTMLResponse)
-def unlock(
-    request: Request,
-    password: Annotated[str, Form()] = "",
-    vendor: Annotated[str, Form()] = "",
-    name: Annotated[str, Form()] = "",
-    vendor_key: Annotated[str, Form()] = "",
-) -> HTMLResponse:
-    """Unlock the vault inline and show search results."""
-    vault = request.app.state.vault
-    limiter = request.app.state.login_limiter
-    state = VendorWizardState(
-        vendor=vendor[:MAX_FORM_VALUE],
-        name=name[:MAX_FORM_VALUE],
-        vendor_key=vendor_key[:MAX_FORM_VALUE],
-    )
-    try:
-        unlock_vault(vault, limiter, password)
-    except VaultActionError as exc:
-        return _step(
-            request,
-            "frag_step_login",
-            422,
-            **_login_context(
-                state,
-                locked=True,
-                form_key=uuid4().hex,
-                unlock_message=exc.message,
-            ),
-        )
-    logins, query = _initial_vault_logins(request, vault, state, locked=False)
-    return _step(
-        request,
-        "frag_step_login",
-        **_login_context(
-            state,
-            locked=False,
-            form_key=uuid4().hex,
-            logins=logins,
-            query=query,
-        ),
-        vault_status=vault_status_view(vault),
     )
 
 
@@ -279,47 +171,75 @@ def unlock(
 def save_vendor(
     request: Request,
     db: DbSession,
-    vendor: Annotated[str, Form()] = "",
+    connector: Annotated[str, Form()] = "",
     name: Annotated[str, Form()] = "",
-    vendor_key: Annotated[str, Form()] = "",
     vault_item_id: Annotated[str, Form()] = "",
     idempotency_key: Annotated[str, Form()] = "",
 ) -> Response:
-    """Save the vendor profile and redirect to the Vendors tab on Data sync."""
-    clean_vendor = vendor.strip().lower()[:MAX_FORM_VALUE]
-    clean_name = name.strip()[:MAX_FORM_VALUE]
-    clean_key = vendor_key.strip().lower()[:MAX_FORM_VALUE]
-    state = VendorWizardState(
-        vendor=clean_vendor,
-        name=clean_name,
-        vendor_key=clean_key,
+    """Save the receipt provider with its vault login and redirect to the Receipts tab."""
+    return _create(
+        request,
+        db,
+        _state(connector, name),
+        vault_item_id=vault_item_id or None,
+        idempotency_key=idempotency_key or uuid4().hex,
     )
-    if get_vendor_profile(db, clean_key) is not None:
-        vault = request.app.state.vault
-        locked = is_locked(vault)
-        logins, query = _initial_vault_logins(request, vault, state, locked=locked)
+
+
+def _state(connector: str, name: str) -> VendorWizardState:
+    return VendorWizardState(
+        connector=connector.strip().lower()[:MAX_FORM_VALUE], name=name.strip()[:MAX_FORM_VALUE]
+    )
+
+
+def _create(
+    request: Request,
+    db: Session,
+    state: VendorWizardState,
+    *,
+    vault_item_id: str | None,
+    idempotency_key: str,
+) -> Response:
+    """Add the provider, with a key made from its name, and go to the Receipts tab. A refusal
+    shows on the step that asked."""
+    profile = VendorProfile(
+        key=new_profile_key(db, state.connector, state.name),
+        vendor_key=state.connector,
+        name=state.name,
+        vault_item_id=vault_item_id,
+    )
+    try:
+        create_vendor_profile(db, profile, idempotency_key=idempotency_key)
+    except ProviderError as exc:
+        return _refused(request, state, idempotency_key, str(exc))
+    return Response(status_code=204, headers={"HX-Redirect": "/settings/sync?tab=receipts"})
+
+
+def _refused(request: Request, state: VendorWizardState, form_key: str, message: str) -> Response:
+    connector = next((c for c in registered_connectors() if c.key == state.connector), None)
+    if connector is None or not connector.uses_vault:
         return _step(
             request,
-            "frag_step_login",
+            "frag_step_setup",
             422,
-            **_login_context(
-                state,
-                locked=locked,
-                form_key=idempotency_key or uuid4().hex,
-                logins=logins,
-                query=query,
-                message=f"A vendor profile with key {clean_key!r} already exists.",
-            ),
+            **_setup_context(state, registered_connectors(), form_key, message),
         )
-    profile = VendorProfile(
-        key=clean_key,
-        vendor_key=clean_vendor,
-        name=clean_name,
-        account=clean_key,
-        vault_item_id=vault_item_id or None,
+    vault = request.app.state.vault
+    locked = is_locked(vault)
+    logins, query = _initial_vault_logins(request, vault, state, locked=locked)
+    return _step(
+        request,
+        "frag_step_login",
+        422,
+        **_login_context(
+            state,
+            locked=locked,
+            form_key=form_key,
+            logins=logins,
+            query=query,
+            message=message,
+        ),
     )
-    save_vendor_profile(db, profile)
-    return Response(status_code=204, headers={"HX-Redirect": "/settings/sync?tab=vendors"})
 
 
 def _initial_vault_logins(
@@ -331,7 +251,7 @@ def _initial_vault_logins(
 ) -> tuple[list[LoginSummary] | None, str]:
     if vault is None or locked:
         return None, ""
-    for candidate in (state.name, state.vendor_key, state.vendor):
+    for candidate in (state.name, state.connector):
         query = candidate.strip()
         if not query:
             continue
@@ -341,19 +261,19 @@ def _initial_vault_logins(
             continue
         if logins:
             return logins, query
-    query = (state.name or state.vendor_key or state.vendor).strip()
+    query = (state.name or state.connector).strip()
     return None, query
 
 
 def _setup_context(
     state: VendorWizardState,
-    vendors: list[object],
+    connectors: list[object],
     form_key: str,
     message: str = "",
 ) -> dict[str, object]:
     return {
         "state": state,
-        "vendors": vendors,
+        "connectors": connectors,
         "form_key": form_key,
         "message": message,
     }
@@ -367,7 +287,6 @@ def _login_context(
     logins: list[LoginSummary] | None = None,
     query: str = "",
     message: str = "",
-    unlock_message: str = "",
 ) -> dict[str, object]:
     return {
         "state": state,
@@ -376,7 +295,6 @@ def _login_context(
         "query": query,
         "form_key": form_key,
         "message": message,
-        "unlock_message": unlock_message,
     }
 
 

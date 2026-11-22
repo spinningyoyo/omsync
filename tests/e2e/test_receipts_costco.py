@@ -90,6 +90,7 @@ def ready(ledger: Ledger, tmp_path: Path, charges: list[tuple[date, int]]) -> No
     rows = [Row(day, cents, PAYEE, f"fit-{i}") for i, (day, cents) in enumerate(charges)]
     ledger.statement("Costco Card", rows)
     ledger.import_all()
+    ledger.add_receipt_provider("costco")
     keywords = tmp_path / "costco-keywords.json"
     keywords.write_text(KEYWORDS, encoding="utf-8")
     ledger.cli("keywords", "import", keywords, "--list", "costco", "--apply")

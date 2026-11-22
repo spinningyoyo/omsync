@@ -1,4 +1,4 @@
-"""The Settings root and the About page. Bank sync is in settings_providers.py."""
+"""The Settings root and the About page. Data sync is in settings_providers.py."""
 
 from typing import Annotated
 

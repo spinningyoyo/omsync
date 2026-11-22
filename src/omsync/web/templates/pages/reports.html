@@ -5,7 +5,7 @@
 {% extends "layouts/shell.html" %}
 {% from "layouts/shell_parts.html" import page_header %}
 {% from "components/view_controls.html" import period_menu, joint_menu, view_summary with context %}
-{% from "reports/parts.html" import report_actions, period_range, report_main with context %}
+{% from "reports/parts.html" import report_actions, period_range, report_main, tag_filter with context %}
 
 {% block chart_scripts %}
 <script src="/static/vendor/d3.min.js" defer></script>
@@ -16,6 +16,7 @@
   {% call page_header("Reports", view_summary(view.period_label, joint)) %}
     {{ joint_menu(joint) }}
     {{ period_menu(view.presets) }}
+    {{ tag_filter(view) }}
     {{ report_actions(view, export) }}
   {% endcall %}
   {{ period_range(view) }}

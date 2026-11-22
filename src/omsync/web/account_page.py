@@ -11,11 +11,11 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from omsync.core.money import format_cents
-from omsync.core.sync_models import RecentSync, SyncKind, SyncStatus
 from omsync.ingest.connectors.base import ConnectorError
 from omsync.ingest.connectors.registry import get_connector
 from omsync.ledger.accounts_view import BalancePoint
 from omsync.ledger.contacts import list_nicknames
+from omsync.ledger.models import ProviderKind, RecentSync, SyncStatus
 from omsync.web.formats import long_day
 
 SYNC_STATUS: dict[SyncStatus, tuple[str, str]] = {
@@ -60,8 +60,8 @@ def sync_views(runs: Sequence[RecentSync]) -> list[SyncView]:
     views: list[SyncView] = []
     for run in runs:
         label, tone = SYNC_STATUS[run.status]
-        unit = "receipt" if run.kind == SyncKind.receipt else "file"
-        count = run.items_fetched or run.files_fetched or 0
+        unit = "receipt" if run.kind is ProviderKind.receipt else "file"
+        count = run.items_fetched
         noun = unit if count == 1 else f"{unit}s"
         views.append(
             SyncView(

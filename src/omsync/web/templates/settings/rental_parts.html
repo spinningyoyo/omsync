@@ -1,97 +1,131 @@
-{# The Rental properties region: the properties with their labels, the form that adds one, and the rental
-   categories as removable tags with the form that adds one. The region replaces itself on each
-   change, and a refused change shows its reason inside it. Macros import what they use, because a
-   fragment block renders without this file's top level. #}
+{# The Rental properties region: the properties, then the rental categories. Each section has its
+   Add button, and a list (components/section_list.html). A property edits its label in a dialog; a
+   row's Remove writes at once, and its toast can undo it. Every write answers with the whole region,
+   which closes any open dialog; a refused change shows its reason at the top. Macros import what
+   they use, because a fragment block renders without this file's top level. #}
 {% from "components/button.html" import button %}
+{% from "components/dialog.html" import dialog with context %}
+{% from "components/section_list.html" import section_header, list_panel, ROW %}
 
-{% macro rental_region(view) -%}
-<div id="rental-region" class="flex flex-col gap-6" hx-target="#rental-region" hx-swap="outerHTML">
-  {%- if view.error %}
+{% macro rental_region(view, oob=false) -%}
+<div id="rental-region" class="flex flex-col gap-8" hx-target="#rental-region" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {%- if view.message %}
   <p class="text-sm text-destructive" role="alert">{{ view.message }}</p>
   {%- endif %}
-
-  <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="rental-properties-title">
-    <div>
-      <h2 id="rental-properties-title" class="font-medium text-primary">Rental properties</h2>
-      <p class="text-sm text-secondary">Accounts you rent out, and their name in the rental report.</p>
-    </div>
-    {%- if view.properties %}
-    <ul class="flex flex-col divide-y divide-subdued">
-      {%- for row in view.properties %}
-      <li class="flex flex-col gap-3 py-3">
-        <form class="flex flex-wrap items-end gap-3" hx-post="/settings/rental/accounts/{{ row.account_id }}">
-          <label class="form-field w-auto min-w-[14rem]">
-            <span class="form-field__label">Property label</span>
-            <input type="text" name="label" value="{{ row.label }}" required class="form-field__input" aria-describedby="rental-account-{{ row.account_id }}">
-          </label>
-          {{ button("Save label", variant="outline", size="sm", type="submit") }}
-        </form>
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <span id="rental-account-{{ row.account_id }}" class="text-sm text-secondary">{{ row.account }}</span>
-          {{ button("Remove", variant="outline", size="sm", aria_label="Remove " ~ row.label, attrs={"hx-post": "/settings/rental/accounts/" ~ row.account_id ~ "/remove"}) }}
-        </div>
-      </li>
-      {%- endfor %}
-    </ul>
-    {%- else %}
-    <p class="text-sm text-secondary">No rental properties yet. The rental report needs at least one.</p>
-    {%- endif %}
-    {%- if view.account_choices %}
-    <form class="flex flex-wrap items-end gap-3 border-t border-subdued pt-4" hx-post="/settings/rental/accounts">
-      <div class="form-field w-auto min-w-[14rem]">
-        <div class="form-field__body">
-          <label class="form-field__label" for="rental-add-account">Account</label>
-          <select id="rental-add-account" name="account_id" required class="form-field__input w-full">
-            <option value="" disabled selected>Choose an account</option>
-            {%- for choice in view.account_choices %}
-            <option value="{{ choice.account_id }}">{{ choice.text }}</option>
-            {%- endfor %}
-          </select>
-        </div>
-      </div>
-      <label class="form-field w-auto min-w-[14rem]">
-        <span class="form-field__label">Property label</span>
-        <input type="text" name="label" required class="form-field__input" placeholder="As the report names its sheet">
-      </label>
-      {{ button("Add property", variant="primary", type="submit") }}
-    </form>
-    {%- else %}
-    <p class="border-t border-subdued pt-4 text-sm text-secondary">No accounts left to add.</p>
-    {%- endif %}
-  </section>
-
-  <section class="flex flex-col gap-4 rounded-xl bg-container p-5 shadow-border-xs" aria-labelledby="rental-categories-title">
-    <div>
-      <h2 id="rental-categories-title" class="font-medium text-primary">Rental categories</h2>
-      <p class="text-sm text-secondary">These count as rental expenses. Anything else goes to Other.</p>
-    </div>
-    <ul class="flex flex-wrap gap-2" aria-label="Rental categories">
-      {%- for chip in view.categories %}
-      <li class="inline-flex items-center gap-1 rounded-full bg-surface-inset py-1 pl-3 pr-1 text-sm">
-        <span class="text-primary">{{ chip.name }}</span>
-        {%- if not chip.exists %}<span class="text-xs text-subdued">(no category yet)</span>{% endif %}
-        {{ button(variant="icon", size="sm", icon="x", aria_label="Remove " ~ chip.name, attrs={"hx-post": "/settings/rental/categories/remove", "hx-vals": {"name": chip.name}|tojson|forceescape}) }}
-      </li>
-      {%- endfor %}
-    </ul>
-    {%- if view.category_choices %}
-    <form class="flex flex-wrap items-end gap-3" hx-post="/settings/rental/categories/add">
-      <div class="form-field w-auto min-w-[14rem]">
-        <div class="form-field__body">
-          <label class="form-field__label" for="rental-add-category">Category</label>
-          <select id="rental-add-category" name="name" required class="form-field__input w-full">
-            <option value="" disabled selected>Choose a category</option>
-            {%- for name in view.category_choices %}
-            <option value="{{ name }}">{{ name }}</option>
-            {%- endfor %}
-          </select>
-        </div>
-      </div>
-      {{ button("Add category", variant="outline", type="submit") }}
-    </form>
-    {%- else %}
-    <p class="text-sm text-secondary">No categories left to add.</p>
-    {%- endif %}
-  </section>
+  {{ properties_section(view) }}
+  {{ categories_section(view) }}
 </div>
+{%- endmacro %}
+
+{% macro properties_section(view) -%}
+<section class="flex flex-col gap-4" aria-labelledby="rental-properties-title">
+  {% call section_header("rental-properties-title", "Properties", "Accounts you rent out, and their name in the rental report.") %}
+    {%- if view.account_choices %}
+    {% call dialog(id="add-property", title="Add property", trigger="Add property", trigger_lead_icon="plus", width="sm") %}
+      {{ add_property_form(view) }}
+    {% endcall %}
+    {%- endif %}
+  {% endcall %}
+  {%- if view.properties %}
+  {% call list_panel("Properties", view.properties|length) %}
+    {%- for row in view.properties %}
+    <li class="{{ ROW }}">
+      <span class="flex min-w-0 flex-col">
+        <span class="break-words text-sm font-medium text-primary">{{ row.label }}</span>
+        <span class="break-words text-xs text-secondary">{{ row.account }}</span>
+      </span>
+      <span class="flex shrink-0 items-center">
+        {% call dialog(id="edit-property-" ~ row.account_id, title="Edit " ~ row.label, trigger="Edit", trigger_size="sm", trigger_icon="pencil", trigger_aria="Edit " ~ row.label, width="sm") %}
+          {{ edit_property_form(row) }}
+        {% endcall %}
+        {{ button(variant="icon", size="sm", icon="trash-2", aria_label="Remove " ~ row.label, class_="icon-tip", attrs={"data-tip": "Remove", "hx-post": "/settings/rental/accounts/" ~ row.account_id ~ "/remove", "hx-vals": {"idempotency_key": row.remove_key}|tojson|forceescape}) }}
+      </span>
+    </li>
+    {%- endfor %}
+  {% endcall %}
+  {%- else %}
+  <p class="text-sm text-secondary">No rental properties yet. The rental report needs at least one.</p>
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{% macro categories_section(view) -%}
+<section class="flex flex-col gap-4" aria-labelledby="rental-categories-title">
+  {% call section_header("rental-categories-title", "Rental categories", "These count as rental expenses. Anything else goes to Other.") %}
+    {%- if view.category_choices %}
+    {% call dialog(id="add-rental-category", title="Add category", trigger="Add category", trigger_lead_icon="plus", width="sm") %}
+      {{ add_category_form(view) }}
+    {% endcall %}
+    {%- endif %}
+  {% endcall %}
+  {%- if view.categories %}
+  {% call list_panel("Categories", view.categories|length) %}
+    {%- for chip in view.categories %}
+    <li class="{{ ROW }}">
+      <span class="break-words text-sm text-primary">{{ chip.name }}</span>
+      {{ button(variant="icon", size="sm", icon="trash-2", aria_label="Remove " ~ chip.name, class_="icon-tip", attrs={"data-tip": "Remove", "hx-post": "/settings/rental/categories/" ~ chip.id ~ "/remove", "hx-vals": {"idempotency_key": chip.remove_key}|tojson|forceescape}) }}
+    </li>
+    {%- endfor %}
+  {% endcall %}
+  {%- else %}
+  <p class="text-sm text-secondary">No rental categories yet. Every expense goes to Other.</p>
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{% macro add_property_form(view) -%}
+<form class="flex flex-col gap-4" hx-post="/settings/rental/accounts">
+  <input type="hidden" name="idempotency_key" value="{{ view.add_property_key }}">
+  <label class="form-field">
+    <span class="form-field__label">Account</span>
+    <select name="account_id" required class="form-field__input">
+      <option value="" disabled selected>Choose an account</option>
+      {%- for choice in view.account_choices %}
+      <option value="{{ choice.account_id }}">{{ choice.text }}</option>
+      {%- endfor %}
+    </select>
+  </label>
+  <label class="form-field">
+    <span class="form-field__label">Label</span>
+    <input type="text" name="label" required maxlength="80" autocomplete="off" class="form-field__input" placeholder="As the report names its sheet">
+  </label>
+  <div class="flex justify-end gap-2">
+    {{ button("Cancel", variant="outline", attrs={"data-action": "dialog#close"}) }}
+    {{ button("Add property", variant="primary", type="submit") }}
+  </div>
+</form>
+{%- endmacro %}
+
+{% macro edit_property_form(row) -%}
+<form class="flex flex-col gap-4" hx-post="/settings/rental/accounts/{{ row.account_id }}">
+  <input type="hidden" name="idempotency_key" value="{{ row.edit_key }}">
+  <p class="text-sm text-secondary">{{ row.account }}</p>
+  <label class="form-field">
+    <span class="form-field__label">Label</span>
+    <input type="text" name="label" value="{{ row.label }}" required maxlength="80" autocomplete="off" class="form-field__input" data-autofocus>
+  </label>
+  <div class="flex justify-end gap-2">
+    {{ button("Cancel", variant="outline", attrs={"data-action": "dialog#close"}) }}
+    {{ button("Save", variant="primary", type="submit") }}
+  </div>
+</form>
+{%- endmacro %}
+
+{% macro add_category_form(view) -%}
+<form class="flex flex-col gap-4" hx-post="/settings/rental/categories">
+  <input type="hidden" name="idempotency_key" value="{{ view.add_category_key }}">
+  <label class="form-field">
+    <span class="form-field__label">Category</span>
+    <select name="category_id" required class="form-field__input">
+      <option value="" disabled selected>Choose a category</option>
+      {%- for choice in view.category_choices %}
+      <option value="{{ choice.id }}">{{ choice.name }}</option>
+      {%- endfor %}
+    </select>
+  </label>
+  <div class="flex justify-end gap-2">
+    {{ button("Cancel", variant="outline", attrs={"data-action": "dialog#close"}) }}
+    {{ button("Add category", variant="primary", type="submit") }}
+  </div>
+</form>
 {%- endmacro %}

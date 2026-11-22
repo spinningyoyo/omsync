@@ -33,6 +33,7 @@ from omsync.ledger.spending import (
     summary,
     uncategorized_total,
 )
+from omsync.ledger.tags import list_tags
 from omsync.web.accounts_panel import sparkline_points
 from omsync.web.amounts import money_html
 from omsync.web.budget_view import BudgetCard, budget_card
@@ -68,6 +69,7 @@ class Selection:
     start: str
     end: str
     error: str | None = None
+    tag_ids: tuple[int, ...] = ()  # report only lines that carry one of these tags; none means all
 
 
 @dataclass(frozen=True)
@@ -87,6 +89,16 @@ TREND_COLUMNS: list[dict[str, object]] = [
     {"header": "Net", "numeric": True},
     {"header": "Savings rate", "numeric": True},
 ]
+
+
+@dataclass(frozen=True)
+class TagOption:
+    """One tag the report can be limited to."""
+
+    id: int
+    name: str
+    color: str
+    selected: bool
 
 
 @dataclass(frozen=True)
@@ -141,6 +153,7 @@ class ReportView:
     uncategorized: str = ""
     print_href: str = ""
     budget: BudgetCard | None = None
+    tag_options: list[TagOption] = field(default_factory=list)
 
 
 def select_period(key: str, start: str, end: str, today: date) -> Selection:
@@ -165,20 +178,25 @@ def select_period(key: str, start: str, end: str, today: date) -> Selection:
 
 def state_query(selection: Selection) -> str:
     """The selection as a query string: the preset, or the preset "custom" with its two dates."""
+    pairs = [("period", selection.key)]
     if selection.key == CUSTOM:
-        return urlencode({"period": CUSTOM, "start": selection.start, "end": selection.end})
-    return urlencode({"period": selection.key})
+        pairs += [("start", selection.start), ("end", selection.end)]
+    pairs += [("tag", tag_id) for tag_id in selection.tag_ids]
+    return urlencode(pairs)
 
 
 def build_report(db: Session, selection: Selection, *, today: date) -> ReportView:
     """Everything the reports page and its print layout show for one selection."""
     joint_share = joint_share_on(db)
     period = selection.period
-    result = summary(db, period, joint_share=joint_share)
-    categories = by_category(db, period, joint_share=joint_share)
-    trend = monthly_trend(db, TREND_MONTHS, end=period.end, joint_share=joint_share)
+    tag_ids = selection.tag_ids
+    result = summary(db, period, joint_share=joint_share, tag_ids=tag_ids)
+    categories = by_category(db, period, joint_share=joint_share, tag_ids=tag_ids)
+    trend = monthly_trend(
+        db, TREND_MONTHS, end=period.end, joint_share=joint_share, tag_ids=tag_ids
+    )
     trend_rows = _trend_rows(trend)
-    uncategorized = uncategorized_total(db, period, joint_share=joint_share)
+    uncategorized = uncategorized_total(db, period, joint_share=joint_share, tag_ids=tag_ids)
     query = state_query(selection)
     return ReportView(
         selection=selection,
@@ -199,10 +217,13 @@ def build_report(db: Session, selection: Selection, *, today: date) -> ReportVie
         trend_cells=[
             [row.month, row.income, row.expenses, row.net, row.rate] for row in trend_rows
         ],
-        categories=[_category_row(row, period) for row in categories],
+        categories=[_category_row(row, period, tag_ids) for row in categories],
         uncategorized=money_html(uncategorized),
         print_href=f"/reports/print?{query}",
         budget=budget_card(db, today=today),
+        tag_options=[
+            TagOption(tag.id, tag.name, tag.color, tag.id in tag_ids) for tag in list_tags(db)
+        ],
     )
 
 
@@ -240,13 +261,13 @@ def _range(period: Period) -> str:
 
 def _preset_links(selection: Selection) -> list[PresetLink]:
     links = []
+    tags = [("tag", tag_id) for tag_id in selection.tag_ids]
     for key in (*PRESETS, CUSTOM):
         if key == CUSTOM:
-            href = "/reports?" + urlencode(
-                {"period": CUSTOM, "start": selection.start, "end": selection.end}
-            )
+            pairs = [("period", CUSTOM), ("start", selection.start), ("end", selection.end)]
         else:
-            href = f"/reports?{urlencode({'period': key})}"
+            pairs = [("period", key)]
+        href = "/reports?" + urlencode(pairs + tags)
         links.append(
             PresetLink(
                 key=key,
@@ -366,7 +387,7 @@ def _trend_rows(points: list[MonthPoint]) -> list[TrendRow]:
     return rows
 
 
-def _category_row(row: CategoryLine, period: Period) -> CategoryRow:
+def _category_row(row: CategoryLine, period: Period, tag_ids: tuple[int, ...]) -> CategoryRow:
     share = row.share_bp
     change = "—" if row.change.pct_bp is None else signed_percent(row.change.pct_bp)
     return CategoryRow(
@@ -379,17 +400,18 @@ def _category_row(row: CategoryLine, period: Period) -> CategoryRow:
         # Spending that rose is bad news, so the tone is the reverse of a figure that rose.
         change_tone=_tone(row.change.delta_cents, good_when_up=False),
         spark=sparkline_points(row.monthly_cents),
-        href=_register_link(row.category_id, period),
+        href=_register_link(row.category_id, period, tag_ids),
     )
 
 
-def _register_link(category_id: int, period: Period) -> str:
-    """The register, filtered to one category and the period. The filter is always valid, so the
-    register opens on exactly these rows."""
-    spec = FilterSpec(
-        conditions=(
-            Condition("category", "is", (category_id,)),
-            Condition("date", "between", (period.start, period.end)),
-        )
-    )
+def _register_link(category_id: int, period: Period, tag_ids: tuple[int, ...]) -> str:
+    """The register, filtered to one category, the period, and the tags the report is limited to.
+    The filter is always valid, so the register opens on exactly these rows."""
+    conditions = [
+        Condition("category", "is", (category_id,)),
+        Condition("date", "between", (period.start, period.end)),
+    ]
+    if tag_ids:
+        conditions.append(Condition("tag", "is", tag_ids))
+    spec = FilterSpec(conditions=tuple(conditions))
     return f"/transactions?{urlencode({'f': encode_filter(spec)})}"

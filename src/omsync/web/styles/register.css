@@ -92,9 +92,9 @@
 }
 
 /* The payee takes the rest of the row and clamps to two lines, so a long statement description
-   cannot grow the row; the full text is the cell's tooltip. The memo is 350px when the register is
-   wide enough for every column at that width, and gives up room first when it is not, so category and
-   amount are never pushed out of view on a laptop. */
+   cannot grow the row; the full text is the cell's tooltip. The tags column is 11rem when the
+   register is wide enough, and gives up room first when it is not, so category and amount are never
+   pushed out of view on a laptop. */
 .register td.payee {
   min-width: 8rem;
 }
@@ -107,15 +107,18 @@
   container-type: inline-size;
 }
 
-.register td.cell-input[data-field="memo"] {
-  min-width: 3.5rem;
-  max-width: 350px;
+.register th.tags,
+.register td.tags,
+.register td.split-tags {
+  min-width: 6.5rem;
+  max-width: 14rem;
 }
 
 @container (min-width: 76rem) {
-  .register td.cell-input[data-field="memo"] {
-    width: 350px;
-    min-width: 350px;
+  .register td.tags,
+  .register td.split-tags {
+    width: 11rem;
+    min-width: 11rem;
   }
 }
 
@@ -212,14 +215,14 @@
 }
 
 .split-line {
-  @apply grid grid-cols-[1fr_1fr_1fr] gap-2;
+  @apply grid grid-cols-[1fr_1fr_1fr_auto] gap-2;
 }
 
 .split-line .error {
   grid-column: 1 / -1;
 }
 
-.split-line input,
+.split-line input:not([type="checkbox"], [type="radio"], [type="hidden"]),
 .split-line select {
   @apply w-full min-w-0 rounded-md border border-secondary bg-container px-2 py-1.5 text-sm text-primary;
 }

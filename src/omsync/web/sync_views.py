@@ -1,4 +1,4 @@
-"""View data for the Bank sync status region: its headline, one line per provider, and the question
+"""View data for the Data sync status region: its headline, one line per provider, and the question
 waiting for an answer or the notice shown in its place. Nothing here reads the database or the
 vault."""
 
@@ -37,6 +37,7 @@ TONES: dict[ProviderPhase, str] = {
 @dataclass(frozen=True)
 class ProviderLineView:
     key: str
+    name: str
     label: str
     detail: str
     tone: str
@@ -55,33 +56,30 @@ class SyncStatusView:
     shown_number: int  # the question's or notice's, 0 for neither; a poll reports what it shows
 
 
-def sync_status_view(view: JobView) -> SyncStatusView:
+def sync_status_view(view: JobView, names: dict[str, str]) -> SyncStatusView:
+    """names maps provider keys to the names the page shows."""
     shown = view.question or view.notice
     return SyncStatusView(
         idle=view.phase is JobPhase.idle,
         running=view.phase is JobPhase.running,
         cancelling=view.cancelling,
-        headline=_headline(view),
-        lines=[_line(progress) for progress in view.providers],
+        headline=_headline(view, names),
+        lines=[_line(progress, names) for progress in view.providers],
         question=view.question,
         notice=view.notice,
         shown_number=shown.number if shown is not None else 0,
     )
 
 
-def _headline(view: JobView) -> str:
+def _headline(view: JobView, names: dict[str, str]) -> str:
     if view.phase is JobPhase.idle:
         return "No sync has run from this page yet."
     if view.cancelling:
         return "Cancelling. The sync in progress stops at its next step."
     if view.phase is JobPhase.running:
         if view.scope == ALL:
-            return "Syncing all providers and receipt vendors."
-        if view.scope == "banks":
-            return "Syncing bank accounts."
-        if view.scope == "receipts":
-            return "Fetching vendor receipts."
-        return f"Syncing {view.scope.removeprefix('vendor:')}."
+            return "Syncing all providers."
+        return f"Syncing {names.get(view.scope, view.scope)}."
     ended = (
         "Cancelled."
         if any(item.phase is ProviderPhase.cancelled for item in view.providers)
@@ -93,10 +91,10 @@ def _headline(view: JobView) -> str:
     return f"{ended} {succeeded} of {len(view.providers)} succeeded."
 
 
-def _line(progress: ProviderProgress) -> ProviderLineView:
-    display_key = progress.key.removeprefix("vendor:")
+def _line(progress: ProviderProgress, names: dict[str, str]) -> ProviderLineView:
     return ProviderLineView(
-        key=display_key,
+        key=progress.key,
+        name=names.get(progress.key, progress.key),
         label=LABELS[progress.phase],
         detail=_detail(progress),
         tone=TONES[progress.phase],
@@ -105,12 +103,10 @@ def _line(progress: ProviderProgress) -> ProviderLineView:
 
 
 def _detail(progress: ProviderProgress) -> str:
-    if progress.key.startswith("vendor:"):
-        if progress.phase is ProviderPhase.succeeded:
-            return progress.message or f"{progress.files_fetched} receipts fetched."
-        return progress.message or ""
+    if progress.phase is ProviderPhase.succeeded and progress.message:
+        return progress.message  # a receipt provider's own summary
     if progress.phase is ProviderPhase.succeeded:
-        files = "1 file" if progress.files_fetched == 1 else f"{progress.files_fetched} files"
+        files = "1 file" if progress.items_fetched == 1 else f"{progress.items_fetched} files"
         detail = (
             f"{files} fetched. Imported: created {progress.created}, "
             f"joined {progress.joined}, review {progress.review}."
