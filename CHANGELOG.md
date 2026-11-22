@@ -8,6 +8,8 @@ numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-21
+
 ### Added
 
 - Support for Windows.
@@ -55,5 +57,6 @@ numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Reports, account pages, backup and restore.
 - Sign-in scenes from the `omsync-nursery` package.
 
-[Unreleased]: https://github.com/spinningyoyo/omsync/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/spinningyoyo/omsync/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/spinningyoyo/omsync/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/spinningyoyo/omsync/releases/tag/v0.1.0
