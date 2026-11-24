@@ -70,4 +70,5 @@ from omsync.ingest.connectors.banks import (  # noqa: E402, F401
     chase,
     citi,
     fidelity,
+    wealthfront,
 )

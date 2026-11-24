@@ -22,6 +22,7 @@ flowchart LR
 | [Chase](chase.md) | `csrftoken` | A token endpoint |
 | [Citi](citi.md) | None, only the `client_id` cookie as a header | The session cookies |
 | [Fidelity Rewards](fidelity.md) | Bearer token | Browser session storage |
+| [Wealthfront](wealthfront.md) | `xsrf` cookie as `X-Csrf-Token` | The session cookies |
 
 ## Flow
 

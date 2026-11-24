@@ -9,6 +9,7 @@ from pathlib import Path
 from omsync.ingest.formats.base import FormatError, StatementFormat
 from omsync.ingest.formats.boa_csv import BoaCsvFormat
 from omsync.ingest.formats.ofx import OfxFormat
+from omsync.ingest.formats.wealthfront_csv import WealthfrontCsvFormat
 from omsync.ledger.statements import NAME_CONTINUES_IN_MEMO
 
 DEFAULT_KEY = "default"
@@ -33,6 +34,7 @@ FORMATS: dict[str, tuple[StatementFormat, ...]] = {
     "chase_business": (_ofx("chase_business", fitid_trusted=False),),
     # BoA's CSV comes first. Its OFX, if it ever arrives, is not trusted either.
     "boa": (BoaCsvFormat(), OfxFormat(fitid_trusted=False)),
+    "wealthfront": (WealthfrontCsvFormat(),),
     DEFAULT_KEY: (OfxFormat(fitid_trusted=True),),
 }
 
