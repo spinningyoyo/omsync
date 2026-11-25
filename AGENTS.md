@@ -86,9 +86,9 @@ bash scripts/build-css.sh             # after you change template classes
 
 ## Changelog
 
-- `CHANGELOG.md` follows Keep a Changelog. Put each new entry under `## [Unreleased]`, in
-  `### Added`, `### Changed`, `### Fixed` or `### Removed`. Read the section first. Add to its
-  subsections instead of repeating them.
+- `CHANGELOG.md` follows Keep a Changelog. Write it once, at release: the release commit holds
+  the new version's section. A feature commit does not touch it.
+- One short sentence for each item, for the person who runs omsync. Say what they can now do or
+  what changed for them. Never list the parts of a feature.
 - Never change a released section.
-- Write for the person who runs omsync. Do not list linters, checks, tests or CI.
-- Contributors do not edit the changelog.
+- Do not list linters, checks, tests or CI.
