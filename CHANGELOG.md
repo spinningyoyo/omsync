@@ -8,9 +8,17 @@ numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-25
+
 ### Added
 
-- Bank sync for Wealthfront cash accounts, with CSV statement downloads.
+- Bank sync for Wealthfront cash accounts.
+- Store sync for eBay.
+- Two sign-in scenes: Great Barrier Reef and Rural Village.
+
+### Changed
+
+- The scene picker shows the scenes by kind.
 
 ## [0.2.0] - 2026-11-21
 
@@ -61,6 +69,7 @@ numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Reports, account pages, backup and restore.
 - Sign-in scenes from the `omsync-nursery` package.
 
-[Unreleased]: https://github.com/spinningyoyo/omsync/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/spinningyoyo/omsync/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/spinningyoyo/omsync/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/spinningyoyo/omsync/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/spinningyoyo/omsync/releases/tag/v0.1.0
