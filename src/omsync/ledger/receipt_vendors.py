@@ -50,9 +50,29 @@ def is_costco_payee(payee: str) -> bool:
     return "COSTCO" in normalized or "COST CO" in normalized
 
 
+def is_ebay_payee(payee: str) -> bool:
+    lowered = (payee or "").lower()
+    return "ebay" in lowered
+
+
+def is_walmart_payee(payee: str) -> bool:
+    text = str(payee or "")
+    if any(keyword in text.lower() for keyword in P2P_PAYEES):
+        return False
+    normalized = " ".join(text.upper().replace("*", " ").replace("-", " ").split())
+    return (
+        "WALMART" in normalized
+        or "WAL MART" in normalized
+        or "WM SUPERCENTER" in normalized
+        or "WM NEIGHBORHOOD" in normalized
+    )
+
+
 RECEIPT_VENDORS: tuple[VendorTerms, ...] = (
     VendorTerms("amazon", is_amazon_payee),
     VendorTerms("costco", is_costco_payee, (ItemCode("E", "costco_food_category", "Food items"),)),
+    VendorTerms("ebay", is_ebay_payee),
+    VendorTerms("walmart", is_walmart_payee),
 )
 
 RECEIPT_VENDOR_KEYS: tuple[str, ...] = tuple(vendor.key for vendor in RECEIPT_VENDORS)

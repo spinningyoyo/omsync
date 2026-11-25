@@ -34,4 +34,4 @@ def registered_connectors() -> list[VendorConnector]:
 
 # The vendor connectors register themselves when their modules load. This import runs after
 # register() exists, so the vendor modules can import it without a cycle.
-from omsync.receipts.connectors import amazon, costco  # noqa: E402, F401
+from omsync.receipts.connectors import amazon, costco, ebay, walmart  # noqa: E402, F401

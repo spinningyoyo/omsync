@@ -163,6 +163,53 @@ def fetch_amazon(
     _fetch("amazon", start, end, profile)
 
 
+@fetch_app.command("ebay")
+def fetch_ebay(
+    start: Annotated[
+        str | None,
+        typer.Option("--start", help="First purchase day, YYYY-MM-DD. Give with --end."),
+    ] = None,
+    end: Annotated[
+        str | None,
+        typer.Option("--end", help="Last purchase day, YYYY-MM-DD. Give with --start."),
+    ] = None,
+    profile: Annotated[
+        str | None, typer.Option("--profile", help="The eBay profile's key, if you have several.")
+    ] = None,
+) -> None:
+    """Download an eBay profile's orders and save them, as a sync of that profile.
+
+    Without --start and --end, it fetches from shortly before the newest receipt it has. Chrome
+    opens with omsync's browser profile. Sign in to eBay there, then press Enter here. Exits 1 if
+    you need to act, or the download fails. Another sync refuses to start.
+    """
+    _fetch("ebay", start, end, profile)
+
+
+@fetch_app.command("walmart")
+def fetch_walmart(
+    start: Annotated[
+        str | None,
+        typer.Option("--start", help="First purchase day, YYYY-MM-DD. Give with --end."),
+    ] = None,
+    end: Annotated[
+        str | None,
+        typer.Option("--end", help="Last purchase day, YYYY-MM-DD. Give with --start."),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        typer.Option("--profile", help="The Walmart profile's key, if you have several."),
+    ] = None,
+) -> None:
+    """Download a Walmart profile's orders and save them, as a sync of that profile.
+
+    Without --start and --end, it fetches from shortly before the newest receipt it has. Chrome
+    opens with omsync's browser profile. Sign in to Walmart there, then select I have signed in.
+    Exits 1 if you need to act, or the download fails. Another sync refuses to start.
+    """
+    _fetch("walmart", start, end, profile)
+
+
 def _fetch(
     vendor_key: str,
     start: str | None,

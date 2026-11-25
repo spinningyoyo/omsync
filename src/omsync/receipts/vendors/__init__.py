@@ -9,8 +9,15 @@ from omsync.ledger.receipt_vendors import RECEIPT_VENDOR_KEYS
 from omsync.receipts.vendor import ReceiptVendor
 from omsync.receipts.vendors.amazon import AmazonVendor
 from omsync.receipts.vendors.costco import CostcoVendor
+from omsync.receipts.vendors.ebay import EbayVendor
+from omsync.receipts.vendors.walmart import WalmartVendor
 
-BUILT_IN_VENDORS: tuple[ReceiptVendor, ...] = (AmazonVendor(), CostcoVendor())
+BUILT_IN_VENDORS: tuple[ReceiptVendor, ...] = (
+    AmazonVendor(),
+    CostcoVendor(),
+    EbayVendor(),
+    WalmartVendor(),
+)
 
 if {vendor.key for vendor in BUILT_IN_VENDORS} != set(RECEIPT_VENDOR_KEYS):
     raise RuntimeError("BUILT_IN_VENDORS and RECEIPT_VENDORS list different vendors")
