@@ -14,6 +14,7 @@ step uv run ruff check .
 step uv run ruff format --check .
 step sh scripts/biome.sh check .
 step uv run lint-imports
+step shasum -a 256 -c --quiet ink.sha256
 
 if [ "$failed" -ne 0 ]; then
     echo "check: failed" >&2

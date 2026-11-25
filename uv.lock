@@ -977,8 +977,8 @@ dev = [
 
 [[package]]
 name = "omsync-nursery"
-version = "0.2.1"
-source = { git = "https://github.com/spinningyoyo/omsync-nursery?branch=release#4ea407e1a440c74298c1b3ed52c3a96c75e99dc4" }
+version = "0.3.0"
+source = { git = "https://github.com/spinningyoyo/omsync-nursery?branch=release#94221673de0e7caa3fc025bf61c2c1d83d3083ab" }
 
 [[package]]
 name = "openpyxl"

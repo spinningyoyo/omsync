@@ -7,6 +7,8 @@
  */
 :root {
   --mascot-body: #d3d7d9;
+  --mascot-ink: currentColor;
+  --mascot-eye: currentColor;
   /* One word is on screen for --brand-word-duration, then the column slides to the next word. The
      eye blinks during that slide, so the mascot and the wordmark share these two tokens and both
      start when the page renders. */
@@ -16,10 +18,6 @@
 
 [data-theme="dark"] {
   --mascot-body: var(--color-gray-800);
-}
-
-.mascot-body {
-  fill: var(--mascot-body);
 }
 
 /* Wordmark. A column of four words slides up one word every --brand-word-duration. The fourth is
@@ -87,21 +85,24 @@
   overflow: visible;
 }
 
-.brand-mascot .mascot-eye {
-  animation: mascot-eye-open var(--brand-word-duration) step-end infinite;
+.brand-mascot .mascot-eye,
+.brand-mascot .eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mascot-eye-blink var(--brand-word-duration) step-end infinite;
 }
 
 .brand-mascot .mascot-eye-closed {
   animation: mascot-eye-closed var(--brand-word-duration) step-end infinite;
 }
 
-@keyframes mascot-eye-open {
+@keyframes mascot-eye-blink {
   0%,
   100% {
-    opacity: 1;
+    transform: scaleY(1);
   }
   88% {
-    opacity: 0;
+    transform: scaleY(0.2);
   }
 }
 
@@ -125,6 +126,7 @@
   }
 
   .brand-mascot .mascot-eye,
+  .brand-mascot .eye,
   .brand-mascot .mascot-eye-closed {
     animation: none;
   }

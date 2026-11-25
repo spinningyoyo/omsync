@@ -13,8 +13,9 @@ flowchart LR
     Browser -->|request or edit| Server
     TOML[omsync.toml: machine] --> Server
     DB[(Database: what you track)] --> Server
-    Local[Browser storage: theme, privacy, panel size] --> Browser
-    Nursery[omsync-nursery package: sign-in scenes, mascot, favicons] --> Browser
+    Local[Browser storage: theme, scene, growth, privacy, panel size] --> Browser
+    Nursery[omsync-nursery package: scenes and garden] --> Browser
+    Brand[static/brand/: mascot and favicons from ink-studio] --> Browser
 ```
 
 ## Flow
@@ -66,6 +67,10 @@ flowchart LR
   browser. Account mapping uses short-lived tokens.
 - **The sign-in art is in a separate repository, `omsync-nursery`.** Art changes do not appear in
   the omsync history. Only a contract change touches both repositories.
+- **The garden around a scene is also in `omsync-nursery`.** The garden is the scene picker, the
+  elephant that waters the scene, the saved growth, and day and night. Other apps show the same
+  garden. omsync keeps only its own parts: its storage keys, its words, the elephant's trunk tip,
+  and the layout of its pages.
 
 ## Terms
 

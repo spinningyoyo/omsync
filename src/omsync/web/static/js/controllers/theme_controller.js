@@ -2,7 +2,7 @@
 // and app/views/layouts/_dark_mode_check.html.erb. Changes: a three-way choice (light, dark, auto
 // by the clock, the same as the sign-in page's; see ../theme.js), and no server-side preference.
 import { Controller } from "/static/vendor/stimulus.js";
-import { applyTheme, CLOCK_MS, chooseTheme, currentChoice } from "../theme.js";
+import { daylight } from "../theme.js";
 
 // Three-way switch, the same icon buttons as the sign-in page's. Each option carries
 // data-theme-choice and data-theme-target="option". The controller sits on the shell, so the
@@ -11,21 +11,21 @@ export default class extends Controller {
   static targets = ["option"];
 
   connect() {
-    this.clock = setInterval(applyTheme, CLOCK_MS);
+    daylight.start();
     this.render();
   }
 
   disconnect() {
-    clearInterval(this.clock);
+    daylight.stop();
   }
 
   choose(event) {
-    chooseTheme(event.currentTarget.dataset.themeChoice);
+    daylight.choose(event.currentTarget.dataset.themeChoice);
     this.render();
   }
 
   render() {
-    const choice = currentChoice();
+    const choice = daylight.choice();
     this.optionTargets.forEach((option) => {
       option.setAttribute("aria-pressed", String(option.dataset.themeChoice === choice));
     });

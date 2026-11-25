@@ -23,7 +23,7 @@ dependencies = [
     "ofxparse>=0.21",
     "selenium>=4.20",
     "openpyxl>=3.1.5",
-    "omsync-nursery>=0.2,<0.3",
+    "omsync-nursery>=0.3,<0.4",
     "pyobjc-framework-localauthentication>=13.0 ; sys_platform == 'darwin'",
     "winrt-runtime>=4.1.0 ; sys_platform == 'win32'",
     "winrt-windows-foundation>=4!10.0.28000.2957 ; sys_platform == 'win32'",

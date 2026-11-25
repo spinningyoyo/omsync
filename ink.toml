@@ -1,0 +1,7 @@
+# Brand files that ink-studio exports into this repository. Do not edit the files by hand.
+# Each line is: destination path = artifact name. `ink.sha256` records what was exported.
+
+[omsync]
+"src/omsync/web/static/brand/mascot.svg" = "mascot.svg"
+"src/omsync/web/static/brand/favicon.svg" = "favicon.svg"
+"src/omsync/web/static/brand/favicon-32.png" = "favicon-32.png"

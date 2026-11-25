@@ -117,8 +117,8 @@ Supply chain:
 
 ## Sign-in scenes
 
-The sign-in scenes come from the `omsync-nursery` package, in the sibling repository
-`../omsync-nursery`. [AGENTS.md](AGENTS.md) has the release rules.
+The sign-in scenes, the scene picker and the watering elephant come from the `omsync-nursery`
+package, in the sibling repository `../omsync-nursery`. [AGENTS.md](AGENTS.md) has the release rules.
 
 ```sh
 sh scripts/upgrade-nursery.sh     # take the newest release, run the checks and tests, and commit

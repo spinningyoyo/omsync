@@ -12,8 +12,6 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2_fragments.fastapi import Jinja2Blocks
-from nursery.assets import FAVICON_PNG as NURSERY_FAVICON_PNG
-from nursery.assets import FAVICON_SVG as NURSERY_FAVICON_SVG
 from nursery.assets import JS as NURSERY_JS
 from nursery.assets import SCENES_CSS as NURSERY_SCENES_CSS
 
@@ -79,7 +77,7 @@ from omsync.web.routes.settings_vault import router as settings_vault_router
 from omsync.web.routes.settings_vendor_wizard import router as settings_vendor_wizard_router
 from omsync.web.routes.settings_wizard import router as settings_wizard_router
 from omsync.web.row_links import link_items
-from omsync.web.scenes import nursery_scenes
+from omsync.web.scenes import nursery_scene_ids
 from omsync.web.settings_tokens import MappingTokens
 from omsync.web.sync_runner import SyncRunner
 from omsync.web.vault_logins import LoginNames
@@ -189,7 +187,7 @@ def create_app(
     templates.env.globals["institution_logo_url"] = institution_logo_url
     templates.env.globals["account_digits"] = account_digits
     templates.env.globals["mascot_svg"] = mascot_svg
-    templates.env.globals["nursery_scenes"] = nursery_scenes()
+    templates.env.globals["nursery_scene_ids"] = nursery_scene_ids()
     templates.env.globals["filter_field_choices"] = field_choices()
     templates.env.globals["filter_labels"] = FIELD_LABELS
     templates.env.globals["filter_op_choices"] = op_choices
@@ -217,15 +215,15 @@ def create_app(
     # path does not fall through to the app's own static files. The scenes' colours (css/) sit
     # beside the engine's folder in the package, so they get their own mount, ahead of the
     # engine's.
-    # The favicons come from the same package; these two routes sit ahead of the /static mount.
+    # The favicons are exported by ink-studio into static/brand/; keep the /static/img/ URLs.
     app.add_api_route(
         "/static/img/favicon.svg",
-        lambda: FileResponse(NURSERY_FAVICON_SVG, media_type="image/svg+xml"),
+        lambda: FileResponse(STATIC_DIR / "brand" / "favicon.svg", media_type="image/svg+xml"),
         include_in_schema=False,
     )
     app.add_api_route(
         "/static/img/favicon-32.png",
-        lambda: FileResponse(NURSERY_FAVICON_PNG, media_type="image/png"),
+        lambda: FileResponse(STATIC_DIR / "brand" / "favicon-32.png", media_type="image/png"),
         include_in_schema=False,
     )
     app.mount(

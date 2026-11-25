@@ -1,151 +1,16 @@
 /*
- * The sign-in page's backdrop, its elephant button and its scene picker (layouts/auth.html). A pale
- * page with soft colour washes under a white grid; the washes show the grid, and the grid
- * disappears where the page is white. The scene (static/vendor/nursery/nursery.js) is drawn on
- * top of it. The washes' colours belong to the scene named by data-scene (static/vendor/nursery/
- * scenes.css sets the --landing-* colours per scene), and fade into the next one's when it changes.
- * The defaults below are the meadow's.
- *
- * The nursery's scenes.css sets --landing-cell.
- * Every layer is anchored to the bottom edge, so a grid line sits on the soil's top edge.
+ * omsync's part of the nursery's garden (vendor/nursery/css/garden.css): the sign-in page
+ * (layouts/auth.html) and the scene choices in the user menu (layouts/shell.html). The garden draws
+ * the backdrop, the elephant, the picker and the controls; this file gives them omsync's colours
+ * and places them on omsync's pages.
  */
-/* Registered as colours so that a change of scene crossfades instead of jumping. */
-@property --landing-green {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-
-@property --landing-green-soft {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-
-@property --landing-peach {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-
-@property --landing-blush {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-
-@property --landing-bloom {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-
 :root {
-  --landing-base: #ffffff;
-  --landing-green: #b7dc98;
-  --landing-green-soft: #d3eac0;
-  --landing-peach: #fbdfc8;
-  --landing-blush: #fdeceb;
-  --landing-bloom: #cfeab4;
-  --landing-line: rgb(255 255 255 / 0.95);
-  --landing-dot: #ffffff;
-  --nursery-stage: #559c4a;
+  --nursery-ink: var(--utility-text-primary);
+  --nursery-paper: var(--color-container);
 }
 
 [data-theme="dark"] {
-  --landing-base: var(--color-surface);
-  --landing-green: rgb(96 160 84 / 0.4);
-  --landing-green-soft: rgb(96 160 84 / 0.2);
-  --landing-peach: rgb(206 128 84 / 0.22);
-  --landing-blush: rgb(196 96 120 / 0.14);
-  --landing-bloom: rgb(110 178 92 / 0.34);
-  --landing-line: rgb(255 255 255 / 0.07);
-  --landing-dot: rgb(255 255 255 / 0.2);
-  --nursery-stage: #8fc272;
-}
-
-.landing-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
-  background: var(--landing-base);
-}
-
-.landing-backdrop > * {
-  position: absolute;
-  inset: 0;
-}
-
-/* The washes drift slowly. The layer is larger than the page, so its edges never show. */
-.landing-backdrop__wash {
-  inset: -8%;
-  background:
-    radial-gradient(52% 58% at 100% 0%, var(--landing-green) 0%, transparent 72%),
-    radial-gradient(42% 46% at 0% 42%, var(--landing-peach) 0%, transparent 74%),
-    radial-gradient(60% 34% at 58% 72%, var(--landing-blush) 0%, transparent 76%),
-    radial-gradient(34% 30% at 0% 100%, var(--landing-green-soft) 0%, transparent 72%);
-  animation: landing-drift 42s ease-in-out infinite alternate;
-  transition:
-    --landing-green 0.9s,
-    --landing-green-soft 0.9s,
-    --landing-peach 0.9s,
-    --landing-blush 0.9s;
-}
-
-/* Each watering raises its opacity, so the page greens as the scene grows. */
-.landing-backdrop__bloom {
-  background: radial-gradient(90% 55% at 50% 100%, var(--landing-bloom) 0%, transparent 75%);
-  opacity: 0;
-  transition:
-    opacity 2.4s ease-out,
-    --landing-bloom 0.9s;
-}
-
-.landing-backdrop__grid {
-  background-image:
-    linear-gradient(to right, var(--landing-line) 0 2px, transparent 2px),
-    linear-gradient(to bottom, var(--landing-line) 0 2px, transparent 2px);
-  background-size: var(--landing-cell) var(--landing-cell);
-  background-position: 0 100%;
-}
-
-/* A dot on every other grid crossing. */
-.landing-backdrop__dots {
-  background-image: radial-gradient(circle at 50% 50%, var(--landing-dot) 0 3px, transparent 4px);
-  background-size: calc(var(--landing-cell) * 2) calc(var(--landing-cell) * 2);
-  background-position: 0 100%;
-  animation: landing-breathe 6s ease-in-out infinite alternate;
-}
-
-.landing-nursery,
-.landing-water {
-  position: absolute;
-  inset: auto auto 0 0;
-  image-rendering: pixelated;
-}
-
-/* The water falls in front of the page. It never takes clicks. */
-.landing-water {
-  position: fixed;
-  z-index: 20;
-  pointer-events: none;
-}
-
-@keyframes landing-drift {
-  to {
-    transform: translate3d(-3%, 2%, 0) scale(1.05);
-  }
-}
-
-@keyframes landing-breathe {
-  from {
-    opacity: 0.45;
-  }
-  to {
-    opacity: 1;
-  }
+  --nursery-page: var(--color-surface);
 }
 
 .landing-rise {
@@ -160,189 +25,31 @@
   }
 }
 
-/* The scene picker, with the appearance buttons and reset on a second row, in the top-right corner.
-   The scenes are pixel art; the controls are Lucide line icons, which follow the text colour. */
-.nursery-controls {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.nursery-controls__row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
 /* On a phone the controls would cover the elephant and the wordmark, so they sit in a band across
    the top that scrolls away, and the page starts below it. */
 @media (max-width: 40rem) {
   .nursery-controls {
     position: absolute;
     left: 12px;
-    align-items: center;
-  }
-
-  .nursery-controls .nursery-scenes {
     justify-content: center;
   }
 
   .landing-content {
-    padding-top: calc(var(--nursery-controls-height, 12.5rem) + 1.5rem);
+    padding-top: calc(var(--nursery-controls-height, 5.5rem) + 1.5rem);
     justify-content: flex-start;
   }
 }
 
-.nursery-scenes {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--color-container) 72%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--utility-text-primary) 12%, transparent);
-  backdrop-filter: blur(8px);
-}
-
-.nursery-scene {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  cursor: pointer;
-}
-
-/* The group in use stays above the others, so a label that hangs over the next row is not covered. */
-.nursery-scenes:hover,
-.nursery-scenes:focus-within {
-  z-index: 2;
-}
-
-/* The name of a button, shown at once on hover or keyboard focus. The first and last buttons of a
-   group align to an edge so the label stays on screen. */
-.nursery-scene::after {
-  content: attr(data-tip);
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 50%;
-  translate: -50% 0;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: var(--utility-text-primary);
-  color: var(--color-container);
-  font-size: 0.75rem;
-  line-height: 1.4;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-
-.nursery-scene:hover::after,
-.nursery-scene:focus-visible::after {
-  opacity: 1;
-}
-
-.nursery-scenes > .nursery-scene:first-child::after {
-  left: 0;
-  translate: none;
-}
-
-.nursery-scenes > .nursery-scene:last-child::after {
-  left: auto;
-  right: 0;
-  translate: none;
-}
-
-/* Reset and, under it, the scene's stage as a sprout. The sprout only shows; it takes no clicks. */
-.nursery-reset {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.nursery-stage {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 28px;
-  color: var(--nursery-stage);
-}
-
-.nursery-stage[hidden] {
-  display: none;
-}
-
-.nursery-stage::after {
-  content: attr(data-tip);
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: var(--utility-text-primary);
-  color: var(--color-container);
-  font-size: 0.75rem;
-  line-height: 1.4;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-
-.nursery-stage:hover::after {
-  opacity: 1;
-}
-
-.nursery-scene--small {
-  width: 36px;
-  height: 36px;
-  color: color-mix(in srgb, var(--utility-text-primary) 62%, transparent);
-}
-
-.nursery-scene--small:hover,
-.nursery-scene--small[aria-pressed="true"] {
-  color: var(--utility-text-primary);
-}
-
-.nursery-scene:hover {
-  background: color-mix(in srgb, var(--utility-text-primary) 8%, transparent);
-}
-
-.nursery-scene[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--utility-text-primary) 12%, transparent);
-  box-shadow: inset 0 0 0 2px var(--utility-text-primary);
-}
-
-.nursery-scene:focus-visible {
-  outline: 2px solid var(--utility-text-primary);
-  outline-offset: 1px;
-}
-
 /* The scene choices in the user menu slide out from its Scene item: beside the menu on the rail,
-   where there is room to the right, and below it in the phone header. Five icons a row. Each shows
-   its name on hover or focus, as on the sign-in page. */
+   where there is room to the right, and below it in the phone header. The rail's menu opens from
+   the bottom of the window, so the choices there grow upward from the Scene item. */
 .scene-slide {
   position: absolute;
   animation: scene-slide-in 0.16s ease-out;
 }
 
 .scene-slide--side {
-  top: 0;
+  bottom: 0;
   left: 100%;
   --scene-slide-from: translateX(-6px);
 }
@@ -354,19 +61,6 @@
   --scene-slide-from: translateY(-6px);
 }
 
-.scene-slide .nursery-scenes {
-  justify-content: flex-start;
-  width: 15.5rem;
-  padding: 8px;
-}
-
-/* A hovered or focused choice rises above the row below it, so its name is not covered by those
-   icons. Only the user menu needs this; the sign-in page's choices have no row beneath a name. */
-.scene-slide .nursery-scene:hover,
-.scene-slide .nursery-scene:focus-visible {
-  z-index: 1;
-}
-
 @keyframes scene-slide-in {
   from {
     opacity: 0;
@@ -375,172 +69,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .landing-rise,
   .scene-slide {
     animation: none;
-  }
-}
-
-/* The elephant is a button that waters the scene. It steps rather than glides, like the pixels
-   it is made of: a hop on hover, and a double hop with a happy squint while it waters. Held down,
-   it fills with water (controllers/nursery_controller.js, elephant_water.js): it shakes on each
-   fill step, harder from the fifth, and bobs with its eyes shut at the brim. The water takes the
-   colours below. A press never scrolls the page or opens a menu on a phone. */
-.nursery-elephant {
-  --elephant-water: #7cc4e8;
-  --elephant-water-deep: #4f9fd0;
-  --elephant-foam: #ffffff;
-  --elephant-bubble: #e6f6ff;
-  display: block;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-}
-
-[data-theme="dark"] .nursery-elephant {
-  --elephant-water: #4a8cc0;
-  --elephant-water-deep: #2f6a9c;
-  --elephant-foam: #cfe6f5;
-  --elephant-bubble: #a9d2ee;
-}
-
-.nursery-elephant .mascot-water__water {
-  fill: var(--elephant-water);
-}
-
-.nursery-elephant .mascot-water__deep {
-  fill: var(--elephant-water-deep);
-}
-
-.nursery-elephant .mascot-water__foam {
-  fill: var(--elephant-foam);
-}
-
-.nursery-elephant .mascot-water__bubble {
-  fill: var(--elephant-bubble);
-}
-
-.nursery-elephant:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 6px;
-}
-
-.nursery-elephant:hover .brand-mascot {
-  transform: translateY(-4px);
-}
-
-.nursery-elephant:active .brand-mascot {
-  transform: translateY(4px);
-}
-
-.nursery-elephant.is-watering .brand-mascot {
-  animation: landing-hop 1s step-end;
-}
-
-.nursery-elephant.is-watering .mascot-eye,
-.nursery-elephant.is-squinting .mascot-eye {
-  animation: none;
-  opacity: 0;
-}
-
-.nursery-elephant.is-watering .mascot-eye-closed,
-.nursery-elephant.is-squinting .mascot-eye-closed {
-  animation: none;
-  opacity: 1;
-}
-
-/* The shake moves the button and the bob the sprite, both by the translate property, so they
-   add to the hop and the hover lift, which use transform. */
-.nursery-elephant.is-shaking,
-.nursery-elephant.is-shaking-hard {
-  --shake: 4px;
-  animation: landing-shake 0.32s step-end;
-}
-
-.nursery-elephant.is-shaking-hard {
-  --shake: 8px;
-}
-
-.nursery-elephant.is-brim .brand-mascot {
-  animation: landing-bob 0.36s step-end infinite;
-}
-
-@keyframes landing-shake {
-  0%,
-  100% {
-    translate: 0 0;
-  }
-  12%,
-  62% {
-    translate: calc(var(--shake) * -1) 0;
-  }
-  37%,
-  87% {
-    translate: var(--shake) 0;
-  }
-}
-
-@keyframes landing-bob {
-  0%,
-  100% {
-    translate: 0 0;
-  }
-  50% {
-    translate: 0 -4px;
-  }
-}
-
-@keyframes landing-hop {
-  0%,
-  22%,
-  44%,
-  66%,
-  100% {
-    transform: translateY(0);
-  }
-  8%,
-  30% {
-    transform: translateY(-8px);
-  }
-  52% {
-    transform: translateY(-4px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .landing-backdrop__wash,
-  .landing-backdrop__dots,
-  .landing-rise,
-  .nursery-elephant.is-watering .brand-mascot,
-  .nursery-elephant.is-brim .brand-mascot,
-  .nursery-elephant.is-shaking,
-  .nursery-elephant.is-shaking-hard {
-    animation: none;
-  }
-
-  .landing-backdrop__bloom {
-    transition: none;
-  }
-
-  .nursery-elephant:hover .brand-mascot,
-  .nursery-elephant:active .brand-mascot {
-    transform: none;
-  }
-
-  .nursery-elephant.is-watering .mascot-eye-closed,
-  .nursery-elephant.is-squinting .mascot-eye-closed {
-    opacity: 0;
-  }
-
-  .nursery-elephant.is-watering .mascot-eye,
-  .nursery-elephant.is-squinting .mascot-eye {
-    opacity: 1;
   }
 }

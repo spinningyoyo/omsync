@@ -1,8 +1,9 @@
-{# The scene and theme choices, in one list for the sign-in page (layouts/auth.html) and the user
-   menu (layouts/shell.html), so both show them in the same order. scenes is (id, label) pairs from
-   the nursery's scenes.json (omsync/web/scenes.py); the theme ids match static/js/theme.js. Import
-   the names you need: {% from "layouts/appearance.html" import scenes, themes %}. #}
-{% set scenes = nursery_scenes %}
+{# The scene ids and theme choices, for the sign-in page (layouts/auth.html) and the user menu
+   (layouts/shell.html). scene_ids come from the nursery's scenes.json (omsync/web/scenes.py), for
+   the scripts that restore the saved scene before first paint; the nursery's picker draws the
+   scenes. The theme ids match the nursery's daylight.js. Import the names you need:
+   {% from "layouts/appearance.html" import scene_ids, themes %}. #}
+{% set scene_ids = nursery_scene_ids %}
 {# label is each button's name and hover label, on the sign-in page and in the menu alike. #}
 {% set themes = [
   {"id": "auto", "label": "Auto: night from 5pm to 7am", "icon": "sun-moon"},

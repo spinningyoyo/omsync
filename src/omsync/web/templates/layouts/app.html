@@ -1,23 +1,12 @@
 {# Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/layouts/_dark_mode_check.html.erb
-   (the no-flash theme script). The page sets data-theme before first paint. The choice is
-   stored in localStorage under omsync-theme, as light, dark or auto: dark from 17:00 to 07:00 by
-   the computer's clock. static/js/theme.js applies the same rule. #}
+   (the no-flash theme script). The page sets data-theme before first paint, from the choice
+   stored in localStorage under omsync-theme: light, dark or auto by the computer's clock. The
+   rule is the nursery's early.js, a classic script so that it runs before anything is drawn. #}
 {% extends "base.html" %}
 
 {% block head %}
-<script>
-  (function () {
-    var choice = "auto";
-    try {
-      var saved = localStorage.getItem("omsync-theme");
-      if (saved === "light" || saved === "dark" || saved === "auto") choice = saved;
-    } catch (e) {}
-    var hour = new Date().getHours();
-    var dark = choice === "dark" || (choice === "auto" && (hour >= 17 || hour < 7));
-    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
-    document.documentElement.dataset.themeChoice = choice;
-  })();
-</script>
+<script src="/static/vendor/nursery/garden/early.js"></script>
+<script>nurseryEarly.theme("omsync-theme");</script>
 {# Adapted from Sure (we-promise/sure), AGPL-3.0: app/views/layouts/_privacy_mode_check.html.erb.
    Privacy mode is on from the first paint, so amounts are never seen unblurred. The key is
    omsync-privacy-mode in localStorage. #}
@@ -30,6 +19,8 @@
     } catch (e) {}
   })();
 </script>
+{# garden.css comes first, so omsync's own rules (styles/landing.css) can place its parts. #}
+<link rel="stylesheet" href="/static/vendor/nursery/css/garden.css">
 <link rel="stylesheet" href="/static/css/app.css">
 <link rel="stylesheet" href="/static/vendor/nursery/css/scenes.css">
 <script src="/static/vendor/htmx.min.js" defer></script>

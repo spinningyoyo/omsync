@@ -22,13 +22,18 @@ sections.
 - Tests are end-to-end only, in `tests/e2e/`. Do not write unit tests. A test drives the CLI, an HTTP route or a
   Playwright journey from the outside. Do not add tests unless the owner asks. Update an existing
   test when the behavior that it covers changes.
-- The sign-in scenes are the `omsync-nursery` package, from the sibling `../omsync-nursery`
-  repository. omsync follows its `release` branch, and `uv.lock` records the commit. Make art
-  changes there (it has its own AGENTS.md and the nursery-scene skill). Release them with
+- The sign-in scenes and the garden around them (scene picker, watering, saved growth, day and
+  night) are the `omsync-nursery` package, from the sibling `../omsync-nursery` repository. Put
+  behavior that the garden needs in any app into the nursery, not into omsync. omsync follows its
+  `release` branch, and `uv.lock` records the commit. Make art and garden changes there (it has
+  its own AGENTS.md and the nursery-scene skill). Release them with
   `uv run nursery release` from that checkout. Take a release into omsync with
   `sh scripts/upgrade-nursery.sh`. The version range is in `pyproject.toml`. A release outside it
   is a contract change: change the host code and the range in one commit. Never edit the nursery
   source or the lock entry by hand.
+- The mascot and the favicons in `src/omsync/web/static/brand/` come from `ink-studio`. `ink.toml`
+  lists them, and `ink.sha256` records their content. Never edit them here. Change the art in
+  ink-studio and export it. `sh scripts/check.sh` fails when a file differs from `ink.sha256`.
 - A change to the website automation of an institution needs live validation at that institution.
   Say so when you cannot run it.
 - The `verify-omsync` skill drives the real app in a browser on throwaway data. Ask the owner

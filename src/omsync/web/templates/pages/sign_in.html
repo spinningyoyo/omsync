@@ -8,10 +8,8 @@
 {% block auth %}
 <header class="flex flex-col items-center gap-4 text-primary">
   {# The elephant waters the scene on the page behind it: a click waters once, and a hold fills it
-     for a bigger splash (controllers/nursery_controller.js). #}
-  <button type="button" class="nursery-elephant" aria-label="Water the scene"
-          data-nursery-target="elephant"
-          data-action="click->nursery#click pointerdown->nursery#press pointerup->nursery#letGo pointercancel->nursery#letGo keydown->nursery#keyDown keyup->nursery#keyUp blur->nursery#lose contextmenu->nursery#hush">
+     for a bigger splash (the nursery's garden/watering.js, set up by controllers/nursery_controller.js). #}
+  <button type="button" class="nursery-mascot" aria-label="Water the scene" data-nursery-target="elephant">
     {{ mascot(128) }}
   </button>
   <span class="landing-rise" style="--landing-delay: 0.1s">{{ wordmark("lg") }}</span>
