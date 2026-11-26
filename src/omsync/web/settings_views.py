@@ -14,7 +14,7 @@ from omsync.ingest.pipeline import ImportReport
 from omsync.ledger.models import AccountType, ProviderKind
 from omsync.ledger.sources import account_digits
 from omsync.ledger.sync_runs import RecentSync
-from omsync.receipts.connectors import get_connector
+from omsync.receipts.connectors import find_connector
 from omsync.receipts.profiles import VendorProfile
 from omsync.web.account_page import SyncView, local_time, sync_views
 from omsync.web.accounts_panel import TYPE_LABELS
@@ -180,6 +180,7 @@ def receipt_card_view(
     busy: bool,
     run: RecentSync | None,
 ) -> ProviderCardView:
+    connector = find_connector(profile.vendor_key)
     return ProviderCardView(
         key=profile.key,
         name=profile.name,
@@ -194,7 +195,7 @@ def receipt_card_view(
         synced_at=run.started_at if run is not None else None,
         receipt_count=receipt_count,
         latest_date=latest_date,
-        uses_vault=get_connector(profile.vendor_key).uses_vault,
+        uses_vault=connector is not None and connector.uses_vault,
         login_picked=profile.vault_item_id is not None,
     )
 

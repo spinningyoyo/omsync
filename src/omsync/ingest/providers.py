@@ -20,7 +20,11 @@ from omsync.core.batch_models import Batch
 from omsync.core.batches import CHANGED_ELSEWHERE, BatchError
 from omsync.ingest.connectors.base import ConnectorError
 from omsync.ingest.connectors.config import DROP_FOLDER, KEY_PATTERN
-from omsync.ingest.connectors.registry import get_connector, registered_connectors
+from omsync.ingest.connectors.registry import (
+    find_connector,
+    get_connector,
+    registered_connectors,
+)
 from omsync.ingest.discovery import mask_account_numbers
 from omsync.ledger.accounts import (
     AccountError,
@@ -88,19 +92,10 @@ def connector_choices() -> list[tuple[str, str]]:
     return [(connector.key, connector.label) for connector in connectors]
 
 
-def connector_label(key: str) -> str:
-    try:
-        return get_connector(key).label
-    except ConnectorError:
-        return key
-
-
 def last4_is_statement_id(connector: str) -> bool:
     """True when the connector names its accounts by last four digits (BoA)."""
-    try:
-        return get_connector(connector).last4_is_statement_id
-    except ConnectorError:
-        return False
+    found = find_connector(connector)
+    return found is not None and found.last4_is_statement_id
 
 
 def institution_exists(session: Session, key: str) -> bool:

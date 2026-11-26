@@ -37,6 +37,17 @@ def get_connector(key: str) -> Connector:
     return connector
 
 
+def find_connector(key: str | None) -> Connector | None:
+    """The registered connector for a stored key, or None when no connector has it, such as one
+    that was removed. A provider without one keeps its accounts and files, and fetches nothing."""
+    return _CONNECTORS.get(key) if key else None
+
+
+def fetching_connector(key: str | None) -> Connector:
+    """The connector a provider fetches with: its own, or the drop folder when it has none."""
+    return find_connector(key) or _CONNECTORS[DropFolder.key]
+
+
 def registered_connectors() -> list[Connector]:
     """Every registered connector, sorted by key."""
     return [_CONNECTORS[key] for key in sorted(_CONNECTORS)]

@@ -98,6 +98,9 @@ stateDiagram-v2
 - **Deleting a provider keeps your data.** Accounts, transactions, statement files, and receipt
   files stay. omsync deletes the sync log of the provider and its receipt rows. A new sync reads
   the receipt files again.
+- **A provider outlives its connector.** A website can block or end a connector, and omsync then
+  removes the connector. Its providers stay, with their data. Such a provider only takes the files
+  that you add to its folder. Sync all includes it and does not fail on it.
 - **Sign-in is complete when the bank returns the account list.** omsync does not read the sign-in
   state from the page. A redesign cannot hide a sign-in or show a false one.
 - **Without a vault, you tell omsync that you signed in.** omsync then asks the bank for the

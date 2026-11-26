@@ -6,9 +6,10 @@ and is refused. Each provider sync writes one SyncRun, and every failure becomes
 and a message that is safe to show.
 
 A receipt sync downloads with the vendor's connector, then reads every receipt file in the
-provider's folder into the receipt table. A file that cannot be read fails the run: the receipts
-that were saved stay, and the message says how many files were not. A receipt that another provider
-already holds stays with it, and the message says so: the run still succeeded.
+provider's folder into the receipt table. A provider whose connector is gone only reads the files.
+A file that cannot be read fails the run: the receipts that were saved stay, and the message says
+how many files were not. A receipt that another provider already holds stays with it, and the
+message says so: the run still succeeded.
 """
 
 import logging
@@ -29,7 +30,7 @@ from omsync.ingest.institutions import provider_group, sync_refusal
 from omsync.ingest.runs import failure_of, finish_run, start_run, sync_lock
 from omsync.ingest.sync import SyncResult, bank_sync
 from omsync.ledger.models import Provider, ProviderKind, SyncRun, SyncStatus, Transaction
-from omsync.receipts.connectors import get_connector
+from omsync.receipts.connectors import find_connector
 from omsync.receipts.profiles import (
     VendorProfile,
     get_vendor_profile,
@@ -89,18 +90,24 @@ def plan_sync(session: Session, scope: str, *, has_vault: bool) -> SyncPlan:
         if not banks and not receipts:
             return SyncPlan([], [], "Nothing is turned on to sync.", False)
         logins = any(
-            profile.vault_item_id
+            _signs_in(profile)
             for profile in list_vendor_profiles(session)
             if profile.key in receipts
         )
         return SyncPlan(banks, receipts, None, has_vault and (bool(banks) or logins))
     profile = get_vendor_profile(session, scope)
     if profile is not None:
-        return SyncPlan([], [scope], None, has_vault and bool(profile.vault_item_id))
+        return SyncPlan([], [scope], None, has_vault and _signs_in(profile))
     found = provider_group(session, scope)
     if found is None:
         raise LookupError(scope)
     return SyncPlan([scope], [], sync_refusal(found[1], has_vault=has_vault), has_vault)
+
+
+def _signs_in(profile: VendorProfile) -> bool:
+    """True when a sync of this receipt provider signs in with its vault login. A provider whose
+    connector is gone only reads its files."""
+    return profile.vault_item_id is not None and find_connector(profile.vendor_key) is not None
 
 
 def sync_one(
@@ -290,18 +297,21 @@ def _fetch_and_save(
     vault: Vault | None,
     prompt: Prompt,
 ) -> tuple[int, int, Counter[int]]:
-    """Download, then read every receipt file of the provider. Returns how many receipts were new
-    or changed, how many files could not be read, and how many receipts other providers hold."""
-    get_connector(profile.vendor_key).fetch(
-        settings,
-        prompt,
-        provider_key=profile.key,
-        held=held_receipts(session, provider.id),
-        start=window.start,
-        end=window.end,
-        vault=vault,
-        vault_item_id=profile.vault_item_id,
-    )
+    """Download when the vendor has a connector, then read every receipt file of the provider.
+    Returns how many receipts were new or changed, how many files could not be read, and how many
+    receipts other providers hold."""
+    connector = find_connector(profile.vendor_key)
+    if connector is not None:
+        connector.fetch(
+            settings,
+            prompt,
+            provider_key=profile.key,
+            held=held_receipts(session, provider.id),
+            start=window.start,
+            end=window.end,
+            vault=vault,
+            vault_item_id=profile.vault_item_id,
+        )
     read = read_provider_files(
         session,
         settings,

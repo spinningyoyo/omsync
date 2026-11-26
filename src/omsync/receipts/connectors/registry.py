@@ -27,6 +27,13 @@ def get_connector(key: str) -> VendorConnector:
     return connector
 
 
+def find_connector(key: str) -> VendorConnector | None:
+    """The registered vendor connector for a stored key, or None when no connector has it, such as
+    one that was removed. A provider without one keeps its receipts and reads only the files you
+    add to its folder."""
+    return _CONNECTORS.get(key)
+
+
 def registered_connectors() -> list[VendorConnector]:
     """Every registered vendor connector, sorted by key."""
     return [_CONNECTORS[key] for key in sorted(_CONNECTORS)]

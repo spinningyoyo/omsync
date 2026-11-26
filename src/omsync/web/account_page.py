@@ -11,8 +11,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from omsync.core.money import format_cents
-from omsync.ingest.connectors.base import ConnectorError
-from omsync.ingest.connectors.registry import get_connector
+from omsync.ingest.connectors.registry import DropFolder, find_connector
 from omsync.ledger.accounts_view import BalancePoint
 from omsync.ledger.contacts import list_nicknames
 from omsync.ledger.models import ProviderKind, RecentSync, SyncStatus
@@ -88,14 +87,12 @@ def nickname_context(db: Session, account_id: int) -> dict[str, object]:
 
 
 def connector_label(connector_key: str | None, enabled: bool) -> str:
-    """What the sync card calls the institution's connector."""
-    if connector_key is None or connector_key == "drop_folder":
+    """What the sync card calls the institution's connector. A provider whose connector is gone
+    only takes files you add, like the drop folder."""
+    connector = find_connector(connector_key)
+    if connector is None or connector.key == DropFolder.key:
         return "Drop folder only"
-    try:
-        label = get_connector(connector_key).label
-    except ConnectorError:
-        label = connector_key
-    return label if enabled else f"{label} (turned off)"
+    return connector.label if enabled else f"{connector.label} (turned off)"
 
 
 def local_time(moment: datetime) -> str:

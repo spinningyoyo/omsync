@@ -29,7 +29,7 @@ from omsync.ingest.connectors.base import (
     PartialFetch,
     Prompt,
 )
-from omsync.ingest.connectors.registry import get_connector
+from omsync.ingest.connectors.registry import fetching_connector
 from omsync.ingest.discovery import scan_statement_files, suggested_account
 from omsync.ingest.dropfolder import PendingFile, location_of
 from omsync.ingest.pipeline import ImportReport, import_files
@@ -282,7 +282,7 @@ def _prepare(session: Session, provider_key: str) -> _Plan:
         provider_id=provider.id,
         provider_key=provider_key,
         institution_key=institution_key,
-        connector=get_connector(provider.connector_key),
+        connector=fetching_connector(provider.connector_key),
         accounts=accounts,
         vault_item_id=provider.vault_item_id,
     )
