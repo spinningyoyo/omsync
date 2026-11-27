@@ -229,6 +229,9 @@ def _transactions(
             continue
         cells = cells + [""] * (len(layout.header) - len(cells))
 
+        if card and not cells[layout.date].strip():
+            # Pending/temporary card rows (e.g. TEMPRET) have no Posted Date until they post.
+            continue
         posted_on = _date(cells[layout.date], path, f"row {row_number}")
         if card:
             amount_cents = _card_amount(cells[layout.amount], path, row_number)

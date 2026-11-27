@@ -82,7 +82,15 @@ class OfxFormat:
         account_id = account.account_id.strip()
         if not account_id:
             raise FormatError(f"{path.name}: the account has no ACCTID")
-        if statement_account_id is not None and statement_account_id != account_id:
+        if (
+            statement_account_id is not None
+            and statement_account_id != account_id
+            and not (
+                len(statement_account_id) == 4
+                and statement_account_id.isdigit()
+                and account_id.endswith(statement_account_id)
+            )
+        ):
             raise FormatError(f"{path.name}: the statement account ID does not match the file")
 
         dates = _scan_dates(data, path)
