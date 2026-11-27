@@ -17,6 +17,7 @@ from web_support import sign_in
 
 from omsync.core.batch_models import Batch
 from omsync.ledger import register
+from omsync.ledger.links import Link, LinkKind
 from omsync.ledger.models import (
     Account,
     AccountType,
@@ -356,3 +357,101 @@ def split_ids(app: FastAPI, txn_id: int) -> list[int]:
 def split_tag_names(app: FastAPI, txn_id: int) -> list[list[str]]:
     with Session(app.state.engine) as db:
         return [[t.name for t in s.tags] for s in register.get_transaction_row(db, txn_id).splits]
+
+
+def test_receipt_links_open_directly_while_transaction_and_multiple_links_use_menu(
+    client_signed_in: TestClient, app: FastAPI
+) -> None:
+    ids = seed(app)
+    with Session(app.state.engine) as db:
+        db.add_all(
+            [
+                Link(
+                    kind=LinkKind.receipt.value,
+                    amount_cents=4250,
+                    from_transaction_id=ids["maple"],
+                    receipt_key="costco:R123:0",
+                    evidence={},
+                ),
+                Link(
+                    kind=LinkKind.receipt.value,
+                    amount_cents=9900,
+                    from_transaction_id=ids["city"],
+                    receipt_key="amazon:113-42:0",
+                    evidence={},
+                ),
+                Link(
+                    kind=LinkKind.refund.value,
+                    amount_cents=1200,
+                    from_transaction_id=ids["city"],
+                    to_transaction_id=ids["oldest"],
+                    evidence={},
+                ),
+            ]
+        )
+        db.commit()
+
+    page = client_signed_in.get("/transactions")
+    assert page.status_code == 200
+    assert f"txn-links-{ids['maple']}" not in page.text
+    assert 'href="/receipts/costco/R123" class="link-btn"' in page.text
+    assert 'target="_blank" rel="noopener noreferrer"' in page.text
+    assert f"txn-links-{ids['oldest']}" in page.text
+    assert f"txn-links-{ids['city']}" in page.text
+    assert 'href="/receipts/amazon/113-42"' in page.text
+
+
+def test_last_page_and_date_sort_toggle_and_persist(
+    client_signed_in: TestClient, app: FastAPI
+) -> None:
+    seed(app, rows=55)
+
+    first = client_signed_in.get("/transactions")
+    assert first.status_code == 200
+    assert 'aria-sort="descending"' in first.text
+    assert "chevron-last" in first.text
+    assert "Maple Grocery" in first.text and "Synthetic 000" not in first.text
+
+    last = client_signed_in.get("/transactions/table?page=2&focus=last")
+    assert last.status_code == 200
+    assert "2 / 2" in last.text
+    assert "Synthetic 000" in last.text
+
+    asc = client_signed_in.get("/transactions?sort=date_asc")
+    assert asc.status_code == 200
+    assert 'aria-sort="ascending"' in asc.text
+    assert 'name="sort" value="date_asc"' in asc.text
+    assert "Synthetic 000" in asc.text and "Maple Grocery" not in asc.text
+
+    asc_last = client_signed_in.get("/transactions/table?page=2&sort=date_asc&focus=last")
+    assert asc_last.status_code == 200
+    assert "2 / 2" in asc_last.text
+    assert 'aria-sort="ascending"' in asc_last.text
+    assert "Maple Grocery" in asc_last.text
+
+
+def test_date_between_filter_shows_both_inputs_and_filters_inclusively(
+    client_signed_in: TestClient, app: FastAPI
+) -> None:
+    seed(app)
+
+    form = client_signed_in.get("/transactions/filter/form?field=date")
+    assert form.status_code == 200
+    assert 'data-ops="is after before"' not in form.text
+    assert 'name="value"' in form.text and 'name="value_to"' in form.text
+
+    applied = client_signed_in.post(
+        "/transactions/filter/add",
+        data={"field": "date", "op": "between", "value": "2026-10-01", "value_to": "2026-10-02"},
+    )
+    assert applied.status_code == 200
+    assert "Date between" in applied.text
+    assert "City Power Co" in applied.text and "Blue Sky Travel" in applied.text
+    assert "Maple Grocery" not in applied.text and "Bluebird Coffee" not in applied.text
+
+    match = re.search(r'name="f" value="([^"]+)"', applied.text)
+    assert match is not None
+    reopened = client_signed_in.get(f"/transactions/filter/form?index=0&f={match.group(1)}")
+    assert reopened.status_code == 200
+    assert 'value="2026-10-01"' in reopened.text
+    assert 'value="2026-10-02"' in reopened.text

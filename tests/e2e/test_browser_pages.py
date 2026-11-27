@@ -93,3 +93,17 @@ def test_a_goal_is_added_and_deleted_after_asking(user: Page, live: Live) -> Non
     settle(user)
     user.goto(f"{live.url}/plan/goals")
     expect(user.get_by_role("link", name=re.compile(goal))).to_have_count(0)
+
+
+def test_categories_shortcut_sits_below_recurring_in_sidebar(user: Page, live: Live) -> None:
+    user.goto(f"{live.url}/transactions")
+    settle(user)
+    nav_links = user.locator("nav[aria-label='Primary'] a[href]")
+    hrefs = [nav_links.nth(i).get_attribute("href") for i in range(nav_links.count())]
+    assert hrefs.index("/settings/categories") == hrefs.index("/recurring") + 1
+    user.locator("nav[aria-label='Primary'] a[href='/settings/categories']").click()
+    settle(user)
+    expect(user).to_have_url(re.compile(r"/settings/categories"))
+    expect(
+        user.locator("nav[aria-label='Primary'] a[href='/settings/categories']")
+    ).to_have_attribute("aria-current", "page")

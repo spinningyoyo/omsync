@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from omsync.core.db import database_url, make_engine
 from omsync.core.schema import alembic_config
 from omsync.core.settings import Settings
-from omsync.demo import MARKER_NAME, statements
+from omsync.demo import MARKER_NAME, receipts, statements
 from omsync.ingest.dropfolder import pending_files
 from omsync.ingest.pipeline import ImportReport, import_files
 from omsync.ledger.accounts import create_account
@@ -164,14 +164,17 @@ def build_demo(data_dir: Path, *, today: date) -> None:
         with Session(engine) as session:
             contacts = _people(session)
             accounts = _accounts(session)
+            receipts.setup_providers(session)
             categories = _categories(session)
             _keywords(session, categories)
             _rules(session, categories, contacts)
+            generated = statements.generate(today)
             statements.write_statements(
                 settings.statements_dir,
-                statements.generate(today),
+                generated,
                 today - timedelta(days=1),
             )
+            receipts.write_receipts(settings.receipts_dir, generated)
             # Recurring is decided before this month's statements arrive, as it would have been,
             # so this month's higher Netflix charge asks "New amount?" instead of being learned.
             this_month = f"{today:%Y-%m}"
@@ -182,6 +185,7 @@ def build_demo(data_dir: Path, *, today: date) -> None:
             _check_import(
                 import_files(session, settings, pending_files(session, settings), apply=True)
             )
+            receipts.apply_all(session, settings, today)
             _budgets(session, categories, today)
             _goals(session, accounts, today)
     finally:
@@ -256,6 +260,18 @@ def _keywords(session: Session, categories: dict[str, int]) -> None:
             is_regex=is_regex,
             idempotency_key=f"demo:keyword:payee:{pattern}",
         )
+    for list_key, pairs in (
+        ("costco", receipts.COSTCO_KEYWORDS),
+        ("amazon", receipts.AMAZON_KEYWORDS),
+    ):
+        for pattern, category in pairs:
+            add_keyword(
+                session,
+                list_key,
+                pattern,
+                categories[category],
+                idempotency_key=f"demo:keyword:{list_key}:{pattern}",
+            )
 
 
 def _rules(session: Session, categories: dict[str, int], contacts: dict[str, int]) -> None:
