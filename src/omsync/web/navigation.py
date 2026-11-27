@@ -22,6 +22,7 @@ NAV_GROUPS: tuple[tuple[NavItem, ...], ...] = (
     (
         NavItem("transactions", "Transactions", "/transactions", "credit-card"),
         NavItem("recurring", "Recurring", "/recurring", "calendar-sync"),
+        NavItem("categories", "Categories", "/settings/categories", "shapes"),
         NavItem("reconcile", "Reconcile", "/reconcile", "handshake"),
         NavItem("receipts", "Receipts", "/receipts", "receipt"),
     ),

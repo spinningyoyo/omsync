@@ -66,7 +66,7 @@ def categories_page(
 ) -> HTMLResponse:
     """The whole page. `tab` and `list` open a given tab and keyword list, so a conflict can link to
     its row. `source` opens a Triage tab, such as a receipt vendor's."""
-    context = shell_context(request, db, active="", title="Categories")
+    context = shell_context(request, db, active="categories", title="Categories")
     return request.app.state.templates.TemplateResponse(
         request,
         PAGE,
