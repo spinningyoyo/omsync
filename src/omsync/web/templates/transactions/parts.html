@@ -61,11 +61,25 @@
 </td>
 {%- endmacro %}
 
-{# The links of a transaction: what each ties it to, opening the other transaction, or the vendor's
-   page for a receipt. A row with no link keeps the space, so the icons of every row line up. #}
+{# The memo indicator of a transaction: shown when a memo exists, clicking it opens the memo
+   popover. A row with no memo keeps the space so note, link, and split icons align. #}
+{% macro memo_button(row) -%}
+{%- if row.memo %}
+<button type="button" class="link-btn" hx-get="/transactions/{{ row.id }}/memo/popover" hx-include="#register-state" hx-target="#memo-popover-{{ row.id }}" hx-swap="innerHTML" aria-label="Memo for {{ row.payee }}" title="{{ row.memo }}">{{ icon_svg("sticky-note", 16) }}</button>
+{%- else %}
+<span class="link-btn" aria-hidden="true"></span>
+{%- endif %}
+{%- endmacro %}
+
+{# The links of a transaction: a single receipt link opens directly in a new tab; transaction
+   links and multiple links open in a menu whose items open in a new tab. A row with no link keeps
+   the space so row icons align. #}
 {% macro link_menu(row) -%}
 {%- set items = link_items(row.id, row.links) %}
-{%- if items %}
+{%- if items|length == 1 and items[0].direct and items[0].href %}
+{%- set item = items[0] %}
+<a href="{{ item.href }}" class="link-btn" aria-label="{{ item.text }}" title="{{ item.text }}"{% if item.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ icon_svg(item.icon, 16) }}</a>
+{%- elif items %}
 {%- call menu("txn-links-" ~ row.id, "Links of " ~ row.payee, trigger_icon="link-2", trigger_class="link-btn") %}
 {%- for item in items %}
 {%- if item.external %}
@@ -90,12 +104,17 @@
 {%- endmacro %}
 
 {# The table's header row. The header checkbox selects the rows on this page. #}
-{% macro table_head(show_account) -%}
+{% macro table_head(state, focus=none) -%}
 <thead>
   <tr>
     <th scope="col" class="select"><input type="checkbox" form="bulk-form" aria-label="Select all rows on screen" data-selection-target="all" data-action="click->selection#toggleAll"></th>
-    <th scope="col">Date</th>
-    {%- if show_account %}
+    <th scope="col" aria-sort="{{ state.date_aria_sort }}">
+      <button type="button" class="inline-flex items-center gap-1 rounded-sm uppercase focus-ring cursor-pointer" hx-get="/transactions/table" hx-vals='{"page": 1, "sort": "{{ state.next_date_sort }}", "focus": "sort-date"}' hx-include="#register-state" hx-swap="none"{% if focus == "sort-date" %} data-autofocus{% endif %}>
+        Date
+        <span class="{{ 'rotate-180' if not state.date_descending else '' }}" aria-hidden="true">{{ icon_svg("chevron-down", 14) }}</span>
+      </button>
+    </th>
+    {%- if state.show_account %}
     <th scope="col">Account</th>
     {%- endif %}
     <th scope="col" class="payee">Payee</th>
@@ -126,6 +145,7 @@
       <button type="button"
               class="group/tag inline-flex items-center gap-1.5 min-h-[1.5rem] max-w-full rounded-md px-1 py-0.5 text-left hover:bg-container-inset focus-ring cursor-pointer"
               hx-get="/transactions/{{ row.id }}/tags/popover"
+              hx-include="#register-state"
               hx-target="#tag-popover-{{ row.id }}"
               hx-swap="innerHTML"
               aria-label="Tags for {{ row.payee }}"
@@ -146,13 +166,16 @@
   {{ cell_input(row, "category", categories, autofocus=focus_field == "category") }}
   <td class="amount {{ 'outflow' if row.amount_cents < 0 else 'inflow' }}">{{ row.amount_cents|money }}</td>
   <td class="actions">
-    {%- call menu("txn-menu-" ~ row.id, "Actions for " ~ row.payee) %}
-    {{ menu_item("Edit memo…", icon_name="pencil", attrs={"hx-get": "/transactions/" ~ row.id ~ "/memo/popover", "hx-target": "#memo-popover-" ~ row.id, "hx-swap": "innerHTML"}) }}
-    {{ menu_item("Counterparty", icon_name="users", href="/transactions/" ~ row.id ~ "/detail") }}
-    {{ menu_item("Mark as recurring", icon_name="repeat", href="/recurring?view=all&add_from=" ~ row.id) }}
-    {%- endcall %}
-    {{ link_menu(row) }}
-    <button type="button" class="split-btn" data-action="click->register#openSplitFromButton" data-txn-id="{{ row.id }}" aria-label="Split {{ row.payee }}" title="Split"><span class="split-glyph" aria-hidden="true"></span></button>
+    <div class="inline-flex items-center">
+      {%- call menu("txn-menu-" ~ row.id, "Actions for " ~ row.payee, trigger_class="link-btn") %}
+      {{ menu_item("Edit memo…", icon_name="pencil", attrs={"hx-get": "/transactions/" ~ row.id ~ "/memo/popover", "hx-include": "#register-state", "hx-target": "#memo-popover-" ~ row.id, "hx-swap": "innerHTML"}) }}
+      {{ menu_item("Counterparty", icon_name="users", href="/transactions/" ~ row.id ~ "/detail") }}
+      {{ menu_item("Mark as recurring", icon_name="repeat", href="/recurring?view=all&add_from=" ~ row.id) }}
+      {%- endcall %}
+      {{ memo_button(row) }}
+      {{ link_menu(row) }}
+      <button type="button" class="split-btn" data-action="click->register#openSplitFromButton" data-txn-id="{{ row.id }}" aria-label="Split {{ row.payee }}" title="Split"><span class="split-glyph" aria-hidden="true"></span></button>
+    </div>
     <div id="memo-popover-{{ row.id }}" class="relative text-left"></div>
   </td>
 </tr>
@@ -265,13 +288,13 @@
 {%- endfor %}
 {%- endmacro %}
 
-{# The pager under the table: the rows shown, the rows per page, and the previous and next page. Each
-   control sends the register state with hx-include and is replaced with the rest of the table, so
-   `focus` ("prev", "next", or "size") names the one that takes focus back. When that button has no
-   page to go to, focus goes to the other one. #}
+{# The pager under the table: the rows shown, the rows per page, and previous, next, and last page.
+   Each control sends the register state with hx-include and is replaced with the rest of the table,
+   so `focus` ("prev", "next", "last", or "size") names the one that takes focus back. When that
+   button has no page to go to, focus goes to the other one. #}
 {% macro pager(state, focus=none) -%}
 {%- set target = focus -%}
-{%- if focus == "next" and not state.has_next %}{% set target = "prev" %}{% endif -%}
+{%- if focus in ("next", "last") and not state.has_next %}{% set target = "prev" %}{% endif -%}
 {%- if focus == "prev" and not state.has_prev %}{% set target = "next" %}{% endif -%}
 <nav class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm text-secondary" aria-label="Pages">
   <p>{{ "{:,}".format(state.first_row) }}–{{ "{:,}".format(state.last_row) }} of {{ "{:,}".format(state.matching) }}</p>
@@ -283,9 +306,10 @@
     </select>
   </label>
   <div class="flex items-center gap-2">
-    {{ button("Prev", variant="outline", size="sm", icon="chevron-left", disabled=not state.has_prev, attrs={"hx-get": "/transactions/table", "hx-vals": '{"page": ' ~ (state.page - 1) ~ ', "focus": "prev"}', "hx-include": "#register-state", "hx-swap": "none", "data-autofocus": "" if target == "prev" and state.has_prev else none}) }}
+    {{ button(variant="outline", size="sm", icon="chevron-left", aria_label="Prev", disabled=not state.has_prev, attrs={"title": "Previous page", "hx-get": "/transactions/table", "hx-vals": '{"page": ' ~ (state.page - 1) ~ ', "focus": "prev"}', "hx-include": "#register-state", "hx-swap": "none", "data-autofocus": "" if target == "prev" and state.has_prev else none}) }}
     <span class="tabular-nums" aria-live="polite">{{ state.page }} / {{ state.pages }}</span>
-    {{ button("Next", variant="outline", size="sm", icon="chevron-right", icon_position="right", disabled=not state.has_next, attrs={"hx-get": "/transactions/table", "hx-vals": '{"page": ' ~ (state.page + 1) ~ ', "focus": "next"}', "hx-include": "#register-state", "hx-swap": "none", "data-autofocus": "" if target == "next" and state.has_next else none}) }}
+    {{ button(variant="outline", size="sm", icon="chevron-right", aria_label="Next", disabled=not state.has_next, attrs={"title": "Next page", "hx-get": "/transactions/table", "hx-vals": '{"page": ' ~ (state.page + 1) ~ ', "focus": "next"}', "hx-include": "#register-state", "hx-swap": "none", "data-autofocus": "" if target == "next" and state.has_next else none}) }}
+    {{ button(variant="outline", size="sm", icon="chevron-last", aria_label="Last", disabled=not state.has_next, attrs={"title": "Last page", "hx-get": "/transactions/table", "hx-vals": '{"page": ' ~ state.pages ~ ', "focus": "last"}', "hx-include": "#register-state", "hx-swap": "none", "data-autofocus": "" if target == "last" and state.has_next else none}) }}
   </div>
 </nav>
 {%- endmacro %}
@@ -298,7 +322,7 @@
 {%- if rows %}
 <div class="table-scroll register-scroll fill-region shadow-border-xs rounded-xl focus-ring" style="--table-scroll-bg: var(--color-container)" role="region" tabindex="0" aria-label="Transactions">
   <table class="register">
-    {{ table_head(state.show_account) }}
+    {{ table_head(state, focus) }}
     {{ register_rows(rows, state.show_account, state.categories) }}
   </table>
 </div>
@@ -315,13 +339,14 @@
 {%- endif %}
 {%- endmacro %}
 
-{# The hidden form that carries the register state (account, filter, saved filter, page) to htmx
-   requests. It is re-rendered after each change, so the next request reads fresh values. #}
+{# The hidden form that carries the register state (account, filter, saved filter, page, sort) to
+   htmx requests. It is re-rendered after each change, so the next request reads fresh values. #}
 {% macro register_state(state, oob=false) -%}
 <form id="register-state" hidden{% if oob %} hx-swap-oob="true"{% endif %}>
   {%- if state.account_id %}<input type="hidden" name="account" value="{{ state.account_id }}">{% endif %}
   {%- if state.f %}<input type="hidden" name="f" value="{{ state.f }}">{% endif %}
   {%- if state.saved %}<input type="hidden" name="saved" value="{{ state.saved.id }}">{% endif %}
+  {%- if state.sort != "date_desc" %}<input type="hidden" name="sort" value="{{ state.sort }}">{% endif %}
   <input type="hidden" name="page" value="{{ state.page }}">
 </form>
 {%- endmacro %}

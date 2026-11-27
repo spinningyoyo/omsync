@@ -10,7 +10,7 @@
     </button>
   </div>
   <form class="flex flex-col gap-2.5"
-        hx-post="/transactions/{{ row.id }}/memo"
+        hx-post="/transactions/{{ row.id }}/memo{% if account %}?account={{ account }}{% endif %}"
         hx-target="#txn-{{ row.id }}"
         hx-swap="outerHTML">
     <label class="sr-only" for="memo-input-{{ row.id }}">Memo</label>

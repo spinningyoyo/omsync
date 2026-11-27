@@ -87,6 +87,7 @@ def bulk_apply(
     account: Annotated[int | None, Form()] = None,
     saved: Annotated[int | None, Form()] = None,
     page: Annotated[int, Form()] = 1,
+    sort: Annotated[str | None, Form()] = None,
     idempotency_key: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """Apply the change as one batch, if the data is still at the revision the counts came from.
@@ -110,6 +111,7 @@ def bulk_apply(
         spec=state.spec,
         saved_id=None if state.saved is None else state.saved.id,
         page=page,
+        sort=sort,
     )  # the counts and the rows as they are after the change
     return reply(
         request,

@@ -49,6 +49,7 @@ def undo_batch(
     f: str | None = None,
     saved: int | None = None,
     page: int = 1,
+    sort: str | None = None,
     start: str | None = None,
     end: str | None = None,
     plan: str | None = None,
@@ -79,7 +80,9 @@ def undo_batch(
         )
         return _toast(request, message, status=409)
     message = UNDONE_WITH_AUTOMATIC if automatic else "Undone"
-    reply = _register_undo_reply(request, db, batch, message, account, f, saved, page, start, end)
+    reply = _register_undo_reply(
+        request, db, batch, message, account, f, saved, page, sort, start, end
+    )
     if reply is None:
         reply = _other_page_undo_reply(
             request, db, batch, message, account, plan, source, contact, txn, start, end
@@ -98,6 +101,7 @@ def _register_undo_reply(
     f: str | None,
     saved: int | None,
     page: int,
+    sort: str | None,
     start: str | None,
     end: str | None,
 ) -> HTMLResponse | None:
@@ -107,11 +111,11 @@ def _register_undo_reply(
     if _is_categories_batch(kind):
         return _categories_undone(request, message)
     if kind.startswith("tag."):
-        return _tags_undone(request, message)
+        return _tags_undone(request, message, batch)
     if kind.startswith("rental."):
         return rental_undo_reply(request, db, message)
     if kind.startswith(("bulk.", "saved_filter.")):
-        return register_refresh_undo_reply(request, db, account, f, saved, page)
+        return register_refresh_undo_reply(request, db, account, f, saved, page, sort)
     if kind == "review_resolve":
         return review_undo_reply(request, db)
     if kind.startswith("reconcile.") or kind == "receipts":
@@ -180,13 +184,15 @@ def _categories_undone(request: Request, message: str) -> HTMLResponse:
     )
 
 
-def _tags_undone(request: Request, message: str) -> HTMLResponse:
-    """The Tags page reloads its list."""
+def _tags_undone(request: Request, message: str, batch: Batch) -> HTMLResponse:
+    """The Tags page reloads its list, and open split-editor pickers drop an undone tag."""
+    tag_id = (batch.summary or {}).get("tag_id")
+    detail: object = {"tagId": tag_id} if isinstance(tag_id, int) else True
     return render_block(
         request,
         REGISTER_FRAGMENTS,
         "frag_toast",
-        trigger={"tags-changed": True},
+        trigger={"tags-changed": detail},
         message=message,
     )
 

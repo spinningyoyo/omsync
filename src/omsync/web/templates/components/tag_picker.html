@@ -76,7 +76,7 @@
       {%- endfor %}
     </div>
     <div class="flex flex-col gap-2 border-t border-subdued pt-2" data-tag-create>
-      {{ new_tag_fields("new_name", "new_color_" ~ uid, {"hx-post": "/tags/split-picker", "hx-include": "closest [data-tag-picker]", "hx-target": "closest [data-tag-picker]", "hx-swap": "outerHTML"}) }}
+      {{ new_tag_fields("new_name_" ~ uid, "new_color_" ~ uid, {"hx-post": "/tags/split-picker?picker=" ~ uid, "hx-include": "closest [data-tag-picker]", "hx-target": "closest [data-tag-picker]", "hx-swap": "outerHTML"}) }}
     </div>
   </div>
   {%- endcall %}

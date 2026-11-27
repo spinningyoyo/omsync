@@ -79,7 +79,7 @@
   </label>
 
   {%- if field == "date" %}
-  <label class="form-field" data-ops="is after before"{{ op_hidden(values, "is after before") }}><span class="form-field__label">Date</span>
+  <label class="form-field"><span class="form-field__label">Date</span>
     <input type="date" name="value" value="{{ values.value }}" class="form-field__input" data-autofocus>
   </label>
   <label class="form-field" data-ops="between"{{ op_hidden(values, "between") }}><span class="form-field__label">To</span>
@@ -97,6 +97,15 @@
     <legend class="text-sm text-secondary">Categories</legend>
     {%- for category_id, name in state.categories %}
     <label class="flex items-center gap-2"><input type="checkbox" name="category_id" value="{{ category_id }}"{% if category_id in values.category_ids %} checked{% endif %}{% if loop.first %} data-autofocus{% endif %}> {{ name }}</label>
+    {%- endfor %}
+  </fieldset>
+  {%- elif field == "tag" %}
+  <fieldset class="flex max-h-60 flex-col gap-1 overflow-y-auto text-sm text-primary" data-ops="is is_not"{{ op_hidden(values, "is is_not") }}>
+    <legend class="text-sm text-secondary">Tags</legend>
+    {%- for tag in state.tags %}
+    <label class="flex items-center gap-2"><input type="checkbox" name="tag_id" value="{{ tag.id }}"{% if tag.id in values.tag_ids %} checked{% endif %}{% if loop.first %} data-autofocus{% endif %}> <span class="size-2.5 shrink-0 rounded-full" style="background-color: {{ tag.color }};"></span> {{ tag.name }}</label>
+    {%- else %}
+    <p class="text-xs text-secondary">No tags yet.</p>
     {%- endfor %}
   </fieldset>
   {%- elif field == "payee" %}

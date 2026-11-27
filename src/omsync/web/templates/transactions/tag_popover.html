@@ -9,5 +9,5 @@
       {{ icon("x", 14) }}
     </button>
   </div>
-  {{ tag_picker(all_tags, row.tags|map(attribute="id")|list, "/transactions/" ~ row.id ~ "/tags/toggle", "/transactions/" ~ row.id ~ "/tags/create", "#txn-" ~ row.id) }}
+  {{ tag_picker(all_tags, row.tags|map(attribute="id")|list, "/transactions/" ~ row.id ~ "/tags/toggle", "/transactions/" ~ row.id ~ "/tags/create", "#txn-" ~ row.id, ("?account=" ~ account) if account else "") }}
 </div>

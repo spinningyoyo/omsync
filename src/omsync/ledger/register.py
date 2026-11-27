@@ -152,9 +152,11 @@ def list_transactions(
     spec: FilterSpec | None = None,
     offset: int = 0,
     limit: int = 100,
+    descending: bool = True,
 ) -> list[RegisterRow]:
     """Return up to `limit` transactions after the first `offset`, ordered by (posted_on, id)
-    descending, so the newest come first and every transaction has one place in the order.
+    descending (or ascending when `descending` is False), so every transaction has one place in
+    the order.
 
     `account_id` and `spec` (see omsync.ledger.filters) both narrow the result.
     """
@@ -167,11 +169,12 @@ def list_transactions(
         query = query.where(Transaction.account_id == account_id)
     if spec is not None:
         query = apply_filter(query, spec)
-    query = (
-        query.order_by(Transaction.posted_on.desc(), Transaction.id.desc())
-        .offset(offset)
-        .limit(limit)
+    order = (
+        (Transaction.posted_on.desc(), Transaction.id.desc())
+        if descending
+        else (Transaction.posted_on.asc(), Transaction.id.asc())
     )
+    query = query.order_by(*order).offset(offset).limit(limit)
     return _rows(session, session.execute(query).all())
 
 

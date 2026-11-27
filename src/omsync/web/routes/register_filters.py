@@ -49,10 +49,11 @@ def filter_form(
     f: str | None = None,
     account: int | None = None,
     saved: int | None = None,
+    sort: str | None = None,
 ) -> HTMLResponse:
     """The inline form for a new condition on `field`, or for the existing condition at `index`."""
     spec = _spec(f)
-    state = _state(db, account, spec, saved)
+    state = _state(db, account, spec, saved, sort=sort)
     if index is not None:
         condition = spec.conditions[_position(index, spec)]
         if condition.field in PICKED_FIELDS:
@@ -74,6 +75,7 @@ def table(
     saved: int | None = None,
     q: str | None = None,
     page: int = 1,
+    sort: str | None = None,
     focus: str | None = None,
 ) -> HTMLResponse:
     """The register for a filter and a page, with the search box's text in `q` when it is sent. A
@@ -85,7 +87,7 @@ def table(
             spec = FilterSpec(conditions=spec.conditions, match=spec.match, search=q)
         except FilterError as exc:
             raise RegisterError(str(exc), 422) from exc
-    state = _state(db, account, spec, saved, page)
+    state = _state(db, account, spec, saved, page, sort=sort)
     return reply(
         request,
         state,
@@ -105,13 +107,14 @@ def set_page_size(
     f: Opt = None,
     account: OptInt = None,
     saved: OptInt = None,
+    sort: Opt = None,
 ) -> HTMLResponse:
     """Save the rows per page. The page that now holds the first row on screen is the one shown."""
     if size not in PAGE_SIZES:
         raise RegisterError("Choose one of the page sizes.", 422)
     first_row = (max(page, 1) - 1) * page_size(db)
     save_page_size(db, size)
-    state = _state(db, account, _spec(f), saved, first_row // size + 1)
+    state = _state(db, account, _spec(f), saved, first_row // size + 1, sort=sort)
     return reply(request, state, page_rows(db, state), url_mode="replace", focus="size")
 
 
@@ -129,9 +132,11 @@ def filter_add(
     origin: Annotated[str, Form()] = "manual",
     account_id: Annotated[list[str] | None, Form()] = None,
     category_id: Annotated[list[str] | None, Form()] = None,
+    tag_id: Annotated[list[str] | None, Form()] = None,
     f: Opt = None,
     account: OptInt = None,
     saved: OptInt = None,
+    sort: Opt = None,
 ) -> HTMLResponse:
     """Add a condition, or replace the one at `index`. The rules are in omsync.ledger.filters."""
     spec = _spec(f)
@@ -148,17 +153,20 @@ def filter_add(
     try:
         values.account_ids = _ints(account_id)
         values.category_ids = _ints(category_id)
+        values.tag_ids = _ints(tag_id)
         condition = condition_from(values)
     except FilterError as exc:
         values.error = str(exc)
-        state = _state(db, account, spec, saved)
+        state = _state(db, account, spec, saved, sort=sort)
         return fragment(request, "frag_filter_form", status_code=422, values=values, state=state)
     conditions = list(spec.conditions)
     if index:
         conditions[_position(index, spec)] = condition
     else:
         conditions.append(condition)
-    return _changed(request, db, replace(spec, conditions=tuple(conditions)), account, saved)
+    return _changed(
+        request, db, replace(spec, conditions=tuple(conditions)), account, saved, sort=sort
+    )
 
 
 @router.post("/transactions/filter/remove", response_class=HTMLResponse)
@@ -169,11 +177,14 @@ def filter_remove(
     f: Opt = None,
     account: OptInt = None,
     saved: OptInt = None,
+    sort: Opt = None,
 ) -> HTMLResponse:
     spec = _spec(f)
     conditions = list(spec.conditions)
     del conditions[_position(str(index), spec)]
-    return _changed(request, db, replace(spec, conditions=tuple(conditions)), account, saved)
+    return _changed(
+        request, db, replace(spec, conditions=tuple(conditions)), account, saved, sort=sort
+    )
 
 
 @router.post("/transactions/filter/match", response_class=HTMLResponse)
@@ -184,21 +195,26 @@ def filter_match(
     f: Opt = None,
     account: OptInt = None,
     saved: OptInt = None,
+    sort: Opt = None,
 ) -> HTMLResponse:
     spec = _spec(f)
     try:
         changed = replace(spec, match=match)  # type: ignore[arg-type]
     except FilterError as exc:
         raise RegisterError(str(exc), 422) from exc
-    return _changed(request, db, changed, account, saved)
+    return _changed(request, db, changed, account, saved, sort=sort)
 
 
 @router.get("/transactions/saved-filters/{filter_id}/apply", response_class=HTMLResponse)
 def saved_apply(
-    request: Request, db: DbSession, filter_id: int, account: int | None = None
+    request: Request,
+    db: DbSession,
+    filter_id: int,
+    account: int | None = None,
+    sort: str | None = None,
 ) -> HTMLResponse:
     """Show a saved filter's conditions, match, and search, in place of the current ones."""
-    return _changed(request, db, _saved(db, filter_id).spec, account, filter_id)
+    return _changed(request, db, _saved(db, filter_id).spec, account, filter_id, sort=sort)
 
 
 @router.post("/transactions/saved-filters", response_class=HTMLResponse)
@@ -209,6 +225,7 @@ def saved_create(
     idempotency_key: Annotated[str, Form()] = "",
     f: Opt = None,
     account: OptInt = None,
+    sort: Opt = None,
 ) -> HTMLResponse:
     spec = _spec(f)
     try:
@@ -216,7 +233,7 @@ def saved_create(
     except FilterError as exc:
         raise RegisterError(str(exc), 422) from exc
     saved_id = int((batch.summary or {}).get("saved_filter_id", 0))
-    return _saved_reply(request, db, batch, spec, account, saved_id)
+    return _saved_reply(request, db, batch, spec, account, saved_id, sort=sort)
 
 
 @router.post("/transactions/saved-filters/{filter_id}/update", response_class=HTMLResponse)
@@ -227,6 +244,7 @@ def saved_update(
     idempotency_key: Annotated[str, Form()] = "",
     f: Opt = None,
     account: OptInt = None,
+    sort: Opt = None,
 ) -> HTMLResponse:
     spec = _spec(f)
     _saved(db, filter_id)
@@ -238,7 +256,7 @@ def saved_update(
         return fragment(request, "frag_toast", status_code=409, message=CHANGED_ELSEWHERE)
     except BatchError as exc:
         return fragment(request, "frag_toast", status_code=409, message=str(exc))
-    return _saved_reply(request, db, batch, spec, account, filter_id)
+    return _saved_reply(request, db, batch, spec, account, filter_id, sort=sort)
 
 
 @router.post("/transactions/saved-filters/{filter_id}/delete", response_class=HTMLResponse)
@@ -249,6 +267,7 @@ def saved_delete(
     idempotency_key: Annotated[str, Form()] = "",
     f: Opt = None,
     account: OptInt = None,
+    sort: Opt = None,
 ) -> HTMLResponse:
     spec = _spec(f)
     _saved(db, filter_id)
@@ -256,7 +275,7 @@ def saved_delete(
         batch = delete_filter(db, filter_id, idempotency_key=idempotency_key or uuid4().hex)
     except BatchError as exc:
         return fragment(request, "frag_toast", status_code=409, message=str(exc))
-    return _saved_reply(request, db, batch, spec, account, None)
+    return _saved_reply(request, db, batch, spec, account, None, sort=sort)
 
 
 # Helpers
@@ -278,10 +297,15 @@ def _saved(db: Session, filter_id: int) -> SavedFilterInfo:
 
 
 def _state(
-    db: Session, account: int | None, spec: FilterSpec, saved: int | None, page: int = 1
+    db: Session,
+    account: int | None,
+    spec: FilterSpec,
+    saved: int | None,
+    page: int = 1,
+    sort: str | None = None,
 ) -> RegisterState:
     try:
-        return build_state(db, account_id=account, spec=spec, saved_id=saved, page=page)
+        return build_state(db, account_id=account, spec=spec, saved_id=saved, page=page, sort=sort)
     except LookupError:
         raise HTTPException(status_code=404, detail="No such account") from None
 
@@ -292,9 +316,11 @@ def _changed(
     spec: FilterSpec,
     account: int | None,
     saved: int | None,
+    *,
+    sort: str | None = None,
 ) -> HTMLResponse:
     """The register after its filter changed: the regions, the first page of rows, and the URL."""
-    state = _state(db, account, spec, saved)
+    state = _state(db, account, spec, saved, sort=sort)
     return reply(request, state, page_rows(db, state))
 
 
@@ -305,9 +331,11 @@ def _saved_reply(
     spec: FilterSpec,
     account: int | None,
     saved: int | None,
+    *,
+    sort: str | None = None,
 ) -> HTMLResponse:
     """A save, update, or delete: the regions, and a toast whose undo sends the register state."""
-    state = _state(db, account, spec, saved)
+    state = _state(db, account, spec, saved, sort=sort)
     label = str((batch.summary or {}).get("label", "Saved filter changed"))
     return reply(
         request,

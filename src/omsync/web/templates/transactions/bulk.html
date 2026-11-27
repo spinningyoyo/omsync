@@ -12,6 +12,7 @@
   {%- if state.account_id %}<input type="hidden" name="account" value="{{ state.account_id }}">{% endif %}
   {%- if state.f %}<input type="hidden" name="f" value="{{ state.f }}">{% endif %}
   {%- if state.saved %}<input type="hidden" name="saved" value="{{ state.saved.id }}">{% endif %}
+  {%- if state.sort != "date_desc" %}<input type="hidden" name="sort" value="{{ state.sort }}">{% endif %}
   <input type="hidden" name="page" value="{{ state.page }}">
   <input type="hidden" name="select_all" value="0" data-selection-target="selectAllInput">
   <input type="hidden" name="bulk_action" value="" data-selection-target="actionInput">

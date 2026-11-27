@@ -13,7 +13,7 @@
    and the toast region all reach it. Cells carry no hx-* attributes; the controller builds each
    request from data-txn-id and data-field. The filter and selection controllers handle the filter
    bar and the bulk edit. Replies re-render regions out of band (transactions/regions.html). #}
-<div class="fill-chain flex flex-col gap-3" data-controller="register filter selection"{% if account %} data-account="{{ account.id }}"{% endif %} data-action="keydown->register#keydown click->register#click mousedown->register#pointer change->register#change focusout->register#leave submit->register#submit input->register#input htmx:afterSettle->register#settled htmx:afterSettle->selection#settled register-reset@window->selection#reset bulk-done@window->selection#bulkDone click@window->filter#clickOutside">
+<div class="fill-chain flex flex-col gap-3" data-controller="register filter selection"{% if account %} data-account="{{ account.id }}"{% endif %} data-action="keydown->register#keydown click->register#click mousedown->register#pointer change->register#change focusout->register#leave submit->register#submit input->register#input htmx:afterSettle->register#settled htmx:afterSettle->selection#settled register-reset@window->selection#reset bulk-done@window->selection#bulkDone click@window->filter#clickOutside click@window->register#clickOutside tags-changed@window->register#tagsChanged">
   <header class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
     <div class="flex flex-col">
       <h1 class="text-2xl font-medium text-primary">Transactions</h1>

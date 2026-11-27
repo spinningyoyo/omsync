@@ -32,12 +32,19 @@ from omsync.ledger.filters import (
 from omsync.ledger.preferences import get_pref, set_pref
 from omsync.ledger.register import RegisterRow, categories, list_transactions, open_review_count
 from omsync.ledger.sources import Account
+from omsync.ledger.tags import Tag, list_tags
 from omsync.web.formats import long_day
 
 MAX_FILTER_LENGTH = 8000
 PAGE_SIZES = (25, 50, 100, 200)
 PAGE_SIZE_DEFAULT = 50
 PAGE_SIZE_PREF = "register_page_size"
+SORT_DEFAULT = "date_desc"
+
+
+def normalize_sort(value: str | None) -> str:
+    """Only date_desc (newest first) and date_asc (oldest first) are accepted."""
+    return "date_asc" if value == "date_asc" else SORT_DEFAULT
 
 
 @dataclass(frozen=True)
@@ -57,6 +64,9 @@ class RegisterState:
     page: int  # 1-based, and never past the last page
     page_size: int
     review_count: int
+    sort: str = SORT_DEFAULT
+    tags: tuple[Tag, ...] = ()
+    tag_names: dict[int, str] = field(default_factory=dict)
     # Sent with the save, update, and delete requests, so a double submit applies once.
     form_key: str = field(default_factory=lambda: uuid4().hex)
 
@@ -105,10 +115,26 @@ class RegisterState:
         return self.page < self.pages
 
     @property
+    def date_descending(self) -> bool:
+        return self.sort != "date_asc"
+
+    @property
+    def next_date_sort(self) -> str:
+        return "date_asc" if self.date_descending else SORT_DEFAULT
+
+    @property
+    def date_aria_sort(self) -> str:
+        return "descending" if self.date_descending else "ascending"
+
+    @property
     def query(self) -> str:
         """The state as a query string, for links. Empty values are left out."""
         return query_string(
-            self.account_id, self.spec, None if self.saved is None else self.saved.id, self.page
+            self.account_id,
+            self.spec,
+            None if self.saved is None else self.saved.id,
+            self.page,
+            self.sort,
         )
 
     @property
@@ -127,7 +153,7 @@ class RegisterState:
         return [
             (
                 index,
-                chip_text(condition, self.account_names, self.category_names),
+                chip_text(condition, self.account_names, self.category_names, self.tag_names),
                 condition.field not in PICKED_FIELDS,
             )
             for index, condition in enumerate(self.spec.conditions)
@@ -135,10 +161,14 @@ class RegisterState:
 
 
 def query_string(
-    account_id: int | None, spec: FilterSpec, saved_id: int | None, page: int = 1
+    account_id: int | None,
+    spec: FilterSpec,
+    saved_id: int | None,
+    page: int = 1,
+    sort: str = SORT_DEFAULT,
 ) -> str:
-    """The account, filter, saved filter, and page as a query string. Empty values and the first
-    page are left out."""
+    """The account, filter, saved filter, page, and sort as a query string. Empty values, the
+    first page, and the default sort are left out."""
     params: list[tuple[str, str]] = []
     if account_id is not None:
         params.append(("account", str(account_id)))
@@ -148,6 +178,8 @@ def query_string(
         params.append(("saved", str(saved_id)))
     if page > 1:
         params.append(("page", str(page)))
+    if sort != SORT_DEFAULT:
+        params.append(("sort", sort))
     return urlencode(params)
 
 
@@ -158,6 +190,7 @@ def build_state(
     spec: FilterSpec,
     saved_id: int | None = None,
     page: int = 1,
+    sort: str | None = None,
 ) -> RegisterState:
     """Read what the register shows for this scope. A page before the first or past the last is
     the nearest one. Raises LookupError for an unknown account."""
@@ -177,6 +210,8 @@ def build_state(
     )
     account_names = {row.id: row.name for row in db.scalars(select(Account))}
     category_names = {row.id: row.name for row in db.scalars(select(Category))}
+    tags = tuple(list_tags(db))
+    tag_names = {tag.id: tag.name for tag in tags}
     matching = count_matching(db, spec, account_id=account_id)
     size = page_size(db)
     return RegisterState(
@@ -193,6 +228,9 @@ def build_state(
         page=min(max(page, 1), page_count(matching, size)),
         page_size=size,
         review_count=open_review_count(db),
+        sort=normalize_sort(sort),
+        tags=tags,
+        tag_names=tag_names,
     )
 
 
@@ -209,6 +247,7 @@ def page_rows(db: Session, state: RegisterState) -> list[RegisterRow]:
         spec=state.spec,
         offset=state.offset,
         limit=state.page_size,
+        descending=state.date_descending,
     )
 
 
@@ -248,7 +287,10 @@ def _unreadable(reason: str) -> str:
 
 
 def chip_text(
-    condition: Condition, account_names: dict[int, str], category_names: dict[int, str]
+    condition: Condition,
+    account_names: dict[int, str],
+    category_names: dict[int, str],
+    tag_names: dict[int, str] | None = None,
 ) -> str:
     """A condition in words, for its chip."""
     field, op, value = condition.field, condition.op, condition.value
@@ -257,20 +299,34 @@ def chip_text(
             return f"Date between {long_day(value[0])} and {long_day(value[1])}"
         return f"Date {_op_words(op)} {long_day(value)}"
     if field == "account":
-        names = ", ".join(account_names.get(item, f"account {item}") for item in value)
-        return f"Account {'is' if op == 'is' else 'is not'} {names}"
+        return _named_chip_text("Account", op, value, account_names, "account")
     if field == "payee":
         return f"Payee {_op_words(op)} “{value}”"
     if field == "category":
-        if op == "is_empty":
-            return "Category is empty"
-        names = ", ".join(category_names.get(item, f"category {item}") for item in value)
-        return f"Category {'is' if op == 'is' else 'is not'} {names}"
+        return _named_chip_text(
+            "Category", op, value, category_names, "category", "Category is empty"
+        )
+    if field == "tag":
+        return _named_chip_text("Tag", op, value, tag_names or {}, "tag", "Tag is untagged")
     if field == "amount":
         if op == "between":
             return f"Amount between {format_cents(value[0])} and {format_cents(value[1])}"
         return f"Amount {_op_words(op)} {format_cents(value)}"
     return _plain_chip_text(field, op, value)
+
+
+def _named_chip_text(
+    label: str,
+    op: str,
+    value: Any,
+    names: dict[int, str],
+    fallback: str,
+    empty_text: str = "",
+) -> str:
+    if op == "is_empty":
+        return empty_text
+    joined = ", ".join(names.get(item, f"{fallback} {item}") for item in value)
+    return f"{label} {'is' if op == 'is' else 'is not'} {joined}"
 
 
 def _plain_chip_text(field: str, op: str, value: Any) -> str:

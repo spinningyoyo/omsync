@@ -27,8 +27,22 @@ export default class extends Controller {
   keydown(event) {
     const { target, key } = event;
 
+    if (key === "Escape") {
+      const popover = target.closest("[data-tag-popover], [data-memo-popover]");
+      if (popover) {
+        event.preventDefault();
+        this.closeRowPopover(popover, true);
+        return;
+      }
+    }
+
     const editor = target.closest("[data-split-editor]");
     if (editor) {
+      if (key === "Enter" && target.matches('[data-tag-create] input[type="text"]')) {
+        event.preventDefault();
+        target.closest("[data-tag-create]").querySelector("button")?.click();
+        return;
+      }
       if (key === "Escape") {
         event.preventDefault();
         this.closeSplit(editor.dataset.txnId);
@@ -103,11 +117,38 @@ export default class extends Controller {
   // Clicks inside buttons, fields, links, and the split editor keep their own behaviour.
   click(event) {
     const { target } = event;
-    if (target.closest("[data-split-editor], button, input, select, a")) return;
+    if (target.closest("[data-split-editor], [data-tag-popover], [data-memo-popover], button, input, select, a")) {
+      return;
+    }
     const group = target.closest("tbody[data-txn-group]");
     if (!group) return;
     const field = target.closest("td[data-editable]")?.dataset.field ?? "category";
     this.fieldInput(group.dataset.txnId, field)?.focus();
+  }
+
+  clickOutside(event) {
+    const { target } = event;
+    this.element.querySelectorAll("[data-tag-popover], [data-memo-popover]").forEach((popover) => {
+      if (!popover.contains(target)) popover.remove();
+    });
+  }
+
+  closeRowPopover(popover, restoreFocus = false) {
+    const cell = popover.closest("td");
+    popover.remove();
+    if (restoreFocus) cell?.querySelector("button")?.focus();
+  }
+
+  tagsChanged(event) {
+    const tagId = event.detail?.tagId;
+    if (tagId == null) return;
+    const value = String(tagId);
+    this.element.querySelectorAll("[data-split-editor] [data-tag-picker]").forEach((picker) => {
+      const box = picker.querySelector(`input[type="checkbox"][name="tag"][value="${value}"]`);
+      if (!box) return;
+      box.closest("label")?.remove();
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
   }
 
   // Forms: split forms are handled here, so none of them navigates.
@@ -155,7 +196,14 @@ export default class extends Controller {
   }
 
   // Runs after every htmx swap inside the register, including the toast region.
-  settled() {
+  settled(event) {
+    const target = event.detail?.target;
+    const opened = target?.querySelector?.("[data-tag-popover], [data-memo-popover]");
+    if (opened) {
+      this.element.querySelectorAll("[data-tag-popover], [data-memo-popover]").forEach((other) => {
+        if (other !== opened) other.remove();
+      });
+    }
     this.focusAutofocus();
   }
 

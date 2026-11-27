@@ -27,6 +27,7 @@ class LinkItem:
     icon: str
     href: str | None
     external: bool = False
+    direct: bool = False
 
 
 def transaction_href(account_id: int, posted_on: date, amount_cents: int) -> str:
@@ -54,7 +55,7 @@ def link_items(transaction_id: int, links: list[RowLink]) -> list[LinkItem]:
                 f"{link.label} · {account} · {other.posted_on.isoformat()} · "
                 f"{format_cents(other.amount_cents)}"
             )
-            items.append(LinkItem(text, icon, pair_href(transaction_id, other.id)))
+            items.append(LinkItem(text, icon, pair_href(transaction_id, other.id), external=True))
         elif link.receipt_key is not None:
             items.append(_receipt_item(link.receipt_key, icon))
     return items
@@ -75,5 +76,6 @@ def _receipt_item(receipt_ref: str, icon: str) -> LinkItem:
         vendor.receipt_label(receipt_id),
         icon,
         receipt_href(vendor_key, receipt_id),
-        external=False,
+        external=True,
+        direct=True,
     )

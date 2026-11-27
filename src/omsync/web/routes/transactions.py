@@ -83,6 +83,7 @@ def transactions_page(
     f: str | None = None,
     saved: int | None = None,
     page: int = 1,
+    sort: str | None = None,
 ) -> HTMLResponse:
     """The register. A filter that cannot be read shows the page unfiltered, with a 400 and why."""
     error, status = "", 200
@@ -90,7 +91,7 @@ def transactions_page(
         spec = decode_filter(f)
     except FilterError as exc:
         spec, error, status = FilterSpec(), str(exc), 400
-    state = _state_or_404(db, account, spec, saved, page)
+    state = _state_or_404(db, account, spec, saved, page, sort)
     context = shell_context(request, db, active="transactions", title="Transactions")
     return request.app.state.templates.TemplateResponse(
         request,
@@ -356,12 +357,13 @@ def register_refresh_undo_reply(
     f: str | None,
     saved: int | None,
     page: int,
+    sort: str | None = None,
 ) -> HTMLResponse:
     """A bulk or saved-filter undo changed rows or saved filters, so the register is re-rendered
     with the state the toast was sent from."""
     try:
         spec = decode_filter(f)
-        state = build_state(db, account_id=account, spec=spec, saved_id=saved, page=page)
+        state = build_state(db, account_id=account, spec=spec, saved_id=saved, page=page, sort=sort)
     except (FilterError, LookupError):
         return _fragment(request, "frag_toast", message="Undone")
     return reply(
@@ -419,10 +421,15 @@ def _row_fragment(
 
 
 def _state_or_404(
-    db: Session, account: int | None, spec: FilterSpec, saved: int | None, page: int
+    db: Session,
+    account: int | None,
+    spec: FilterSpec,
+    saved: int | None,
+    page: int,
+    sort: str | None = None,
 ) -> RegisterState:
     try:
-        return build_state(db, account_id=account, spec=spec, saved_id=saved, page=page)
+        return build_state(db, account_id=account, spec=spec, saved_id=saved, page=page, sort=sort)
     except LookupError:
         raise HTTPException(status_code=404, detail="No such account") from None
 
@@ -617,20 +624,26 @@ TAG_GONE = "That tag no longer exists."
 
 
 @router.get("/transactions/{txn_id}/tags/popover", response_class=HTMLResponse)
-def get_tag_popover(request: Request, db: DbSession, txn_id: int) -> HTMLResponse:
+def get_tag_popover(
+    request: Request, db: DbSession, txn_id: int, account: int | None = None
+) -> HTMLResponse:
     row = _row_or_404(db, txn_id)
     return request.app.state.templates.TemplateResponse(
-        request, TAG_POPOVER_TEMPLATE, {"row": row, "all_tags": list_tags(db)}
+        request,
+        TAG_POPOVER_TEMPLATE,
+        {"row": row, "all_tags": list_tags(db), "account": account},
     )
 
 
 @router.get("/transactions/{txn_id}/memo/popover", response_class=HTMLResponse)
-def get_memo_popover(request: Request, db: DbSession, txn_id: int) -> HTMLResponse:
+def get_memo_popover(
+    request: Request, db: DbSession, txn_id: int, account: int | None = None
+) -> HTMLResponse:
     row = _row_or_404(db, txn_id)
     return request.app.state.templates.TemplateResponse(
         request,
         MEMO_POPOVER_TEMPLATE,
-        {"row": row},
+        {"row": row, "account": account},
     )
 
 
@@ -706,16 +719,22 @@ def create_and_assign_tag_route(
 
 
 @router.post("/tags/split-picker", response_class=HTMLResponse)
-async def create_tag_for_split_line(request: Request, db: DbSession) -> HTMLResponse:
+async def create_tag_for_split_line(
+    request: Request, db: DbSession, picker: str = ""
+) -> HTMLResponse:
     """Create a tag from the picker of a split line, and tick it there. The line is not saved
     yet, so nothing is put on it. The reply is that line's picker, as it was with the new tag."""
     form = await request.form()
-    uid = str(form.get("picker", ""))
-    ticked = [int(v) for v in form.getlist("tag") if isinstance(v, str) and v.isdigit()]
-    color = next((str(v) for k, v in form.multi_items() if k.startswith("new_color_")), "")
+    uid = picker or str(form.get("picker", ""))
+    items = [(k, v) for k, v in form.multi_items() if isinstance(v, str)]
+    ticked = _picker_ticked(items, uid)
+    name = str(form.get(f"new_name_{uid}") or form.get("new_name", ""))
+    color = str(form.get(f"new_color_{uid}", "")) or next(
+        (v for k, v in items if k.startswith("new_color_")), ""
+    )
     label, batch_id, status = "", None, 200
     try:
-        batch = create_tag(db, str(form.get("new_name", "")), color, idempotency_key=uuid4().hex)
+        batch = create_tag(db, name, color, idempotency_key=uuid4().hex)
     except ValueError as exc:
         label, status = str(exc), 422
     else:
@@ -731,6 +750,21 @@ async def create_tag_for_split_line(request: Request, db: DbSession) -> HTMLResp
         label=label,
         batch_id=batch_id,
     )
+
+
+def _picker_ticked(items: list[tuple[str, str]], uid: str) -> list[int]:
+    """The tag IDs ticked in the picker named `uid`. An enclosing split form sends every line's
+    picker in order, each starting with `picker=<uid>` before its `tag` checkboxes."""
+    current: str | None = None
+    seen_picker = False
+    ticked: list[int] = []
+    for key, value in items:
+        if key == "picker":
+            current = value
+            seen_picker = True
+        elif key == "tag" and value.isdigit() and (not seen_picker or current == uid):
+            ticked.append(int(value))
+    return list(dict.fromkeys(ticked))
 
 
 def _tags_reply(
