@@ -205,8 +205,11 @@ class BankConnector(BrowserSession):
                     f"{self.display_name} did not respond in time; sync again"
                 ) from None
             except WebDriverException as exc:
+                detail = (exc.msg or "").splitlines()[0] if getattr(exc, "msg", None) else ""
+                suffix = f": {detail}" if detail else ""
                 raise ConnectorError(
-                    f"the browser stopped while syncing {self.display_name} ({type(exc).__name__})"
+                    f"the browser stopped while syncing {self.display_name} "
+                    f"({type(exc).__name__}{suffix})"
                 ) from None
             finally:
                 if failed:
@@ -334,13 +337,14 @@ class BankConnector(BrowserSession):
         return True
 
     def _await_approval(self) -> None:
-        """Show the bank's QR and wait until the person approves in the bank's app, which signs the
-        page in. The QR is shown again whenever the bank replaces it. A screen that stays gone
-        without a sign-in means the approval was declined or expired."""
+        """Show the bank's QR or push prompt and wait until the person approves in the bank's app,
+        which signs the page in. The QR is shown again whenever the bank replaces it. A screen that
+        stays gone without a sign-in means the approval was declined or expired."""
         prompt = self._the_prompt()
         deadline = time.monotonic() + APPROVAL_TIMEOUT
         next_ask = time.monotonic() + LIST_ASK_INTERVAL
         shown: str | None = None
+        announced_push = False
         gone_since: float | None = None
         with timed(self.key, "approval"):
             try:
@@ -352,16 +356,18 @@ class BankConnector(BrowserSession):
                             return
                     try:
                         image = self.approval_image()
+                        waiting = image is not None or self.approval_waiting()
                     except JavascriptException:
                         image = shown  # the page navigated while it was being read
-                    if image is None:
+                        waiting = True
+                    if not waiting:
                         gone_since = time.monotonic() if gone_since is None else gone_since
                         if time.monotonic() - gone_since >= APPROVAL_GONE:
                             raise NeedsUserAction(
                                 f"{self.display_name} did not sign in after the approval "
                                 "screen closed; sync again"
                             )
-                    else:
+                    elif image is not None:
                         gone_since = None
                         if image != shown:
                             prompt.show(
@@ -370,6 +376,11 @@ class BankConnector(BrowserSession):
                                 image=image,
                             )
                             shown = image
+                    else:
+                        gone_since = None
+                        if not announced_push:
+                            prompt.show(f"Approve the sign-in in the {self.display_name} app.")
+                            announced_push = True
                     time.sleep(SIGN_IN_POLL)
             finally:
                 prompt.show("")
@@ -435,6 +446,11 @@ class BankConnector(BrowserSession):
         """Hook: the QR the bank shows for an approval in its app, as a data:image URL, or None
         when the page does not show one."""
         return None
+
+    def approval_waiting(self) -> bool:
+        """Hook: True while the bank's app-approval screen is still shown (for push flows without
+        a QR image)."""
+        return False
 
     def authenticate(self, code: str) -> None:
         """Hook: type the MFA code and continue."""

@@ -17,6 +17,10 @@ ACCOUNTS_HEADERS = {"Content-Type": "application/json", "X-Requested-With": "XML
 DEPOSIT_DOWNLOAD = "/ogateway/addapi/v1/download/form/transaction"
 CARD_PAGE = "/myaccounts/brain/redirect.go"
 LAST4_IN_NAME = re.compile(r"(\d{4})\s*$")  # a display name ends "... - 1234"
+PUSH_SELECT = "#ah-digital-id-phone-list-container:not(.hidden)"
+PUSH_WAIT = "#ah-digital-time-screen-container:not(.hidden)"
+PUSH_DEVICE = 'input[name="deviceList"]'
+PUSH_NEXT_ID = "next-button"
 
 
 @register
@@ -34,7 +38,11 @@ class BoaConnector(BankConnector):
     statement_suffix = ".csv"
 
     def mfa_requested(self) -> bool:
-        return self.page_has("#authcodeReceiveType")
+        return (
+            self.page_has("#authcodeReceiveType")
+            or self.page_has(PUSH_SELECT)
+            or self.page_has(PUSH_WAIT)
+        )
 
     def captcha(self) -> None:
         if self.url_security in self.driver.current_url:
@@ -44,6 +52,13 @@ class BoaConnector(BankConnector):
             )
 
     def request_auth(self) -> Check:
+        if self.page_has(PUSH_WAIT):
+            return Check.approval
+        if self.page_has(PUSH_SELECT):
+            if self.page_has(PUSH_DEVICE) and not self.page_has(f"{PUSH_DEVICE}:checked"):
+                self.click_element((By.CSS_SELECTOR, 'label[for="DEVICE_0"], #DEVICE_0'))
+            self.click_element((By.ID, PUSH_NEXT_ID))
+            return Check.approval
         # Send text to authentication device
         self.click_element(
             (
@@ -54,6 +69,9 @@ class BoaConnector(BankConnector):
         )
         self.click_element((By.ID, "ah-authcode-select-continue-btn"))
         return Check.code
+
+    def approval_waiting(self) -> bool:
+        return self.page_has(PUSH_WAIT) or self.page_has(PUSH_SELECT)
 
     def authenticate(self, code: str) -> None:
         # Complete auth

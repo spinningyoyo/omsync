@@ -337,7 +337,9 @@ class BrowserSession:
             "xhr.withCredentials = true; "
             "for (var [key, value] of Object.entries(arguments[3])) "
             "{ xhr.setRequestHeader(key, value); } "
-            "xhr.send(arguments[2]); return xhr.responseText;"
+            "try { xhr.send(arguments[2]); } "
+            "catch (e) { throw new Error(e.message || String(e)); } "
+            "return xhr.responseText;"
         )
         return self.driver.execute_script(script, method, url, body, headers or {})
 
